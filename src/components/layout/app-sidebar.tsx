@@ -7,6 +7,7 @@ const primaryItems = [
   { href: "/dashboard", label: "首頁", icon: "⌂" },
   { href: "/bookmarks", label: "我的收藏", icon: "◇" },
   { href: "/notes", label: "筆記", icon: "□" },
+  { href: "/code", label: "程式碼", icon: "⌘" },
   { href: "/bookmarks#new-bookmark", label: "新增資料", icon: "+" },
   { href: "/calendar", label: "日曆", icon: "◌" },
 ];
