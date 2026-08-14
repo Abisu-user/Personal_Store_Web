@@ -98,10 +98,18 @@ button { cursor: pointer; }
 .activity-row span { margin-top: 5px; color: var(--muted); font-size: .86rem; }
 .activity-row .status { margin: 0; font-weight: 700; white-space: nowrap; }
 .status.active { color: var(--success); }.status.revoked { color: var(--muted); }
+.bookmarks-workspace { display: grid; gap: 18px; margin-top: 28px; }
+.bookmark-form { display: grid; gap: 10px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: #f9fbff; }
+.bookmark-form h2 { margin: 0 0 2px; font-size: 1.15rem; }.bookmark-form input, .bookmark-form textarea, .bookmark-form select, .taxonomy-form input, .taxonomy-form select, .bookmark-toolbar input, .bookmark-toolbar select { width: 100%; padding: 10px 11px; border: 1px solid #bbc8dc; border-radius: 9px; background: #fff; color: var(--ink); }
+.bookmark-form textarea { resize: vertical; }.bookmark-form .button { width: auto; padding: 0 18px; }
+.taxonomy-form, .bookmark-toolbar { display: flex; gap: 9px; }.taxonomy-form select { max-width: 105px; }.taxonomy-form .button { width: auto; padding: 0 16px; }.bookmark-toolbar input { flex: 1; }.bookmark-toolbar select { width: 145px; }
+.taxonomy-chips { display: grid; gap: 8px; }.taxonomy-chips > div, .tag-line { display: flex; flex-wrap: wrap; gap: 7px; }.chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; color: #234d88; background: #eaf2ff; font-size: .83rem; }.chip.tag, .tag-line span { color: #6a3d85; background: #f4ebfb; }.chip button { border: 0; color: inherit; background: transparent; font-size: 1.05rem; line-height: 1; }
+.bookmark-list { display: grid; gap: 10px; }.bookmark-card { display: flex; justify-content: space-between; gap: 20px; padding: 18px; border: 1px solid var(--line); border-radius: 13px; background: #fff; }.bookmark-card p { margin: 8px 0; }.bookmark-meta { color: var(--brand) !important; font-size: .82rem; font-weight: 700; }.bookmark-title { color: var(--ink); font-size: 1.08rem; font-weight: 800; }.bookmark-title:hover { color: var(--brand); }.tag-line span { padding: 3px 7px; border-radius: 999px; font-size: .8rem; }.delete-button { align-self: flex-start; border: 0; color: var(--danger); background: transparent; font-size: .85rem; font-weight: 700; }
 
 @media (max-width: 520px) {
   .auth-card { padding: 28px 22px; }
   .split-links { flex-direction: column; gap: 8px; }
   .dashboard-header { align-items: flex-start; flex-direction: column; }
   .security-heading { align-items: flex-start; flex-direction: column; }
+  .taxonomy-form, .bookmark-toolbar { flex-direction: column; }.taxonomy-form select, .bookmark-toolbar select { width: 100%; max-width: none; }.bookmark-card { flex-direction: column; }
 }
