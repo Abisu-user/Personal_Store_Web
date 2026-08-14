@@ -1,12 +1,12 @@
-import { SignOutButton } from "@/components/auth/sign-out-button";
-import { requireUser } from "@/lib/security/require-user";
-import { requireMfaIfEnrolled } from "@/lib/security/require-mfa";
 import Link from "next/link";
+import { SignOutButton } from "@/components/auth/sign-out-button";
+import { requireMfaIfEnrolled } from "@/lib/security/require-mfa";
+import { requireUser } from "@/lib/security/require-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const user = await requireUser();
   await requireMfaIfEnrolled();
-  return <main className="dashboard"><section className="dashboard-card"><div className="dashboard-header"><div><p className="eyebrow">VERIFIED SESSION</p><h1>保管庫已鎖定保護</h1></div><SignOutButton /></div><p>目前登入帳號：{user.email}</p><div className="dashboard-grid"><article className="dashboard-tile"><strong>資料權限</strong><span>每筆資料由 Row Level Security 限制為本人可見。</span></article><article className="dashboard-tile"><strong>收藏與整理</strong><Link className="text-link" href="/bookmarks">管理書籤</Link></article><article className="dashboard-tile"><strong>雙因素驗證</strong><Link className="text-link" href="/security/mfa">設定驗證器</Link></article><article className="dashboard-tile"><strong>裝置與活動</strong><Link className="text-link" href="/security">查看安全紀錄</Link></article></div></section></main>;
+  return <main className="dashboard"><section className="dashboard-card dashboard-hero"><div className="dashboard-header"><div><p className="eyebrow">PERSONAL DIGITAL VAULT</p><h1>你的資料，井然有序且受到保護。</h1><p>已使用 <strong>{user.email}</strong> 安全登入。</p></div><SignOutButton /></div><div className="hero-actions"><Link className="button" href="/bookmarks#new-bookmark">＋ 新增資料</Link><Link className="button secondary" href="/bookmarks">瀏覽收藏</Link></div></section><section className="dashboard-overview"><article><span>◇</span><div><strong>我的收藏</strong><p>整理網址、分類與標籤。</p><Link href="/bookmarks">前往收藏 →</Link></div></article><article><span>◈</span><div><strong>安全防護</strong><p>管理雙因素驗證與已登入裝置。</p><Link href="/security">前往安全中心 →</Link></div></article><article><span>◌</span><div><strong>日曆</strong><p>提醒與重要日期即將加入。</p><Link href="/calendar">查看預告 →</Link></div></article></section></main>;
 }
