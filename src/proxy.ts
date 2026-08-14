@@ -20,8 +20,9 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // getUser performs an authoritative Auth server check and refreshes cookies if needed.
-  await supabase.auth.getUser();
+  // getClaims refreshes cookies and verifies the JWT. With asymmetric signing keys,
+  // the verification uses a cached JWKS instead of a fresh Auth request per route.
+  await supabase.auth.getClaims();
   response.headers.set("Cache-Control", "private, no-store");
   return response;
 }
@@ -29,4 +30,3 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };
-

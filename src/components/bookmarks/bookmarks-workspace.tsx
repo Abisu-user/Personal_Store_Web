@@ -1,14 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useMemo, useState } from "react";
+import type { BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 
-type Category = { id: string; name: string; sort_order: number };
-type Tag = { id: string; name: string; color: string | null };
-type Bookmark = { id: string; title: string; description: string | null; category: Category | null; detail: { url: string } | null; tags: Tag[] };
-type Data = { bookmarks: Bookmark[]; categories: Category[]; tags: Tag[] };
-
-export function BookmarksWorkspace() {
-  const [data, setData] = useState<Data | null>(null);
+export function BookmarksWorkspace({ initialData }: { initialData: BookmarksWorkspaceData }) {
+  const [data, setData] = useState<BookmarksWorkspaceData>(initialData);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [query, setQuery] = useState("");
@@ -17,9 +13,8 @@ export function BookmarksWorkspace() {
   const load = useCallback(async () => {
     const result = await fetch("/api/bookmarks", { cache: "no-store" });
     if (!result.ok) { setError("目前無法讀取書籤。"); return; }
-    setData(await result.json() as Data);
+    setData(await result.json() as BookmarksWorkspaceData);
   }, []);
-  useEffect(() => { void Promise.resolve().then(load); }, [load]);
 
   const filtered = useMemo(() => (data?.bookmarks ?? []).filter((bookmark) => {
     const text = `${bookmark.title} ${bookmark.description ?? ""} ${bookmark.detail?.url ?? ""} ${bookmark.tags.map((tag) => tag.name).join(" ")}`.toLowerCase();
@@ -55,7 +50,6 @@ export function BookmarksWorkspace() {
     if (!result.ok) { setError("無法刪除項目。"); return; } await load();
   }
 
-  if (!data && !error) return <p className="lead">正在讀取收藏…</p>;
   return <section className="bookmarks-workspace">
     {error && <p className="notice error" role="alert">{error}</p>}
     <form className="bookmark-form" id="new-bookmark" onSubmit={createBookmark}>
