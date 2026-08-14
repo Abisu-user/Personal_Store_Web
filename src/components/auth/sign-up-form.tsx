@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { passwordError, passwordHint } from "@/components/auth/password-policy";
+import { PasswordInput } from "@/components/auth/password-input";
 
 export function SignUpForm() {
   const [pending, setPending] = useState(false);
@@ -38,7 +39,7 @@ export function SignUpForm() {
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="field"><label htmlFor="displayName">顯示名稱</label><input autoComplete="name" id="displayName" maxLength={80} name="displayName" required /></div>
       <div className="field"><label htmlFor="email">Email</label><input autoComplete="email" id="email" name="email" required type="email" /></div>
-      <div className="field"><label htmlFor="password">設定密碼</label><input autoComplete="new-password" id="password" name="password" required type="password" /><p className="hint">{passwordHint}</p></div>
+      <PasswordInput autoComplete="new-password" hint={passwordHint} id="password" label="設定密碼" name="password" />
       <button className="button" disabled={pending} type="submit">{pending ? "建立中…" : "建立並驗證帳號"}</button>
       <p className="auth-footer">已有帳號？ <Link className="text-link" href="/login">前往登入</Link></p>
     </form>

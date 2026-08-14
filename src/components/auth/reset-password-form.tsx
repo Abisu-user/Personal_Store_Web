@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { passwordError, passwordHint } from "@/components/auth/password-policy";
+import { PasswordInput } from "@/components/auth/password-input";
 
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -20,5 +21,5 @@ export function ResetPasswordForm() {
     if (updateError) { setError("重設連結可能已過期，請重新申請一次。 "); return; }
     router.replace("/dashboard"); router.refresh();
   }
-  return <form className="form" onSubmit={onSubmit}>{error && <p className="notice error" role="alert">{error}</p>}<div className="field"><label htmlFor="password">新密碼</label><input autoComplete="new-password" id="password" name="password" required type="password" /><p className="hint">{passwordHint}</p></div><button className="button" disabled={pending} type="submit">{pending ? "更新中…" : "更新密碼"}</button></form>;
+  return <form className="form" onSubmit={onSubmit}>{error && <p className="notice error" role="alert">{error}</p>}<PasswordInput autoComplete="new-password" hint={passwordHint} id="password" label="新密碼" name="password" /><button className="button" disabled={pending} type="submit">{pending ? "更新中…" : "更新密碼"}</button></form>;
 }
