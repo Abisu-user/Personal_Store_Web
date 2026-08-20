@@ -55,6 +55,42 @@ function resolveHttpUrl(value: string | null, base: URL) {
   try { const resolved = new URL(value, base); return /^https?:$/.test(resolved.protocol) ? resolved.toString() : null; } catch { return null; }
 }
 
+function youtubeVideoId(source: URL) {
+  const hostname = source.hostname.replace(/^www\./, "").toLowerCase();
+  if (hostname === "youtu.be") return source.pathname.split("/").filter(Boolean)[0] ?? null;
+  if (!["youtube.com", "m.youtube.com", "music.youtube.com", "youtube-nocookie.com"].includes(hostname)) return null;
+  if (source.pathname === "/watch") return source.searchParams.get("v");
+  const matched = /^\/(?:shorts|embed|live)\/([^/?#]+)/.exec(source.pathname);
+  return matched?.[1] ?? null;
+}
+
+async function getYoutubePreview(source: URL): Promise<LinkPreview | null> {
+  const videoId = youtubeVideoId(source);
+  if (!videoId || !/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) return null;
+  const fallback: LinkPreview = {
+    hostname: "youtube.com",
+    title: "YouTube 影片",
+    description: null,
+    imageUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+    faviconUrl: "https://www.youtube.com/favicon.ico",
+  };
+  try {
+    const oembed = new URL("https://www.youtube.com/oembed");
+    oembed.searchParams.set("url", source.toString());
+    oembed.searchParams.set("format", "json");
+    const response = await fetch(oembed, { signal: AbortSignal.timeout(3500), headers: { Accept: "application/json" } });
+    if (!response.ok) return fallback;
+    const data = await response.json() as { title?: unknown; author_name?: unknown; thumbnail_url?: unknown };
+    return {
+      hostname: "youtube.com",
+      title: clean(typeof data.title === "string" ? data.title : null, 300) ?? fallback.title,
+      description: clean(typeof data.author_name === "string" ? `YouTube · ${data.author_name}` : null, 500),
+      imageUrl: typeof data.thumbnail_url === "string" && /^https:\/\//.test(data.thumbnail_url) ? data.thumbnail_url : fallback.imageUrl,
+      faviconUrl: fallback.faviconUrl,
+    };
+  } catch { return fallback; }
+}
+
 async function readBody(response: Response) {
   const length = Number(response.headers.get("content-length") ?? "0");
   if (length > maxHtmlBytes || !response.body) return null;
@@ -94,6 +130,8 @@ export async function getLinkPreview(value: string): Promise<LinkPreview> {
   const source = await publicUrl(value);
   const cached = cache.get(source.toString());
   if (cached && cached.expiresAt > Date.now()) return cached.preview;
+  const youtubePreview = await getYoutubePreview(source);
+  if (youtubePreview) { cache.set(source.toString(), { preview: youtubePreview, expiresAt: Date.now() + previewTtlMs }); return youtubePreview; }
   const fallback: LinkPreview = { hostname: source.hostname.replace(/^www\./, ""), title: null, description: null, imageUrl: null, faviconUrl: new URL("/favicon.ico", source).toString() };
   try {
     const page = await fetchHtml(source);
