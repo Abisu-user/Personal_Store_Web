@@ -10,7 +10,7 @@ export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<
   const [entriesResult, categoriesResult, tagsResult] = await Promise.all([
     admin
       .from("entries")
-      .select("id, title, description, category_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_details(url, site_title, notes), entry_tags(tags(id, name, color))")
+      .select("id, title, description, category_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
       .eq("owner_id", ownerId)
       .eq("kind", "bookmark")
       .order("updated_at", { ascending: false })

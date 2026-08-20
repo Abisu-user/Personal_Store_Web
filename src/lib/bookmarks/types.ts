@@ -11,7 +11,7 @@ export type Bookmark = {
   createdAt: string;
   updatedAt: string;
   category: Pick<BookmarkCategory, "id" | "name"> | null;
-  detail: { url: string; site_title: string | null; notes: string | null } | null;
+  detail: { url: string; favicon_url: string | null; site_title: string | null; notes: string | null } | null;
   tags: BookmarkTag[];
 };
 

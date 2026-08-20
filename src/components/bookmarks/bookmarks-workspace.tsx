@@ -1,30 +1,32 @@
 "use client";
 
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { FormEvent, FocusEvent, useCallback, useMemo, useState } from "react";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 
 type View = "all" | "favorite" | "pinned" | "archived" | "trash";
 type Confirmation =
   | { kind: "bookmark"; id: string; title: string; action: "trash" | "permanent" }
   | { kind: "taxonomy"; id: string; title: string; taxonomyKind: "category" | "tag" };
+type DraftPreview = { hostname: string; title: string | null; description: string | null; imageUrl: string | null; faviconUrl: string | null };
 
 const viewLabels: Record<View, string> = { all: "全部", favorite: "我的最愛", pinned: "置頂", archived: "封存", trash: "垃圾桶" };
 
 function WebsitePreview({ bookmark }: { bookmark: Bookmark }) {
   const url = bookmark.detail?.url;
   let hostname = "網站連結";
-  let faviconUrl: string | null = null;
+  let fallbackFaviconUrl: string | null = null;
   try {
     if (url) {
       const parsed = new URL(url);
       hostname = parsed.hostname.replace(/^www\./, "");
-      faviconUrl = new URL("/favicon.ico", parsed.origin).toString();
+      fallbackFaviconUrl = new URL("/favicon.ico", parsed.origin).toString();
     }
   } catch { /* A saved bookmark always has a validated URL; keep a safe fallback for old records. */ }
 
-  return <a className="bookmark-preview" href={url} rel="noreferrer noopener" target="_blank">
+  const imageUrl = bookmark.detail?.favicon_url ?? fallbackFaviconUrl;
+  return <a className={imageUrl ? "bookmark-preview has-image" : "bookmark-preview"} href={url} rel="noreferrer noopener" target="_blank">
     <span aria-hidden="true" className="bookmark-preview-fallback">{hostname.slice(0, 1).toUpperCase()}</span>
-    {faviconUrl && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={faviconUrl} />}
+    {imageUrl && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={imageUrl} />}
     <span>{hostname}</span>
   </a>;
 }
@@ -37,6 +39,8 @@ export function BookmarksWorkspace({ initialData }: { initialData: BookmarksWork
   const [category, setCategory] = useState("all");
   const [view, setView] = useState<View>("all");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [draftPreview, setDraftPreview] = useState<DraftPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
 
   const load = useCallback(async () => {
     const result = await fetch("/api/bookmarks", { cache: "no-store" });
@@ -72,7 +76,27 @@ export function BookmarksWorkspace({ initialData }: { initialData: BookmarksWork
     const result = await fetch("/api/bookmarks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     setPending(false);
     if (!result.ok) { const message = await result.json().catch(() => null); setError(message?.error ?? "無法儲存書籤。"); return; }
-    formElement.reset(); await load();
+    formElement.reset(); setDraftPreview(null); await load();
+  }
+
+  async function previewBookmark(event: FocusEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const url = input.value.trim();
+    if (!url) { setDraftPreview(null); return; }
+    try { new URL(url); } catch { return; }
+    setPreviewing(true); setError(null);
+    try {
+      const result = await fetch("/api/bookmarks/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+      const payload = await result.json().catch(() => null) as DraftPreview | { error?: string } | null;
+      if (!result.ok || !payload || !("hostname" in payload) || typeof payload.hostname !== "string") { setDraftPreview(null); return; }
+      const preview = payload;
+      setDraftPreview(preview);
+      const form = input.form;
+      const title = form?.elements.namedItem("title");
+      const description = form?.elements.namedItem("description");
+      if (title instanceof HTMLInputElement && !title.value) title.value = preview.title ?? preview.hostname;
+      if (description instanceof HTMLTextAreaElement && !description.value && preview.description) description.value = preview.description;
+    } finally { setPreviewing(false); }
   }
 
   async function updateBookmark(id: string, action: "toggle_favorite" | "toggle_pinned" | "archive" | "unarchive" | "restore") {
@@ -124,8 +148,9 @@ export function BookmarksWorkspace({ initialData }: { initialData: BookmarksWork
   return <section className="bookmarks-workspace">
     {error && <p className="notice error" role="alert">{error}</p>}
     <form className="bookmark-form" id="new-bookmark" onSubmit={createBookmark}>
-      <h2>新增書籤</h2><input aria-label="網址" name="url" onBlur={(event) => { const title = event.currentTarget.form?.elements.namedItem("title"); if (title instanceof HTMLInputElement && !title.value) { try { title.value = new URL(event.currentTarget.value).hostname.replace(/^www\./, ""); } catch { /* Browser validation will show the URL format error. */ } } }} placeholder="https://example.com" required type="url" />
-      <input aria-label="標題" name="title" placeholder="標題" required /><textarea aria-label="備註" name="description" placeholder="備註（選填）" rows={2} />
+      <h2>新增書籤</h2><input aria-label="網址" name="url" onBlur={(event) => void previewBookmark(event)} placeholder="貼上網址後自動帶入標題與預覽圖" required type="url" />
+      {previewing && <p className="bookmark-preview-loading" role="status">正在取得連結預覽…</p>}{draftPreview && <div className="bookmark-draft-preview">{(draftPreview.imageUrl ?? draftPreview.faviconUrl) && <img alt="" referrerPolicy="no-referrer" src={draftPreview.imageUrl ?? draftPreview.faviconUrl ?? undefined} />}<div><strong>{draftPreview.title ?? draftPreview.hostname}</strong>{draftPreview.description && <span>{draftPreview.description}</span>}<small>{draftPreview.hostname}</small></div></div>}
+      <input aria-label="標題" name="title" placeholder="標題會自動帶入，也可自行改寫" /><textarea aria-label="備註" name="description" placeholder="備註（選填）" rows={2} />
       <select aria-label="分類" defaultValue="" name="categoryId"><option value="">未分類</option>{data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
       <input aria-label="標籤" name="tags" placeholder="標籤，以逗號分隔" /><button className="button" disabled={pending} type="submit">{pending ? "儲存中…" : "儲存書籤"}</button>
     </form>

@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBookmarksWorkspaceData } from "@/lib/bookmarks/data";
+import { getLinkPreview } from "@/lib/bookmarks/preview";
 import { getSecurityContext } from "@/lib/security/activity";
 
 const bookmarkSchema = z.object({
   url: z.string().trim().min(1).max(2000),
-  title: z.string().trim().min(1).max(300),
+  title: z.string().trim().max(300).optional(),
   description: z.string().trim().max(2000).optional(),
   categoryId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).default([]),
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
   try { const url = new URL(parsed.data.url); if (!/^https?:$/.test(url.protocol)) throw new Error(); normalizedUrl = url.toString(); } catch { return jsonError("網址必須以 http:// 或 https:// 開頭。", 400); }
   try {
     const admin = createAdminClient();
+    const previewPromise = getLinkPreview(normalizedUrl);
     const tagNames = [...new Set(parsed.data.tags.map((tag) => tag.toLocaleLowerCase("en-US")))];
     if (parsed.data.categoryId) {
       const { data: category } = await admin.from("categories").select("id").eq("id", parsed.data.categoryId).eq("owner_id", context.userId).maybeSingle();
@@ -49,9 +51,12 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
       tagRows = data ?? [];
     }
-    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "bookmark", title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null }).select("id").single();
+    const preview = await previewPromise;
+    const title = parsed.data.title || preview.title || preview.hostname;
+    const description = parsed.data.description || preview.description || null;
+    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "bookmark", title, description, category_id: parsed.data.categoryId ?? null }).select("id").single();
     if (entryError) throw entryError;
-    const { error: detailsError } = await admin.from("bookmark_details").insert({ entry_id: entry.id, url: normalizedUrl, notes: parsed.data.description || null });
+    const { error: detailsError } = await admin.from("bookmark_details").insert({ entry_id: entry.id, url: normalizedUrl, site_title: preview.title, favicon_url: preview.imageUrl ?? preview.faviconUrl, notes: description });
     if (detailsError) { await admin.from("entries").delete().eq("id", entry.id).eq("owner_id", context.userId); throw detailsError; }
     if (tagRows.length) { const { error } = await admin.from("entry_tags").insert(tagRows.map((tag) => ({ entry_id: entry.id, tag_id: tag.id }))); if (error) throw error; }
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_created", entry_id: entry.id, metadata: { tag_count: tagRows.length, has_category: Boolean(parsed.data.categoryId) }, ip_hash: context.ipHash });
