@@ -37,7 +37,8 @@ export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps)
 
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     setPasswordPending(true); setError(null); setMessage(null);
     const response = await fetch("/api/profile", {
       method: "PATCH",
@@ -52,7 +53,7 @@ export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps)
     const result = await response.json().catch(() => null);
     setPasswordPending(false);
     if (!response.ok) { setError(result?.error ?? "無法更新密碼。"); return; }
-    event.currentTarget.reset();
+    formElement.reset();
     setMessage(result?.message ?? "密碼已更新。");
   }
 

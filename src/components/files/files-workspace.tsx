@@ -15,13 +15,13 @@ export function FilesWorkspace({ initialData }: { initialData: FilesWorkspaceDat
   const files = useMemo(() => data.files.filter((file) => `${file.title} ${file.description ?? ""} ${file.originalFilename} ${file.tags.map((tag) => tag.name).join(" ")}`.toLowerCase().includes(query.toLowerCase())), [data.files, query]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); const form = new FormData(event.currentTarget); const file = form.get("file"); if (!(file instanceof File) || !file.size) { setError("請選擇檔案。"); return; } if (file.size > maxFileBytes) { setError("單一檔案上限為 50 MB。"); return; }
+    event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const file = form.get("file"); if (!(file instanceof File) || !file.size) { setError("請選擇檔案。"); return; } if (file.size > maxFileBytes) { setError("單一檔案上限為 50 MB。"); return; }
     setPending(true); setError(null);
     try {
       const hash = await sha256(file); const ticketResponse = await fetch("/api/files/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ originalFilename: file.name, mimeType: file.type || "application/octet-stream", byteSize: file.size, sha256: hash }) }); const ticket = await ticketResponse.json(); if (!ticketResponse.ok) throw new Error(ticket.error ?? "無法準備上傳。");
       const { error: uploadError } = await createClient().storage.from("vault-files").uploadToSignedUrl(ticket.storagePath, ticket.token, file, { contentType: file.type || "application/octet-stream" }); if (uploadError) throw uploadError;
       const completeResponse = await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket, title: String(form.get("title") || file.name), description: String(form.get("description") || ""), categoryId: String(form.get("categoryId") || "") || null, tags: String(form.get("tags") || "").split(",").map((tag) => tag.trim()).filter(Boolean) }) }); const completed = await completeResponse.json(); if (!completeResponse.ok) throw new Error(completed.error ?? "無法完成上傳。");
-      event.currentTarget.reset(); await load();
+      formElement.reset(); await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "無法上傳檔案。"); } finally { setPending(false); }
   }
 
