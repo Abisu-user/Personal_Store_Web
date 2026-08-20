@@ -1,11 +1,10 @@
 import "server-only";
 
-import { cache } from "react";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 
 /** Server-only collection read shared by the page and its internal API. */
-export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<BookmarksWorkspaceData> => {
+export async function getBookmarksWorkspaceData(ownerId: string): Promise<BookmarksWorkspaceData> {
   const admin = createAdminClient();
   // A collection read is also the fallback cleanup path when the scheduled job is unavailable.
   // This keeps a trashed entry out of the account on its first visit after 30 days.
@@ -48,4 +47,4 @@ export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<
     categories: categoriesResult.data ?? [],
     tags: tagsResult.data ?? [],
   };
-});
+}

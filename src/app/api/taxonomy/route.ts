@@ -13,11 +13,11 @@ export async function POST(request: NextRequest) {
   const parsed = inputSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return response("請輸入有效名稱。", 400);
   try {
     const admin = createAdminClient(); const table = parsed.data.kind === "category" ? "categories" : "tags";
-    const { error } = await admin.from(table).insert({ owner_id: context.userId, name: parsed.data.name });
+    const { data, error } = await admin.from(table).insert({ owner_id: context.userId, name: parsed.data.name }).select(parsed.data.kind === "category" ? "id, name, sort_order" : "id, name, color").single();
     if (error?.code === "23505") return response("此名稱已存在。", 409);
     if (error) throw error;
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: `${parsed.data.kind}_created`, metadata: {}, ip_hash: context.ipHash });
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, item: data }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   } catch { return response("無法建立分類或標籤。", 503); }
 }
 
