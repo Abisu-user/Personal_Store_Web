@@ -5,6 +5,9 @@ export type Bookmark = {
   title: string;
   description: string | null;
   favorite: boolean;
+  pinned: boolean;
+  archived: boolean;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   category: Pick<BookmarkCategory, "id" | "name"> | null;

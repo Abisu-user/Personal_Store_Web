@@ -11,6 +11,10 @@ const bookmarkSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(50)).max(10).default([]),
 });
+const entryActionSchema = z.object({
+  id: z.string().uuid(),
+  action: z.enum(["toggle_favorite", "toggle_pinned", "archive", "unarchive", "trash", "restore"]),
+});
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
 async function requireContext() { const context = await getSecurityContext(); return context; }
@@ -55,6 +59,49 @@ export async function POST(request: NextRequest) {
   } catch { return jsonError("無法儲存書籤，請稍後再試。", 503); }
 }
 
+export async function PATCH(request: NextRequest) {
+  const context = await requireContext();
+  if (!context) return jsonError("Unauthorized", 401);
+  const parsed = entryActionSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return jsonError("Invalid request", 400);
+
+  try {
+    const admin = createAdminClient();
+    const { data: current, error: currentError } = await admin
+      .from("entries")
+      .select("id, is_favorite, is_pinned, deleted_at")
+      .eq("id", parsed.data.id)
+      .eq("owner_id", context.userId)
+      .eq("kind", "bookmark")
+      .maybeSingle();
+    if (currentError) throw currentError;
+    if (!current) return jsonError("Not found", 404);
+
+    const updates = (() => {
+      switch (parsed.data.action) {
+        case "toggle_favorite": return current.deleted_at ? null : { is_favorite: !current.is_favorite };
+        case "toggle_pinned": return current.deleted_at ? null : { is_pinned: !current.is_pinned };
+        case "archive": return current.deleted_at ? null : { is_archived: true, is_pinned: false };
+        case "unarchive": return current.deleted_at ? null : { is_archived: false };
+        case "trash": return current.deleted_at ? null : { deleted_at: new Date().toISOString(), is_pinned: false };
+        case "restore": return current.deleted_at ? { deleted_at: null, is_archived: false } : null;
+      }
+    })();
+    if (!updates) return jsonError("此書籤目前無法執行這項操作。", 409);
+
+    const { error } = await admin.from("entries")
+      .update(updates)
+      .eq("id", current.id)
+      .eq("owner_id", context.userId)
+      .eq("kind", "bookmark");
+    if (error) throw error;
+    await admin.from("audit_logs").insert({ owner_id: context.userId, action: `bookmark_${parsed.data.action}`, entry_id: current.id, metadata: {}, ip_hash: context.ipHash });
+    return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch {
+    return jsonError("無法更新書籤狀態。", 503);
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   const context = await requireContext();
   if (!context) return jsonError("Unauthorized", 401);
@@ -62,10 +109,10 @@ export async function DELETE(request: NextRequest) {
   if (!parsed.success) return jsonError("Invalid request", 400);
   try {
     const admin = createAdminClient();
-    const { data: entry, error } = await admin.from("entries").delete().eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").select("id").maybeSingle();
+    const { data: entry, error } = await admin.from("entries").delete().eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id").maybeSingle();
     if (error) throw error;
     if (!entry) return jsonError("Not found", 404);
-    await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_deleted", metadata: {}, ip_hash: context.ipHash });
+    await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_permanently_deleted", metadata: {}, ip_hash: context.ipHash });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return jsonError("無法刪除書籤。", 503); }
 }

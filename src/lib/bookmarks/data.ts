@@ -10,10 +10,9 @@ export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<
   const [entriesResult, categoriesResult, tagsResult] = await Promise.all([
     admin
       .from("entries")
-      .select("id, title, description, category_id, is_favorite, created_at, updated_at, categories(id, name), bookmark_details(url, site_title, notes), entry_tags(tags(id, name, color))")
+      .select("id, title, description, category_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_details(url, site_title, notes), entry_tags(tags(id, name, color))")
       .eq("owner_id", ownerId)
       .eq("kind", "bookmark")
-      .is("deleted_at", null)
       .order("updated_at", { ascending: false })
       .limit(100),
     admin.from("categories").select("id, name, sort_order").eq("owner_id", ownerId).order("sort_order").order("name").limit(100),
@@ -29,6 +28,9 @@ export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<
     title: entry.title,
     description: entry.description,
     favorite: entry.is_favorite,
+    pinned: entry.is_pinned,
+    archived: entry.is_archived,
+    deletedAt: entry.deleted_at,
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
     category: Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories,
