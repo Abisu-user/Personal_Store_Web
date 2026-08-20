@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { BookmarksWorkspace } from "@/components/bookmarks/bookmarks-workspace";
 import { CodeWorkspace } from "@/components/code/code-workspace";
 import { FilesWorkspace } from "@/components/files/files-workspace";
@@ -26,5 +27,5 @@ export default async function CreateTypePage({ params }: { params: Promise<{ typ
     }
   })();
   if (!content) notFound();
-  return <main className="dashboard"><section className="dashboard-card"><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1>{content}</section></main>;
+  return <main className="dashboard"><section className="dashboard-card"><div className="create-page-heading"><div><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1></div><Link className="secondary-button create-back-link" href="/create">← 返回選擇新增種類</Link></div>{content}</section></main>;
 }
