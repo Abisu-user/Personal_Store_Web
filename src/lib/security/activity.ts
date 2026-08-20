@@ -2,6 +2,7 @@ import "server-only";
 
 import { createHmac } from "crypto";
 import { headers } from "next/headers";
+import { ensureUserProfile } from "@/lib/profile/data";
 import { createClient } from "@/lib/supabase/server";
 
 export type SecurityContext = { userId: string; sessionId: string; userAgent: string; ipHash: string | null };
@@ -14,6 +15,7 @@ export async function getSecurityContext(): Promise<SecurityContext | null> {
   ]);
   const claims = claimsData?.claims;
   if (userError || claimsError || !userData.user || !claims || userData.user.id !== claims.sub || !claims.session_id) return null;
+  await ensureUserProfile(userData.user);
 
   const requestHeaders = await headers();
   const userAgent = requestHeaders.get("user-agent")?.slice(0, 500) ?? "Unknown device";
