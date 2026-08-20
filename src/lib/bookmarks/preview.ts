@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 export type LinkPreview = { hostname: string; title: string | null; description: string | null; imageUrl: string | null; faviconUrl: string | null };
 
 const cache = new Map<string, { expiresAt: number; preview: LinkPreview }>();
-const maxHtmlBytes = 900_000;
+const maxHeadBytes = 256_000;
 const previewTtlMs = 5 * 60 * 1000;
 
 function isPublicAddress(address: string) {
@@ -116,9 +116,8 @@ async function getYoutubePreview(source: URL): Promise<LinkPreview | null> {
   } catch { return fallback; }
 }
 
-async function readBody(response: Response) {
-  const length = Number(response.headers.get("content-length") ?? "0");
-  if (length > maxHtmlBytes || !response.body) return null;
+async function readDocumentHead(response: Response) {
+  if (!response.body) return null;
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
@@ -126,8 +125,9 @@ async function readBody(response: Response) {
     const next = await reader.read();
     if (next.done) break;
     received += next.value.byteLength;
-    if (received > maxHtmlBytes) { await reader.cancel(); return null; }
     chunks.push(next.value);
+    const text = new TextDecoder().decode(next.value);
+    if (/<\/head\s*>/i.test(text) || received > maxHeadBytes) { await reader.cancel(); break; }
   }
   const bytes = new Uint8Array(received); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
@@ -137,7 +137,7 @@ async function readBody(response: Response) {
 async function fetchHtml(start: URL) {
   let target = start;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
-    const response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(6000), headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent": "Mozilla/5.0 (compatible; PersonalVaultPreview/1.0; +https://personal-store-web.vercel.app)" } });
+    const response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(6000), headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent": "facebookexternalhit/1.1 (+https://www.facebook.com/externalhit_uatext.php)" } });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location || redirects === 3) return null;
@@ -145,7 +145,7 @@ async function fetchHtml(start: URL) {
       continue;
     }
     if (!response.ok || !response.headers.get("content-type")?.toLowerCase().includes("text/html")) return null;
-    const html = await readBody(response);
+    const html = await readDocumentHead(response);
     return html ? { html, url: target } : null;
   }
   return null;
