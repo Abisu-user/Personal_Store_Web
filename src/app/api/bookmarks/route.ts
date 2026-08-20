@@ -16,6 +16,10 @@ const entryActionSchema = z.object({
   id: z.string().uuid(),
   action: z.enum(["toggle_favorite", "toggle_pinned", "archive", "unarchive", "trash", "restore"]),
 });
+const bulkActionSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  action: z.enum(["trash", "permanent"]),
+});
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
 async function requireContext() { const context = await getSecurityContext(); return context; }
@@ -67,11 +71,24 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const context = await requireContext();
   if (!context) return jsonError("Unauthorized", 401);
-  const parsed = entryActionSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return jsonError("Invalid request", 400);
+  const body = await request.json().catch(() => null);
+  const bulk = bulkActionSchema.safeParse(body);
+  const parsed = entryActionSchema.safeParse(body);
+  if (!bulk.success && !parsed.success) return jsonError("Invalid request", 400);
 
   try {
     const admin = createAdminClient();
+    if (bulk.success) {
+      const query = bulk.data.action === "trash"
+        ? admin.from("entries").update({ deleted_at: new Date().toISOString(), is_pinned: false }).in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null).select("id")
+        : admin.from("entries").delete().in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id");
+      const { data, error } = await query;
+      if (error) throw error;
+      if (!data?.length) return jsonError("找不到可處理的書籤。", 404);
+      await admin.from("audit_logs").insert({ owner_id: context.userId, action: `bookmark_bulk_${bulk.data.action}`, metadata: { count: data.length }, ip_hash: context.ipHash });
+      return NextResponse.json({ count: data.length }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (!parsed.success) return jsonError("Invalid request", 400);
     const { data: current, error: currentError } = await admin
       .from("entries")
       .select("id, is_favorite, is_pinned, deleted_at")

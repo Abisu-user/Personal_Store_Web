@@ -12,7 +12,7 @@ const primaryItems = [
   { href: "/files", label: "檔案", icon: "▣" },
   { href: "/vault", label: "保管庫", icon: "◈" },
   { href: "/calendar", label: "日曆", icon: "◌" },
-  { href: "/bookmarks#new-bookmark", label: "新增資料", icon: "+" },
+  { href: "/create", label: "新增資料", icon: "+" },
 ];
 
 export function AppSidebar({ email, displayName, avatar }: { email: string; displayName: string | null; avatar: ProfileAvatar }) {
