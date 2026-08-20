@@ -7,6 +7,9 @@ import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 /** Server-only collection read shared by the page and its internal API. */
 export const getBookmarksWorkspaceData = cache(async (ownerId: string): Promise<BookmarksWorkspaceData> => {
   const admin = createAdminClient();
+  // A collection read is also the fallback cleanup path when the scheduled job is unavailable.
+  // This keeps a trashed entry out of the account on its first visit after 30 days.
+  await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "bookmark").lt("deleted_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
   const [entriesResult, categoriesResult, tagsResult] = await Promise.all([
     admin
       .from("entries")

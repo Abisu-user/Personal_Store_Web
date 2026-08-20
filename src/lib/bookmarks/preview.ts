@@ -6,7 +6,7 @@ import { isIP } from "node:net";
 export type LinkPreview = { hostname: string; title: string | null; description: string | null; imageUrl: string | null; faviconUrl: string | null };
 
 const cache = new Map<string, { expiresAt: number; preview: LinkPreview }>();
-const maxHtmlBytes = 350_000;
+const maxHtmlBytes = 900_000;
 const previewTtlMs = 5 * 60 * 1000;
 
 function isPublicAddress(address: string) {
@@ -41,6 +41,31 @@ function metadata(html: string, names: string[]) {
   for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
     const name = (attribute(tag, "property") ?? attribute(tag, "name") ?? "").toLowerCase();
     if (names.includes(name)) return clean(attribute(tag, "content"), 500);
+  }
+  return null;
+}
+
+function imageFromLink(html: string) {
+  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+    const rel = (attribute(tag, "rel") ?? "").toLowerCase();
+    if (rel.split(/\s+/).includes("image_src")) return clean(attribute(tag, "href"), 2000);
+  }
+  return null;
+}
+
+function imageFromJsonLd(html: string) {
+  for (const tag of html.match(/<script\b[^>]*type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/gi) ?? []) {
+    const raw = tag.replace(/^[\s\S]*?>/, "").replace(/<\/script>$/i, "");
+    try {
+      const data = JSON.parse(raw) as unknown;
+      const values = Array.isArray(data) ? data : [data];
+      for (const value of values) {
+        if (!value || typeof value !== "object") continue;
+        const image = (value as { image?: unknown }).image;
+        if (typeof image === "string") return clean(image, 2000);
+        if (image && typeof image === "object" && typeof (image as { url?: unknown }).url === "string") return clean((image as { url: string }).url, 2000);
+      }
+    } catch { /* Some sites emit incomplete JSON-LD; normal metadata remains available. */ }
   }
   return null;
 }
@@ -112,7 +137,7 @@ async function readBody(response: Response) {
 async function fetchHtml(start: URL) {
   let target = start;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
-    const response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(4500), headers: { Accept: "text/html,application/xhtml+xml", "User-Agent": "Personal-Vault-Link-Preview/1.0" } });
+    const response = await fetch(target, { redirect: "manual", signal: AbortSignal.timeout(6000), headers: { Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent": "Mozilla/5.0 (compatible; PersonalVaultPreview/1.0; +https://personal-store-web.vercel.app)" } });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get("location");
       if (!location || redirects === 3) return null;
@@ -140,7 +165,7 @@ export async function getLinkPreview(value: string): Promise<LinkPreview> {
       hostname: page.url.hostname.replace(/^www\./, ""),
       title: metadata(page.html, ["og:title", "twitter:title"]) ?? titleFromHtml(page.html),
       description: metadata(page.html, ["og:description", "twitter:description", "description"]),
-      imageUrl: resolveHttpUrl(metadata(page.html, ["og:image:secure_url", "og:image", "twitter:image"]), page.url),
+      imageUrl: resolveHttpUrl(metadata(page.html, ["og:image:secure_url", "og:image", "twitter:image", "twitter:image:src"]) ?? imageFromLink(page.html) ?? imageFromJsonLd(page.html), page.url),
       faviconUrl: new URL("/favicon.ico", page.url).toString(),
     };
     cache.set(source.toString(), { preview, expiresAt: Date.now() + previewTtlMs });

@@ -4,7 +4,7 @@ export type Theme = "light" | "dark" | "system";
 export type Accent = "blue" | "violet" | "emerald" | "rose" | "custom";
 export type Background = "mist" | "aurora" | "paper" | "midnight";
 export type Density = "comfortable" | "compact";
-export type Appearance = { theme: Theme; accent: Accent; background: Background; density: Density; customColor: string };
+export type Appearance = { theme: Theme; accent: Accent; background: Background; density: Density; customColor: string; backgroundImage?: string; backgroundPosition?: string; backgroundTint?: string };
 
 export const appearanceDefaults: Appearance = { theme: "system", accent: "blue", background: "mist", density: "comfortable", customColor: "#2b65bd" };
 export const accentValues: Accent[] = ["blue", "violet", "emerald", "rose", "custom"];
@@ -20,7 +20,7 @@ export function normalizeAppearance(value: unknown): Appearance {
   if (!value || typeof value !== "object") return appearanceDefaults;
   const candidate = value as Partial<Appearance>;
   if (!themeValues.includes(candidate.theme as Theme) || !accentValues.includes(candidate.accent as Accent) || !backgroundValues.includes(candidate.background as Background) || !densityValues.includes(candidate.density as Density)) return appearanceDefaults;
-  return { theme: candidate.theme as Theme, accent: candidate.accent as Accent, background: candidate.background as Background, density: candidate.density as Density, customColor: normalizeHexColor(candidate.customColor) };
+  return { theme: candidate.theme as Theme, accent: candidate.accent as Accent, background: candidate.background as Background, density: candidate.density as Density, customColor: normalizeHexColor(candidate.customColor), backgroundImage: typeof candidate.backgroundImage === "string" && candidate.backgroundImage.startsWith("data:image/") ? candidate.backgroundImage : undefined, backgroundPosition: ["center", "left", "right", "top", "bottom"].includes(candidate.backgroundPosition ?? "") ? candidate.backgroundPosition : "center", backgroundTint: normalizeHexColor(candidate.backgroundTint, "#FFFFFF") };
 }
 
 export function readAppearance(): Appearance {
@@ -38,6 +38,10 @@ export function applyAppearance(appearance: Appearance) {
   root.dataset.background = appearance.background;
   root.dataset.density = appearance.density;
   root.style.setProperty("--custom-brand", appearance.customColor);
+  root.style.setProperty("--workspace-image", appearance.backgroundImage ? `url("${appearance.backgroundImage}")` : "none");
+  root.style.setProperty("--workspace-position", appearance.backgroundPosition ?? "center");
+  root.style.setProperty("--workspace-tint", appearance.backgroundTint ?? "#FFFFFF");
+  root.dataset.hasWorkspaceImage = appearance.backgroundImage ? "true" : "false";
 }
 
 export function saveAppearance(appearance: Appearance) {
