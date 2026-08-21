@@ -6,6 +6,10 @@ import { AppearanceProvider } from "@/components/appearance/appearance-provider"
 export const metadata: Metadata = {
   title: "Personal Digital Vault",
   description: "Secure personal information storage.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icon.svg"],
+  },
   robots: { index: false, follow: false },
 };
 
