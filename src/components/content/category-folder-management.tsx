@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 import type { BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 import type { NotesWorkspaceData } from "@/lib/notes/types";
@@ -35,6 +36,7 @@ function ItemManager({ api, contentKind, count, description, fixedCount, items, 
   onChange: (items: Item[]) => void;
   title: string;
 }) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState("");
@@ -50,6 +52,8 @@ function ItemManager({ api, contentKind, count, description, fixedCount, items, 
       if (method === "POST" && payload?.item) onChange([...items, payload.item].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")));
       if (method === "PATCH") onChange(items.map((item) => item.id === (body as { id: string }).id ? { ...item, ...(body as { name?: string; visible?: boolean }) } : item));
       if (method === "DELETE") onChange(items.filter((item) => item.id !== (body as { id: string }).id));
+      window.dispatchEvent(new CustomEvent("personal-vault:taxonomy-updated", { detail: contentKind ?? kind }));
+      router.refresh();
       return true;
     } catch (cause) { setError(cause instanceof Error ? cause.message : "操作失敗。"); return false; } finally { setPending(false); }
   }
