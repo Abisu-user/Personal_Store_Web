@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 import type { BookmarksWorkspaceData } from "@/lib/bookmarks/types";
@@ -34,6 +34,23 @@ function FolderLockSettings({ folders, kind, onChange }: { folders: Item[]; kind
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const selected = folders.find((folder) => folder.id === folderId);
+  useEffect(() => {
+    if (kind === "bookmark") return;
+    const refreshFolders = async () => {
+      const response = await fetch(`/api/content-folders?kind=${kind}`, { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !Array.isArray(payload?.folders)) return;
+      onChange(payload.folders.map((folder: Item) => {
+        const current = folders.find((candidate) => candidate.id === folder.id);
+        return current?.is_locked ? { ...folder, is_locked: true, lock_mode: current.lock_mode } : folder;
+      }));
+    };
+    const onFoldersUpdated = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === kind) void refreshFolders();
+    };
+    window.addEventListener("personal-vault:taxonomy-updated", onFoldersUpdated);
+    return () => window.removeEventListener("personal-vault:taxonomy-updated", onFoldersUpdated);
+  }, [folders, kind, onChange]);
   async function configure(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!selected) return; setPending(true); setError(null); try { const response = await fetch("/api/folder-locks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "configure", kind, folderId: selected.id, mode, password }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法設定資料夾鎖定。 "); onChange(folders.map((folder) => folder.id === selected.id ? { ...folder, is_locked: true, lock_mode: mode } : folder)); setPassword(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法設定資料夾鎖定。 "); } finally { setPending(false); } }
   async function remove() { if (!selected) return; setPending(true); setError(null); try { const response = await fetch("/api/folder-locks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", kind, folderId: selected.id }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法解除鎖定。 "); onChange(folders.map((folder) => folder.id === selected.id ? { ...folder, is_locked: false, lock_mode: null } : folder)); setPassword(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法解除鎖定。 "); } finally { setPending(false); } }
   return <details className="folder-lock-settings"><summary>🔒 資料夾鎖定 <small>選擇要保護的資料夾</small></summary><div className="folder-lock-settings-body"><label>資料夾<select onChange={(event) => setFolderId(event.target.value)} value={folderId}><option value="">選擇資料夾</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.is_locked ? "🔒 " : ""}{folder.name} — {tabLabels[kind]}</option>)}</select></label>{selected && <form onSubmit={configure}><label>密碼類型<select onChange={(event) => setMode(event.target.value as FolderLockMode)} value={mode}><option value="pin4">4 位數 PIN 碼</option><option value="pin6">6 位數 PIN 碼</option><option value="password">英文＋數字＋符號密碼</option></select></label><label>{mode === "password" ? "新密碼（至少 10 字元）" : `PIN 碼（${mode === "pin4" ? 4 : 6} 位數）`}<input autoComplete="new-password" inputMode={mode === "password" ? undefined : "numeric"} maxLength={mode === "password" ? 128 : mode === "pin4" ? 4 : 6} onChange={(event) => setPassword(event.target.value)} pattern={mode === "password" ? undefined : "[0-9]*"} required type="password" value={password} /></label>{error && <p className="notice error" role="alert">{error}</p>}<div className="manager-actions"><button className="button compact" disabled={pending} type="submit">{pending ? "處理中…" : selected.is_locked ? "變更密碼" : "鎖住資料夾"}</button>{selected.is_locked && <button className="delete-button compact" disabled={pending} onClick={() => void remove()} type="button">解除鎖定</button>}</div></form>}</div></details>;
@@ -103,6 +120,16 @@ export function CategoryFolderManagement({ bookmarks, code, files, notes, photos
   const [tab, setTab] = useState<Tab>("bookmark");
   const [bookmarkCategories, setBookmarkCategories] = useState<Item[]>(bookmarks.categories); const [noteCategories, setNoteCategories] = useState<Item[]>(notes.categories); const [codeCategories, setCodeCategories] = useState<Item[]>(code.categories); const [fileCategories, setFileCategories] = useState<Item[]>(files.categories);
   const [bookmarkFolders, setBookmarkFolders] = useState<Item[]>(bookmarks.folders); const [noteFolders, setNoteFolders] = useState<Item[]>(notes.folders); const [codeFolders, setCodeFolders] = useState<Item[]>(code.folders); const [fileFolders, setFileFolders] = useState<Item[]>(files.folders); const [photoCategories, setPhotoCategories] = useState<Item[]>(photos.categories); const [photoFolders, setPhotoFolders] = useState<Item[]>(photos.folders);
+  useEffect(() => { setBookmarkCategories(bookmarks.categories); }, [bookmarks.categories]);
+  useEffect(() => { setNoteCategories(notes.categories); }, [notes.categories]);
+  useEffect(() => { setCodeCategories(code.categories); }, [code.categories]);
+  useEffect(() => { setFileCategories(files.categories); }, [files.categories]);
+  useEffect(() => { setPhotoCategories(photos.categories); }, [photos.categories]);
+  useEffect(() => { setBookmarkFolders(bookmarks.folders); }, [bookmarks.folders]);
+  useEffect(() => { setNoteFolders(notes.folders); }, [notes.folders]);
+  useEffect(() => { setCodeFolders(code.folders); }, [code.folders]);
+  useEffect(() => { setFileFolders(files.folders); }, [files.folders]);
+  useEffect(() => { setPhotoFolders(photos.folders); }, [photos.folders]);
   const selected = useMemo(() => tab === "bookmark" ? { items: bookmarks.bookmarks as ContentItem[], categories: bookmarkCategories, setCategories: setBookmarkCategories, folders: bookmarkFolders, setFolders: setBookmarkFolders, folderApi: "/api/taxonomy" as const, folderKind: "bookmark_folder", folderTitle: "收藏資料夾" } : tab === "note" ? { items: notes.notes as ContentItem[], categories: noteCategories, setCategories: setNoteCategories, folders: noteFolders, setFolders: setNoteFolders, folderApi: "/api/content-folders" as const, folderKind: "note", folderTitle: "筆記資料夾" } : tab === "code" ? { items: code.snippets as ContentItem[], categories: codeCategories, setCategories: setCodeCategories, folders: codeFolders, setFolders: setCodeFolders, folderApi: "/api/content-folders" as const, folderKind: "code", folderTitle: "程式碼資料夾" } : tab === "file" ? { items: files.files as ContentItem[], categories: fileCategories, setCategories: setFileCategories, folders: fileFolders, setFolders: setFileFolders, folderApi: "/api/content-folders" as const, folderKind: "file", folderTitle: "檔案資料夾" } : { items: photos.photos as ContentItem[], categories: photoCategories, setCategories: setPhotoCategories, folders: photoFolders, setFolders: setPhotoFolders, folderApi: "/api/content-folders" as const, folderKind: "photo", folderTitle: "照片資料夾" }, [bookmarkCategories, bookmarkFolders, bookmarks.bookmarks, code.snippets, codeCategories, codeFolders, fileCategories, fileFolders, files.files, noteCategories, noteFolders, notes.notes, photoCategories, photoFolders, photos.photos, tab]);
   const active = selected.items.filter((item) => !item.deletedAt && !item.archived);
   const categoryCount = (id: string) => active.filter((item) => item.category?.id === id).length;
