@@ -28,12 +28,15 @@ let databasePromise: Promise<IDBDatabase> | undefined;
 export function normalizeHexColor(value: unknown, fallback = appearanceDefaults.customColor) { return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback; }
 function clamp(value: unknown, min: number, max: number, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback; }
 function isStoredImage(value: string) { return value.startsWith(imageReferencePrefix); }
+function isLegacyImage(value: string) { return value.startsWith("data:image/"); }
+function blobToDataUrl(blob: Blob) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.onerror = () => reject(reader.error ?? new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.readAsDataURL(blob); }); }
 function imageDb() {
   if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
     const request = window.indexedDB.open("personal-vault-backgrounds", 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("images");
+    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images"); };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("BACKGROUND_STORAGE_UNAVAILABLE"));
+    request.onblocked = () => reject(new Error("BACKGROUND_STORAGE_BLOCKED"));
   });
   return databasePromise;
 }
@@ -41,11 +44,18 @@ function requestResult<T>(request: IDBRequest<T>) { return new Promise<T>((resol
 
 /** Stores image binaries outside localStorage so four high-quality backgrounds remain reliable. */
 export async function storeBackgroundImage(blob: Blob) {
-  const id = `${imageReferencePrefix}${crypto.randomUUID()}`;
-  const db = await imageDb(); const transaction = db.transaction("images", "readwrite"); transaction.objectStore("images").put(blob, id);
-  await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); transaction.onabort = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); });
-  imageCache.set(id, URL.createObjectURL(blob));
-  return id;
+  try {
+    const id = `${imageReferencePrefix}${crypto.randomUUID()}`;
+    const db = await imageDb(); const transaction = db.transaction("images", "readwrite"); transaction.objectStore("images").put(blob, id);
+    await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); transaction.onabort = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); });
+    imageCache.set(id, URL.createObjectURL(blob));
+    return id;
+  } catch {
+    // Some privacy extensions and embedded browsers block IndexedDB. Keep a compact
+    // data URL as a compatibility fallback so the user's image still works.
+    if (blob.size > 1_500_000) throw new Error("BACKGROUND_STORAGE_UNAVAILABLE");
+    return blobToDataUrl(blob);
+  }
 }
 export async function removeBackgroundImage(reference: string) {
   if (!isStoredImage(reference)) return;
@@ -59,7 +69,10 @@ async function convertLegacyImage(dataUrl: string) { const response = await fetc
 export async function hydrateAppearanceImages(appearance: Appearance): Promise<Appearance> {
   const normalized = normalizeAppearance(appearance); let changed = false;
   const refs = await Promise.all(normalized.backgroundImages.map(async (reference) => {
-    if (reference.startsWith("data:image/")) { changed = true; return convertLegacyImage(reference); }
+    if (isLegacyImage(reference)) {
+      try { const converted = await convertLegacyImage(reference); changed ||= converted !== reference; return converted; }
+      catch { return reference; }
+    }
     if (!isStoredImage(reference)) return reference;
     if (imageCache.has(reference)) return reference;
     const db = await imageDb(); const transaction = db.transaction("images", "readonly"); const blob = await requestResult(transaction.objectStore("images").get(reference)) as Blob | undefined;
