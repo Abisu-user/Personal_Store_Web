@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PasswordInput } from "@/components/auth/password-input";
+import { OperationStatus } from "@/components/ui/modal-dialog";
 import { profileAvatars, type ProfileAvatar } from "@/lib/profile/constants";
 
 type ProfileSettingsProps = {
@@ -62,6 +63,7 @@ export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps)
   }
 
   return <div className="profile-workspace">
+    {(profilePending || passwordPending) && <OperationStatus label={profilePending ? "正在儲存個人資料…" : "正在更新密碼…"} />}
     {error && <p className="notice error" role="alert">{error}</p>}
     {message && <p className="notice success" role="status">{message}</p>}
     <form className="profile-panel" onSubmit={saveProfile}>
