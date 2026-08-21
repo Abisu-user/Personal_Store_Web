@@ -30,7 +30,7 @@ function jsonError(message: string, status: number) {
 async function validateCategory(ownerId: string, categoryId: string | null | undefined) {
   if (!categoryId) return true;
   const admin = createAdminClient();
-  const { data } = await admin.from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).maybeSingle();
+  const { data } = await admin.from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "note").maybeSingle();
   return Boolean(data);
 }
 

@@ -15,7 +15,7 @@ function jsonError(message: string, status: number) { return NextResponse.json({
 
 async function validateCategory(ownerId: string, categoryId: string | null | undefined) {
   if (!categoryId) return true;
-  const { data } = await createAdminClient().from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).maybeSingle(); return Boolean(data);
+  const { data } = await createAdminClient().from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "file").maybeSingle(); return Boolean(data);
 }
 async function resolveTags(ownerId: string, tags: string[]) {
   const names = [...new Set(tags.map((tag) => tag.toLocaleLowerCase("en-US")))]; if (!names.length) return [] as { id: string }[];

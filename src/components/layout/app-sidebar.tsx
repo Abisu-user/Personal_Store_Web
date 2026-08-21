@@ -7,7 +7,7 @@ import type { ProfileAvatar } from "@/lib/profile/constants";
 import { createClient } from "@/lib/supabase/client";
 
 const primaryItems = [
-  { href: "/dashboard", label: "首頁", icon: "⌂" }, { href: "/bookmarks", label: "我的收藏", icon: "◇" }, { href: "/notes", label: "筆記", icon: "□" }, { href: "/code", label: "程式碼", icon: "⌘" }, { href: "/files", label: "檔案", icon: "▣" }, { href: "/vault", label: "保管庫", icon: "◈" }, { href: "/calendar", label: "日曆", icon: "◌" }, { href: "/organize", label: "管理類別／資料夾", icon: "☷" }, { href: "/create", label: "新增資料", icon: "+" },
+  { href: "/dashboard", label: "首頁", icon: "⌂" }, { href: "/bookmarks", label: "收藏與整理", icon: "◇" }, { href: "/notes", label: "筆記", icon: "□" }, { href: "/code", label: "程式碼", icon: "⌘" }, { href: "/files", label: "檔案", icon: "▣" }, { href: "/vault", label: "保管庫", icon: "◈" }, { href: "/calendar", label: "日曆", icon: "◌" }, { href: "/organize", label: "管理類別／資料夾", icon: "☷" }, { href: "/create", label: "新增資料", icon: "+" },
 ];
 
 export function AppSidebar({ email, displayName, avatar }: { email: string; displayName: string | null; avatar: ProfileAvatar }) {

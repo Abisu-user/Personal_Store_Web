@@ -27,7 +27,7 @@ function jsonError(message: string, status: number) { return NextResponse.json({
 
 async function validateCategory(ownerId: string, categoryId: string | null | undefined) {
   if (!categoryId) return true;
-  const { data } = await createAdminClient().from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).maybeSingle();
+  const { data } = await createAdminClient().from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "code").maybeSingle();
   return Boolean(data);
 }
 

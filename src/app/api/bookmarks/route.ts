@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
     const admin = createAdminClient();
     const previewPromise = getLinkPreview(normalizedUrl);
     if (parsed.data.categoryId) {
-      const { data: category } = await admin.from("categories").select("id").eq("id", parsed.data.categoryId).eq("owner_id", context.userId).maybeSingle();
+      const { data: category } = await admin.from("categories").select("id").eq("id", parsed.data.categoryId).eq("owner_id", context.userId).eq("content_kind", "bookmark").maybeSingle();
       if (!category) return jsonError("找不到指定分類。", 400);
     }
     try { await validateBookmarkFolder(context.userId, parsed.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
@@ -110,7 +110,7 @@ export async function PATCH(request: NextRequest) {
     }
     if (update.success) {
       if (update.data.categoryId) {
-        const { data: category } = await admin.from("categories").select("id").eq("id", update.data.categoryId).eq("owner_id", context.userId).maybeSingle();
+        const { data: category } = await admin.from("categories").select("id").eq("id", update.data.categoryId).eq("owner_id", context.userId).eq("content_kind", "bookmark").maybeSingle();
         if (!category) return jsonError("找不到指定分類。", 400);
       }
       try { await validateBookmarkFolder(context.userId, update.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
