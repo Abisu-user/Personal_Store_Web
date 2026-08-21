@@ -45,7 +45,7 @@ function BookmarkFolderLockGate({ folders, onOpen, onRefresh }: { folders: Bookm
     const intercept = (event: MouseEvent) => {
       const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".bookmark-view-tabs-scroll button");
       if (!button) return;
-      const folder = folders.find((candidate) => candidate.is_locked && button.textContent?.trim().startsWith(candidate.name));
+      const folder = folders.find((candidate) => candidate.is_locked && button.textContent?.includes(candidate.name));
       if (!folder) return;
       event.preventDefault(); event.stopPropagation(); setLockedFolder(folder);
     };
@@ -99,9 +99,9 @@ export function BookmarksWorkspace({ initialData, createMode = false }: { initia
     <div className="bookmark-view-tabs" role="tablist">
       <div className="bookmark-view-tabs-scroll">
         {(["all", "favorite", "pinned", "archived"] as SystemView[]).filter((key) => folders[key].visible).map((key) => <button aria-selected={view === key} className={view === key ? "active" : ""} key={key} onClick={() => setView(key)} role="tab" type="button">{folders[key].label} <span>{counts[key]}</span></button>)}
-        {visibleBookmarkFolders.map((item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => setView(`folder:${item.id}`)} role="tab" type="button">{item.name} <span>{quickCount(item.id)}</span></button>)}
+        {visibleBookmarkFolders.map((item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => setView(`folder:${item.id}`)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>)}
+        {folders.trash.visible && <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => setView("trash")} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button>}
       </div>
-      {folders.trash.visible && <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => setView("trash")} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button>}
     </div>
     <div className="category-strip"><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => setCategory("unclassified")} type="button">未分類</button>{data.categories.map((item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)} type="button">{item.name}</button>)}</div>
     <div className="bookmark-toolbar"><input aria-label="搜尋書籤" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋標題或網址" value={query} /></div>
