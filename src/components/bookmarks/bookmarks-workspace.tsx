@@ -66,6 +66,7 @@ export function BookmarksWorkspace({ initialData, createMode = false }: { initia
   const quickCount = (id: string) => data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.category?.id === id).length;
   return <section className="bookmarks-workspace">
     {pending && <OperationStatus label="正在處理收藏資料…" />}{error && <p className="notice error" role="alert">{error}</p>}{success && <p className="notice success" role="status">{success}</p>}
+    <div className="bookmark-folder-entry"><div><strong>收藏資料夾</strong><small>新增、修改、隱藏或刪除一般與智慧資料夾。</small></div><button className="secondary-button" onClick={() => router.push("/create#bookmark-folders-title")} type="button">管理／新增資料夾</button></div>
     <div className="bookmark-view-tabs" role="tablist">
       {(Object.keys(labels) as SystemView[]).filter((key) => folders[key].visible).map((key) => <button aria-selected={view === key} className={view === key ? "active" : ""} key={key} onClick={() => setView(key)} role="tab" type="button">{folders[key].label} <span>{counts[key]}</span></button>)}
       {quickCategories.map((item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`quick-${item.id}`} onClick={() => setView(`folder:${item.id}`)} role="tab" type="button">{item.name} <span>{quickCount(item.id)}</span></button>)}
