@@ -273,3 +273,12 @@ html[data-has-custom-text-color="true"] { --ink: var(--user-text-color); }
 .bookmark-view-tabs-scroll > button, .bookmark-view-tabs > .trash-tab { flex: 0 0 auto; }
 .bookmark-view-tabs > .trash-tab { margin-left: auto; }
 @media (max-width: 700px) { .bookmark-view-tabs { gap: 6px; }.bookmark-view-tabs > .trash-tab { margin-left: 0; }.bookmark-view-tabs-scroll { padding-bottom: 6px; } }
+
+/* A compact checkbox menu keeps bookmark settings together while supporting combinations. */
+.collection-settings { position: relative; width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.collection-settings > summary { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 0 12px; color: var(--ink); cursor: pointer; font-weight: 750; list-style: none; }
+.collection-settings > summary::-webkit-details-marker { display: none; }.collection-settings > summary::after { content: "⌄"; color: var(--muted); font-size: 1rem; }.collection-settings > summary small { margin-left: auto; margin-right: 9px; color: var(--muted); font-size: .76rem; font-weight: 700; }
+.collection-settings-menu { display: grid; gap: 7px; padding: 10px 12px 13px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--brand-soft) 16%, #fff); }
+.collection-settings-menu > label { display: flex; align-items: center; gap: 9px; min-height: 29px; color: var(--ink); font-size: .87rem; font-weight: 700; }.collection-settings-menu input { width: 16px; height: 16px; margin: 0; accent-color: var(--brand); }
+.collection-settings-menu > span { color: var(--muted); font-size: .76rem; font-weight: 800; }.collection-settings-divider { height: 1px; margin: 2px 0; background: var(--line); }
+html[data-theme="dark"] .collection-settings { border-color: #48566f; background: #1b263a; } html[data-theme="dark"] .collection-settings-menu { border-color: #48566f; background: #202b40; }
