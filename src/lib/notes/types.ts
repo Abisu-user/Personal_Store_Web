@@ -1,6 +1,7 @@
 export type NoteCategory = { id: string; name: string; sort_order: number };
 export type NoteTag = { id: string; name: string; color: string | null };
-export type NoteFolder = { id: string; name: string; sort_order: number; is_visible: boolean };
+import type { FolderLockStatus } from "@/lib/folder-locks/types";
+export type NoteFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;
 
 export type Note = {
   id: string;

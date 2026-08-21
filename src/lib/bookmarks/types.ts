@@ -1,5 +1,6 @@
 export type BookmarkCategory = { id: string; name: string; sort_order: number };
-export type BookmarkFolder = { id: string; name: string; sort_order: number; is_visible: boolean };
+import type { FolderLockStatus } from "@/lib/folder-locks/types";
+export type BookmarkFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;
 export type BookmarkTag = { id: string; name: string; color: string | null };
 export type Bookmark = {
   id: string;

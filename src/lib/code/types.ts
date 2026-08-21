@@ -1,6 +1,7 @@
 export type CodeCategory = { id: string; name: string; sort_order: number };
 export type CodeTag = { id: string; name: string; color: string | null };
-export type CodeFolder = { id: string; name: string; sort_order: number; is_visible: boolean };
+import type { FolderLockStatus } from "@/lib/folder-locks/types";
+export type CodeFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;
 
 export type CodeSnippet = {
   id: string;

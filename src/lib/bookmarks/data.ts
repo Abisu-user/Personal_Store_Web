@@ -2,10 +2,12 @@ import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
+import { getFolderLockState } from "@/lib/folder-locks/server";
 
 /** Server-only collection read shared by the page and its internal API. */
 export async function getBookmarksWorkspaceData(ownerId: string): Promise<BookmarksWorkspaceData> {
   const admin = createAdminClient();
+  const lockState = await getFolderLockState(ownerId, "bookmark");
   // A collection read is also the fallback cleanup path when the scheduled job is unavailable.
   // This keeps a trashed entry out of the account on its first visit after 30 days.
   await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "bookmark").lt("deleted_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
@@ -26,7 +28,10 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     throw new Error("Unable to load bookmarks.");
   }
 
-  const bookmarks: Bookmark[] = (entriesResult.data ?? []).map((entry) => ({
+  const bookmarks: Bookmark[] = (entriesResult.data ?? []).flatMap((entry) => {
+    const folder = Array.isArray(entry.bookmark_folders) ? entry.bookmark_folders[0] ?? null : entry.bookmark_folders;
+    if (folder && lockState.locks.has(folder.id) && !lockState.unlockedFolderIds.has(folder.id)) return [];
+    return [{
     id: entry.id,
     title: entry.title,
     description: entry.description,
@@ -37,17 +42,18 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
     category: Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories,
-    folder: Array.isArray(entry.bookmark_folders) ? entry.bookmark_folders[0] ?? null : entry.bookmark_folders,
+    folder,
     detail: Array.isArray(entry.bookmark_details) ? entry.bookmark_details[0] ?? null : entry.bookmark_details,
     tags: (entry.entry_tags ?? []).flatMap((item) =>
       Array.isArray(item.tags) ? item.tags : item.tags ? [item.tags] : [],
     ),
-  }));
+    }];
+  });
 
   return {
     bookmarks,
     categories: categoriesResult.data ?? [],
-    folders: foldersResult.data ?? [],
+    folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })),
     tags: tagsResult.data ?? [],
   };
 }

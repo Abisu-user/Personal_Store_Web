@@ -8,9 +8,10 @@ import type { NotesWorkspaceData } from "@/lib/notes/types";
 import type { CodeWorkspaceData } from "@/lib/code/types";
 import type { FilesWorkspaceData } from "@/lib/files/types";
 import type { PhotosWorkspaceData } from "@/lib/photos/types";
+import type { FolderLockKind, FolderLockMode } from "@/lib/folder-locks/types";
 
 type Tab = "bookmark" | "note" | "code" | "file" | "photo";
-type Item = { id: string; name: string; is_visible?: boolean };
+type Item = { id: string; name: string; is_visible?: boolean; is_locked?: boolean; lock_mode?: FolderLockMode | null };
 type ContentItem = { category: { id: string } | null; folder: { id: string } | null; favorite: boolean; pinned: boolean; archived: boolean; deletedAt: string | null };
 type SmartKey = "favorite" | "pinned" | "archived" | "trash";
 type SmartSettings = Record<SmartKey, { label: string; visible: boolean }>;
@@ -25,6 +26,18 @@ const smartDefaults: SmartSettings = {
   trash: { label: "垃圾桶", visible: true },
 };
 const smartStorageKey = (tab: Tab) => tab === "bookmark" ? "personal-vault:bookmark-system-folders:v1" : `personal-vault:${tab}:system-folders:v1`;
+
+function FolderLockSettings({ folders, kind, onChange }: { folders: Item[]; kind: FolderLockKind; onChange: (items: Item[]) => void }) {
+  const [folderId, setFolderId] = useState("");
+  const [mode, setMode] = useState<FolderLockMode>("pin4");
+  const [password, setPassword] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const selected = folders.find((folder) => folder.id === folderId);
+  async function configure(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!selected) return; setPending(true); setError(null); try { const response = await fetch("/api/folder-locks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "configure", kind, folderId: selected.id, mode, password }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法設定資料夾鎖定。 "); onChange(folders.map((folder) => folder.id === selected.id ? { ...folder, is_locked: true, lock_mode: mode } : folder)); setPassword(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法設定資料夾鎖定。 "); } finally { setPending(false); } }
+  async function remove() { if (!selected) return; setPending(true); setError(null); try { const response = await fetch("/api/folder-locks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "remove", kind, folderId: selected.id }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法解除鎖定。 "); onChange(folders.map((folder) => folder.id === selected.id ? { ...folder, is_locked: false, lock_mode: null } : folder)); setPassword(""); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法解除鎖定。 "); } finally { setPending(false); } }
+  return <details className="folder-lock-settings"><summary>🔒 資料夾鎖定 <small>選擇要保護的資料夾</small></summary><div className="folder-lock-settings-body"><label>資料夾<select onChange={(event) => setFolderId(event.target.value)} value={folderId}><option value="">選擇資料夾</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.is_locked ? "🔒 " : ""}{folder.name}</option>)}</select></label>{selected && <form onSubmit={configure}><label>密碼類型<select onChange={(event) => setMode(event.target.value as FolderLockMode)} value={mode}><option value="pin4">4 位數 PIN 碼</option><option value="pin6">6 位數 PIN 碼</option><option value="password">英文＋數字＋符號密碼</option></select></label><label>{mode === "password" ? "新密碼（至少 10 字元）" : `PIN 碼（${mode === "pin4" ? 4 : 6} 位數）`}<input autoComplete="new-password" inputMode={mode === "password" ? undefined : "numeric"} maxLength={mode === "password" ? 128 : mode === "pin4" ? 4 : 6} onChange={(event) => setPassword(event.target.value)} pattern={mode === "password" ? undefined : "[0-9]*"} required type="password" value={password} /></label>{error && <p className="notice error" role="alert">{error}</p>}<div className="manager-actions"><button className="button compact" disabled={pending} type="submit">{pending ? "處理中…" : selected.is_locked ? "變更密碼" : "鎖住資料夾"}</button>{selected.is_locked && <button className="delete-button compact" disabled={pending} onClick={() => void remove()} type="button">解除鎖定</button>}</div></form>}</div></details>;
+}
 
 function ItemManager({ api, contentKind, count, description, fixedCount, items, kind, onChange, title }: {
   api: "/api/taxonomy" | "/api/content-folders";
@@ -43,6 +56,7 @@ function ItemManager({ api, contentKind, count, description, fixedCount, items, 
   const [value, setValue] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const folderLockKind: FolderLockKind | null = kind === "bookmark_folder" ? "bookmark" : kind === "category" || !contentKind ? null : contentKind;
 
   async function mutate(method: "POST" | "PATCH" | "DELETE", body: object) {
     setPending(true); setError(null);
@@ -70,6 +84,7 @@ function ItemManager({ api, contentKind, count, description, fixedCount, items, 
       {fixedCount !== undefined && <article className="folder-row system-folder"><div><strong>未分類 <em>{fixedCount}</em></strong><small>固定保留，未指定類別的資料會顯示於此</small></div><span>固定保留</span></article>}
       {items.length ? items.map((item) => <article className="folder-row" key={item.id}><div>{editing === item.id ? <input aria-label={`修改${title}名稱`} autoFocus onChange={(event) => setValue(event.target.value)} value={value} /> : <><strong>{item.name} <em>{count(item.id)}</em></strong>{item.is_visible !== undefined && <small>{item.is_visible ? "目前顯示於清單與選單" : "目前已隱藏"}</small>}</>}</div><div className="manager-actions">{editing === item.id ? <><button className="button compact" disabled={pending} onClick={() => { if (value.trim()) void mutate("PATCH", { id: item.id, name: value.trim() }).then((ok) => ok && setEditing(null)); }} type="button">儲存</button><button className="secondary-button compact" disabled={pending} onClick={() => setEditing(null)} type="button">取消</button></> : <>{item.is_visible !== undefined && <button className="secondary-button compact" disabled={pending} onClick={() => void mutate("PATCH", { id: item.id, visible: !item.is_visible })} type="button">{item.is_visible ? "隱藏" : "顯示"}</button>}<button className="secondary-button compact" disabled={pending} onClick={() => { setEditing(item.id); setValue(item.name); }} type="button">修改</button><button className="delete-button compact" disabled={pending} onClick={() => void mutate("DELETE", { id: item.id })} type="button">移除</button></>}</div></article>) : <p className="manager-empty">尚未建立項目。</p>}
     </div>
+    {folderLockKind && <FolderLockSettings folders={items} kind={folderLockKind} onChange={onChange} />}
   </section>;
 }
 
