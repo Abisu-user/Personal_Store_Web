@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Accent, Appearance, Background, BackgroundRotation, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, normalizeHexColor, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { Accent, Appearance, Background, BackgroundRotation, Density, FontFamily, Theme, activeBackground, appearanceDefaults, appearanceStorageKey, applyAppearance, getBackgroundImageUrl, hydrateAppearanceImages, normalizeHexColor, readAppearance, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
 
 const options = {
   theme: [["system", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as const,
@@ -22,7 +22,8 @@ async function prepareImage(file: File) {
     const scale = Math.min(1, 2048 / image.naturalWidth, 1152 / image.naturalHeight);
     const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
     canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return { dataUrl: canvas.toDataURL("image/webp", 0.9), lowQuality: image.naturalWidth < 2048 || image.naturalHeight < 1152 };
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("IMAGE_ENCODE_FAILED")), "image/webp", 0.9));
+    return { blob, lowQuality: image.naturalWidth < 2048 || image.naturalHeight < 1152 };
   } finally { URL.revokeObjectURL(source); }
 }
 
@@ -32,24 +33,25 @@ export function AppearanceSettings() {
   const [imageNotice, setImageNotice] = useState<string | null>(null);
   const rgb = useMemo(() => hexToRgb(appearance.customColor), [appearance.customColor]);
   const imageMode = appearance.background === "image";
-  useEffect(() => { const stored = readAppearance(); applyAppearance(stored); const timer = window.setTimeout(() => { setAppearance(stored); setReady(true); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { let active = true; const stored = readAppearance(); applyAppearance(stored); void hydrateAppearanceImages(stored).then((hydrated) => { if (!active) return; applyAppearance(hydrated); setAppearance(hydrated); setReady(true); }).catch(() => { if (active) { setAppearance(stored); setReady(true); } }); return () => { active = false; }; }, []);
   function commit(next: Appearance) { setAppearance(next); saveAppearance(next); }
   function update<Key extends keyof Appearance>(key: Key, value: Appearance[Key]) { commit({ ...appearance, [key]: value } as Appearance); }
   function updateCustomColor(value: string) { commit({ ...appearance, accent: "custom" as Accent, customColor: normalizeHexColor(value, appearance.customColor) }); }
   function updateRgb(index: number, value: string) { if (value === "") return; const parsed = Number.parseInt(value, 10); if (!Number.isFinite(parsed)) return; const nextRgb = [...rgb]; nextRgb[index] = Math.max(0, Math.min(255, parsed)); updateCustomColor(rgbToHex(nextRgb)); }
-  function reset() { setAppearance(appearanceDefaults); applyAppearance(appearanceDefaults); ["personal-vault:appearance:v1", "personal-vault:appearance:v2", "personal-vault:appearance:v3", "personal-vault:appearance:v4", "personal-vault:appearance:v5", "personal-vault:appearance:v6"].forEach((key) => window.localStorage.removeItem(key)); }
+  function reset() { appearance.backgroundImages.forEach((reference) => { void removeBackgroundImage(reference); }); setAppearance(appearanceDefaults); applyAppearance(appearanceDefaults); [appearanceStorageKey, "personal-vault:appearance:v1", "personal-vault:appearance:v2", "personal-vault:appearance:v3", "personal-vault:appearance:v4", "personal-vault:appearance:v5", "personal-vault:appearance:v6"].forEach((key) => window.localStorage.removeItem(key)); }
   async function chooseBackgrounds(files: FileList | null) {
     if (!files?.length) return;
     const selected = [...files];
     if (selected.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8_000_000)) { setImageNotice("請選擇單張 8 MB 以下的 JPG、PNG 或 WebP 圖片。"); return; }
     try {
-      const images = await Promise.all(selected.slice(0, 4).map(prepareImage)); const merged = [...appearance.backgroundImages, ...images.map((item) => item.dataUrl)].slice(-4); const activeIndex = Math.max(0, merged.length - images.length);
+      const images = await Promise.all(selected.slice(0, 4).map(prepareImage)); const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-4); const activeIndex = Math.max(0, merged.length - references.length);
+      void Promise.all(appearance.backgroundImages.filter((reference) => !merged.includes(reference)).map(removeBackgroundImage));
       commit({ ...appearance, background: "image", backgroundImages: merged, backgroundActiveIndex: activeIndex, backgroundImage: merged[activeIndex] });
       setImageNotice(images.some((item) => item.lowQuality) ? "已加入背景清單。原圖低於建議 2048 × 1152；過度放大或裁切後可能略為失真。" : `已加入 ${images.length} 張高畫質背景圖片。`);
-    } catch { setImageNotice("讀取圖片失敗，請改用 JPG、PNG 或 WebP。"); }
+    } catch (error) { setImageNotice(error instanceof DOMException && error.name === "QuotaExceededError" ? "背景儲存空間不足，請先移除不需要的背景圖片。" : "無法讀取或儲存這張圖片；請再試一次或改用 JPG、PNG、WebP。 "); }
   }
-  function selectImage(index: number) { commit({ ...appearance, background: "image", backgroundActiveIndex: index, backgroundImage: appearance.backgroundImages[index], backgroundRotation: "manual" }); }
-  function removeImage(index: number) { const images = appearance.backgroundImages.filter((_, current) => current !== index); const activeIndex = Math.min(appearance.backgroundActiveIndex, Math.max(0, images.length - 1)); commit({ ...appearance, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] }); setImageNotice(images.length ? "背景圖片已移除。" : "已移除所有自訂背景圖片。"); }
+  function selectImage(index: number) { if (!getBackgroundImageUrl(appearance.backgroundImages[index])) setImageNotice("背景圖片正在載入，請稍候。 "); commit({ ...appearance, background: "image", backgroundActiveIndex: index, backgroundImage: appearance.backgroundImages[index], backgroundRotation: "manual" }); }
+  function removeImage(index: number) { const removed = appearance.backgroundImages[index]; const images = appearance.backgroundImages.filter((_, current) => current !== index); const activeIndex = Math.min(appearance.backgroundActiveIndex, Math.max(0, images.length - 1)); commit({ ...appearance, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] }); void removeBackgroundImage(removed); setImageNotice(images.length ? "背景圖片已移除。" : "已移除所有自訂背景圖片。"); }
   const previewImage = activeBackground(appearance);
 
   return <section aria-busy={!ready} className="appearance-workspace">
