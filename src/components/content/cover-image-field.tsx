@@ -4,6 +4,8 @@ import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 export type CoverCrop = { x: number; y: number; zoom: number };
 export type CoverSelection = { file: File; crop: CoverCrop } | null;
+const coverWidth = 1240;
+const coverHeight = 880;
 
 async function loadImage(source: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -16,8 +18,8 @@ async function loadImage(source: string) {
 
 function drawCover(image: HTMLImageElement, crop: CoverCrop) {
   const canvas = document.createElement("canvas");
-  canvas.width = 1600;
-  canvas.height = 900;
+  canvas.width = coverWidth;
+  canvas.height = coverHeight;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("無法處理封面圖片。");
   const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * (crop.zoom / 100);
@@ -32,20 +34,39 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
   const [preview, setPreview] = useState(initialUrl ?? "");
   const [crop, setCrop] = useState<CoverCrop>({ x: 50, y: 50, zoom: 100 });
   const fileInput = useRef<HTMLInputElement>(null);
+  const sourceFile = useRef<File | null>(null);
   useEffect(() => () => { if (sourceUrl.startsWith("blob:")) URL.revokeObjectURL(sourceUrl); }, [sourceUrl]);
   useEffect(() => {
-    if (!sourceUrl.startsWith("blob:")) { setPreview(sourceUrl); return; }
+    if (!sourceUrl) { setPreview(""); return; }
     let cancelled = false;
     void loadImage(sourceUrl).then((image) => {
       if (!cancelled) setPreview(drawCover(image, crop).toDataURL("image/webp", .92));
-    }).catch(() => { if (!cancelled) setPreview(""); });
+    }).catch(() => { if (!cancelled) setPreview(sourceUrl); });
     return () => { cancelled = true; };
   }, [crop, sourceUrl]);
+  useEffect(() => {
+    if (!initialUrl || sourceUrl.startsWith("blob:")) return;
+    let cancelled = false;
+    void fetch(sourceUrl, { cache: "no-store" }).then(async (response) => {
+      if (!response.ok) throw new Error("無法讀取封面圖片。");
+      const blob = await response.blob();
+      if (!cancelled) sourceFile.current = new File([blob], "cover.webp", { type: blob.type || "image/webp" });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [initialUrl, sourceUrl]);
   function choose(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file) return;
-    setCrop({ x: 50, y: 50, zoom: 100 }); setSourceUrl(URL.createObjectURL(file)); onChange({ file, crop: { x: 50, y: 50, zoom: 100 } });
+    sourceFile.current = file; setCrop({ x: 50, y: 50, zoom: 100 }); setSourceUrl(URL.createObjectURL(file)); onChange({ file, crop: { x: 50, y: 50, zoom: 100 } });
   }
-  function change(key: keyof CoverCrop, value: number) { const next = { ...crop, [key]: value }; setCrop(next); const file = fileInput.current?.files?.[0]; if (file) onChange({ file, crop: next }); }
+  async function selectCrop(next: CoverCrop) {
+    let file = sourceFile.current ?? fileInput.current?.files?.[0] ?? null;
+    if (!file && sourceUrl) {
+      const response = await fetch(sourceUrl, { cache: "no-store" });
+      if (response.ok) { const blob = await response.blob(); file = new File([blob], "cover.webp", { type: blob.type || "image/webp" }); sourceFile.current = file; }
+    }
+    if (file) onChange({ file, crop: next });
+  }
+  function change(key: keyof CoverCrop, value: number) { const next = { ...crop, [key]: value }; setCrop(next); void selectCrop(next); }
   return <fieldset className="content-cover-field"><legend>封面圖片（選填）</legend><input accept="image/jpeg,image/png,image/webp" data-cover-file onChange={choose} ref={fileInput} type="file" />
     {preview && <><div aria-label="封面裁切預覽" className="content-cover-preview" style={{ backgroundImage: `url("${preview}")`, backgroundPosition: "center", backgroundSize: "cover" }} />
       <div className="cover-crop-controls"><label>水平<input max="100" min="0" onChange={(event) => change("x", Number(event.target.value))} type="range" value={crop.x} /></label><label>垂直<input max="100" min="0" onChange={(event) => change("y", Number(event.target.value))} type="range" value={crop.y} /></label><label>放大<input max="180" min="100" onChange={(event) => change("zoom", Number(event.target.value))} type="range" value={crop.zoom} /></label></div></>}
