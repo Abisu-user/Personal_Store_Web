@@ -244,4 +244,22 @@ html[data-has-workspace-image="true"] .app-main { background-color: color-mix(in
 /* Background mode is explicit: visual presets never leak into image mode. */
 html[data-background="default"] body, html[data-background="default"] .app-main { background: #f4f6fb; } html[data-background="mist"] body, html[data-background="mist"] .app-main { background: radial-gradient(circle at 97% 0%, rgb(167 154 235 / 20%), transparent 27%), radial-gradient(circle at 34% 100%, rgb(117 163 232 / 13%), transparent 29%), #f4f6fb; }
 html[data-has-workspace-image="true"] .app-main { background-image: none; } html[data-has-workspace-image="true"] .app-main::before { background-image: var(--workspace-image); background-position: var(--workspace-position); background-size: var(--workspace-size, cover); filter: brightness(var(--workspace-brightness, 100%)) blur(var(--workspace-blur, 0px)); transform: scale(1.025); } html[data-has-workspace-image="true"] .app-main .dashboard-card { background: rgb(255 255 255 / var(--workspace-surface-opacity, 86%)) !important; }
+
+/* Keep the background fixed to the viewport; page content scrolls inside its own frame. */
+html, body { height: 100%; overflow: hidden; }
+.app-shell, .app-main { height: 100dvh; min-height: 0; overflow: hidden; }
+.app-main .dashboard { height: 100%; min-height: 0; box-sizing: border-box; overflow: hidden; }
+.app-main .dashboard > .dashboard-card { height: 100%; min-height: 0; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.app-main .dashboard:has(.dashboard-overview), .app-main .dashboard:has(.profile-workspace) { overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+html[data-background="default"] body, html[data-background="default"] .app-main { background: var(--workspace-canvas-color, #f4f6fb); }
+body, button, input, textarea, select { font-family: var(--workspace-font, Inter, ui-sans-serif, system-ui, sans-serif); }
+html[data-has-custom-text-color="true"] { --ink: var(--user-text-color); }
+.background-color-choice { position: relative; cursor: pointer; }
+.background-color-choice input { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; opacity: 0; }
+.background-swatch.color { background: var(--workspace-canvas-color, #f4f6fb); box-shadow: inset 0 0 0 1px rgb(18 39 73 / 18%); }
+.font-swatch { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 8px; color: #fff; background: linear-gradient(135deg, #375d9d, #8d7acd); font-style: normal; }
+.font-swatch::after { content: "Aa"; font-size: .78rem; font-weight: 800; }
+.font-swatch.rounded::after { font-family: ui-rounded, sans-serif; }.font-swatch.serif::after { font-family: Georgia, serif; }.font-swatch.mono::after { font-family: ui-monospace, monospace; }
+.folder-strip { align-items: center; margin-top: -6px; }.folder-strip > span { color: var(--muted); font-size: .8rem; font-weight: 800; }
+@media (max-width: 820px) { html, body { overflow: hidden; }.app-main .dashboard { width: 100%; padding: 16px; }.app-main .dashboard > .dashboard-card { border-radius: 18px; }.app-main .dashboard:has(.dashboard-overview), .app-main .dashboard:has(.profile-workspace) { overflow-y: auto; } }
 .background-swatch.default { background: linear-gradient(135deg, #f4f6fb, #dfe8f7); }.background-swatch.image { background: linear-gradient(135deg, #6479b8, #eaa8bd 48%, #fed79a); }
