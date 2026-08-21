@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getSecurityContext } from "@/lib/security/activity";
 
 const taxonomyKind = z.enum(["category", "tag", "bookmark_folder"]);
-const contentKind = z.enum(["bookmark", "note", "code", "file"]);
+const contentKind = z.enum(["bookmark", "note", "code", "file", "photo"]);
 const inputSchema = z.object({ kind: taxonomyKind, name: z.string().trim().min(1).max(80), contentKind: contentKind.optional() });
 const deleteSchema = z.object({ kind: taxonomyKind, id: z.string().uuid(), contentKind: contentKind.optional() });
 const updateSchema = z.object({ kind: taxonomyKind, id: z.string().uuid(), name: z.string().trim().min(1).max(80).optional(), visible: z.boolean().optional(), contentKind: contentKind.optional() }).refine((value) => value.name !== undefined || value.visible !== undefined);

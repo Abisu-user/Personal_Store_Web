@@ -3,7 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyCoverUploadTicket } from "@/lib/security/cover-upload-ticket";
 
-export type ContentKind = "note" | "code" | "file";
+export type ContentKind = "note" | "code" | "file" | "photo";
 
 export async function validateContentFolder(ownerId: string, kind: ContentKind, folderId: string | null | undefined) {
   if (!folderId) return true;

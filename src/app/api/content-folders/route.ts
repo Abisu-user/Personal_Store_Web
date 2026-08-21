@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const contentKind = z.enum(["note", "code", "file"]);
+const contentKind = z.enum(["note", "code", "file", "photo"]);
 const createSchema = z.object({ kind: contentKind, name: z.string().trim().min(1).max(80) });
 const updateSchema = z.object({ id: z.string().uuid(), kind: contentKind, name: z.string().trim().min(1).max(80).optional(), visible: z.boolean().optional() }).refine((value) => value.name !== undefined || value.visible !== undefined);
 const deleteSchema = z.object({ id: z.string().uuid(), kind: contentKind });

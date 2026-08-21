@@ -4,10 +4,12 @@ import { BookmarksWorkspace } from "@/components/bookmarks/bookmarks-workspace";
 import { CodeWorkspace } from "@/components/code/code-workspace";
 import { FilesWorkspace } from "@/components/files/files-workspace";
 import { NotesWorkspace } from "@/components/notes/notes-workspace";
+import { PhotosWorkspace } from "@/components/photos/photos-workspace";
 import { getBookmarksWorkspaceData } from "@/lib/bookmarks/data";
 import { getCodeWorkspaceData } from "@/lib/code/data";
 import { getFilesWorkspaceData } from "@/lib/files/data";
 import { getNotesWorkspaceData } from "@/lib/notes/data";
+import { getPhotosWorkspaceData } from "@/lib/photos/data";
 import { requireMfaIfEnrolled } from "@/lib/security/require-mfa";
 import { requireUser } from "@/lib/security/require-user";
 
@@ -23,6 +25,7 @@ export default async function CreateTypePage({ params }: { params: Promise<{ typ
       case "note": return <NotesWorkspace createMode initialData={await getNotesWorkspaceData(user.id)} />;
       case "code": return <CodeWorkspace createMode initialData={await getCodeWorkspaceData(user.id)} />;
       case "file": return <FilesWorkspace createMode initialData={await getFilesWorkspaceData(user.id)} />;
+      case "photo": return <PhotosWorkspace createMode initialData={await getPhotosWorkspaceData(user.id)} />;
       default: return null;
     }
   })();
