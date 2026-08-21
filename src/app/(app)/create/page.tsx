@@ -8,7 +8,6 @@ const choices = [
   { href: "/create/note", icon: "□", title: "建立筆記", description: "記下文字、想法與 Markdown 內容。" },
   { href: "/create/code", icon: "⌘", title: "建立程式碼", description: "儲存程式片段、語言與說明。" },
   { href: "/create/file", icon: "▣", title: "上傳檔案", description: "上傳到受保護的私人檔案空間。" },
-  { href: "/organize", icon: "☷", title: "管理類別／資料夾", description: "集中整理收藏、筆記、程式碼與檔案。" },
 ];
 
 export default function CreatePage() {
