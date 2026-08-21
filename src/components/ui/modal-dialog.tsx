@@ -40,5 +40,5 @@ export function ModalDialog({ children, onClose, open, pending = false, title }:
 }
 
 export function OperationStatus({ label = "正在處理資料…" }: { label?: string }) {
-  return <div aria-live="polite" className="operation-status" role="status"><span aria-hidden="true" />{label}</div>;
+  return <div aria-live="assertive" className="operation-status" role="status"><div className="operation-status-card"><span aria-hidden="true" />{label}</div></div>;
 }

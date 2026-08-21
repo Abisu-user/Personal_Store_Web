@@ -51,23 +51,27 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "密碼已更新。" });
   }
 
-  if (parsed.data.email !== (userData.user.email ?? "").toLowerCase()) {
-    const { error: emailError } = await supabase.auth.updateUser({ email: parsed.data.email });
-    if (emailError) return jsonError(emailError.message, 400);
-  }
+  const currentEmail = (userData.user.email ?? "").toLowerCase();
+  const { error: authError } = await supabase.auth.updateUser({
+    ...(parsed.data.email !== currentEmail ? { email: parsed.data.email } : {}),
+    data: { username: parsed.data.username, display_name: parsed.data.displayName || null },
+  });
+  if (authError) return jsonError(authError.message, 400);
 
-  const { error: profileError } = await createAdminClient().from("profiles").update({
+  const { data: savedProfile, error: profileError } = await createAdminClient().from("profiles").update({
     display_name: parsed.data.displayName || null,
     username: parsed.data.username,
     avatar_path: parsed.data.avatar,
-  }).eq("id", context.userId);
+  }).eq("id", context.userId).select("username, display_name, avatar_path").maybeSingle();
   if (profileError) {
     if (profileError.code === "23505") return jsonError("此使用者名稱已被使用。", 409);
     return jsonError("無法儲存個人資料。", 503);
   }
+  if (!savedProfile) return jsonError("找不到個人資料，請重新登入後再試。", 404);
 
   return NextResponse.json({
-    message: parsed.data.email !== (userData.user.email ?? "").toLowerCase()
+    profile: savedProfile,
+    message: parsed.data.email !== currentEmail
       ? "個人資料已儲存；請至新信箱完成驗證。"
       : "個人資料已儲存。",
   });

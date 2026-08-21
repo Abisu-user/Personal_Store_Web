@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { PasswordInput } from "@/components/auth/password-input";
 import { profileAvatars, type ProfileAvatar } from "@/lib/profile/constants";
 
@@ -10,6 +11,7 @@ type ProfileSettingsProps = {
 };
 
 export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps) {
+  const router = useRouter();
   const [profile, setProfile] = useState({
     displayName: initialProfile.displayName ?? "",
     username: initialProfile.username,
@@ -32,7 +34,9 @@ export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps)
     const result = await response.json().catch(() => null);
     setProfilePending(false);
     if (!response.ok) { setError(result?.error ?? "無法儲存個人資料。"); return; }
+    if (result?.profile) setProfile((current) => ({ ...current, username: result.profile.username, displayName: result.profile.display_name ?? "", avatar: result.profile.avatar_path }));
     setMessage(result?.message ?? "個人資料已儲存。");
+    router.refresh();
   }
 
   async function changePassword(event: FormEvent<HTMLFormElement>) {
