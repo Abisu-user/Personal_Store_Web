@@ -6,9 +6,17 @@ import { AppearanceProvider } from "@/components/appearance/appearance-provider"
 export const metadata: Metadata = {
   title: "Personal Digital Vault",
   description: "Secure personal information storage.",
+  applicationName: "Personal Vault",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Personal Vault",
+  },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     shortcut: ["/icon.svg"],
+    apple: [{ url: "/apple-icon", sizes: "180x180", type: "image/png" }],
   },
   robots: { index: false, follow: false },
 };
