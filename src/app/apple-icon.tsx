@@ -50,7 +50,7 @@ export default function AppleIcon() {
               position: "absolute",
               top: -27,
               border: "10px solid #314d98",
-              borderBottom: 0,
+              borderBottom: "0px",
               borderRadius: "22px 22px 0 0",
             }}
           />
