@@ -9,6 +9,8 @@
   --danger: #b42318;
   --success: #087443;
 }
+.photo-card-wrap { position: relative; }
+.photo-card-wrap .item-select { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 5px; border-radius: 7px; background: rgb(255 255 255 / 88%); }
 
 * { box-sizing: border-box; }
 
