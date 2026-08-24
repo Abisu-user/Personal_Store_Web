@@ -375,6 +375,10 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   html[data-has-workspace-image="true"], html[data-has-workspace-image="true"] body { background-color: color-mix(in srgb, var(--workspace-tint) 72%, #172137); background-image: var(--workspace-image); background-position: var(--workspace-position); background-size: var(--workspace-size, cover); background-attachment: fixed; }
   html, body { min-height: 100lvh; }
   .app-shell { min-height: 100lvh; }
+  /* Keep the system gesture area clear, but do not leave an oversized blank
+     band beneath the navigation labels in standalone iOS. */
+  .mobile-bottom-nav { padding-bottom: max(5px, calc(env(safe-area-inset-bottom) * .58)); }
+  .mobile-bottom-nav .mobile-create { margin-top: -19px; }
   .app-route-loading { display: grid; min-height: 100%; place-content: center; gap: 10px; color: var(--muted); text-align: center; }
   .app-route-loading span { width: 28px; height: 28px; justify-self: center; border: 3px solid color-mix(in srgb, var(--brand) 20%, transparent); border-top-color: var(--brand); border-radius: 50%; animation: operation-spin .72s linear infinite; }
   .app-route-loading p { margin: 0; font-size: .84rem; font-weight: 800; }
