@@ -68,7 +68,7 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
   }
   function change(key: keyof CoverCrop, value: number) { const next = { ...crop, [key]: value }; setCrop(next); void selectCrop(next); }
   return <fieldset className="content-cover-field"><legend>封面圖片（選填）</legend><input accept="image/jpeg,image/png,image/webp" data-cover-file onChange={choose} ref={fileInput} type="file" />
-    {preview && <><div aria-label="封面裁切預覽" className="content-cover-preview" style={{ backgroundImage: `url("${preview}")`, backgroundPosition: "center", backgroundSize: "cover" }} />
+    {preview && <><div aria-label="封面裁切預覽" className="content-cover-preview"><img alt="封面裁切預覽" src={preview} /></div>
       <div className="cover-crop-controls"><label>水平<input max="100" min="0" onChange={(event) => change("x", Number(event.target.value))} type="range" value={crop.x} /></label><label>垂直<input max="100" min="0" onChange={(event) => change("y", Number(event.target.value))} type="range" value={crop.y} /></label><label>放大<input max="180" min="100" onChange={(event) => change("zoom", Number(event.target.value))} type="range" value={crop.zoom} /></label></div></>}
   </fieldset>;
 }
