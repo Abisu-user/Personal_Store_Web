@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyAppearance, hydrateAppearanceImages, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { applyAppearance, hydrateAppearanceImages, migrateAppearanceForCurrentDevice, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
 
 /** Applies the saved device preference and loads background binaries from IndexedDB. */
 export function AppearanceProvider() {
@@ -11,6 +11,7 @@ export function AppearanceProvider() {
       window.clearInterval(timer); let appearance = readAppearance();
       try { appearance = await hydrateAppearanceImages(appearance); } catch { /* Keep non-image preferences even when browser storage is unavailable. */ }
       if (cancelled) return;
+      migrateAppearanceForCurrentDevice(appearance);
       if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) { appearance = nextBackground(appearance); saveAppearance(appearance); } else applyAppearance(appearance);
       if (appearance.backgroundRotation === "interval" && appearance.backgroundImages.length > 1) timer = window.setInterval(() => saveAppearance(nextBackground(readAppearance())), appearance.backgroundRotationMinutes * 60_000);
     };

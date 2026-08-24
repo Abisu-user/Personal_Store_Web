@@ -1,4 +1,6 @@
-export const appearanceStorageKey = "personal-vault:appearance:v7";
+const legacyAppearanceStorageKey = "personal-vault:appearance:v7";
+const desktopAppearanceStorageKey = "personal-vault:appearance:desktop:v1";
+const mobileAppearanceStorageKey = "personal-vault:appearance:mobile:v1";
 
 export type Theme = "light" | "dark" | "system";
 export type Accent = "blue" | "violet" | "emerald" | "rose" | "custom";
@@ -27,6 +29,13 @@ const imageReferencePrefix = "workspace-image:";
 const imageCache = new Map<string, string>();
 let databasePromise: Promise<IDBDatabase> | undefined;
 
+/** Appearance is intentionally device-class specific: a phone can use a
+ * different workspace image and layout from a desktop browser. */
+export function isMobileAppearanceDevice() { return typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches; }
+export function getAppearanceStorageKey() { return isMobileAppearanceDevice() ? mobileAppearanceStorageKey : desktopAppearanceStorageKey; }
+export function appearanceDeviceLabel() { return isMobileAppearanceDevice() ? "手機版" : "電腦版"; }
+function hasScopedAppearance() { return Boolean(window.localStorage.getItem(getAppearanceStorageKey())); }
+
 export function normalizeHexColor(value: unknown, fallback = appearanceDefaults.customColor) { return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback; }
 function clamp(value: unknown, min: number, max: number, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback; }
 function isStoredImage(value: string) { return value.startsWith(imageReferencePrefix); }
@@ -47,6 +56,9 @@ function requestResult<T>(request: IDBRequest<T>) { return new Promise<T>((resol
 /** Stores image binaries outside localStorage so four high-quality backgrounds remain reliable. */
 export async function storeBackgroundImage(blob: Blob) {
   try {
+    // Added-to-home-screen iOS apps can discard best-effort storage sooner than
+    // desktop browsers. Request persistent storage where the platform supports it.
+    await navigator.storage?.persist?.();
     const id = `${imageReferencePrefix}${crypto.randomUUID()}`;
     const db = await imageDb(); const transaction = db.transaction("images", "readwrite"); transaction.objectStore("images").put(blob, id);
     await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); transaction.onabort = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); });
@@ -98,7 +110,7 @@ export function normalizeAppearance(value: unknown): Appearance {
   return { theme: candidate.theme as Theme, accent: candidate.accent as Accent, background: candidate.background as Background, density: candidate.density as Density, customColor: normalizeHexColor(candidate.customColor), backgroundImage: backgroundImages[activeIndex], backgroundImages, backgroundActiveIndex: activeIndex, backgroundPosition: positions.includes(legacyPosition as typeof positions[number]) ? legacyPosition : "center", backgroundPositionX: clamp(candidate.backgroundPositionX, 0, 100, position[0]), backgroundPositionY: clamp(candidate.backgroundPositionY, 0, 100, position[1]), backgroundZoom: clamp(candidate.backgroundZoom, 100, 180, 100), backgroundTint: normalizeHexColor(candidate.backgroundTint, "#FFFFFF"), canvasColor: normalizeHexColor(candidate.canvasColor, "#F4F6FB"), textColor: typeof candidate.textColor === "string" && /^#[0-9a-f]{6}$/i.test(candidate.textColor) ? candidate.textColor.toUpperCase() : undefined, fontFamily: fontFamilies.includes(candidate.fontFamily as FontFamily) ? candidate.fontFamily as FontFamily : "system", fontScale: Math.round(clamp(candidate.fontScale, 85, 120, 100)), backgroundBrightness: clamp(candidate.backgroundBrightness, 60, 150, 100), backgroundBlur: clamp(candidate.backgroundBlur, 0, 20, 0), surfaceOpacity: clamp(candidate.surfaceOpacity, 35, 100, 86), backgroundRotation: rotations.includes(candidate.backgroundRotation as BackgroundRotation) ? candidate.backgroundRotation as BackgroundRotation : "manual", backgroundRotationMinutes: Math.round(clamp(candidate.backgroundRotationMinutes, 1, 1440, 15)), bookmarkDisplay: bookmarkDisplays.includes(candidate.bookmarkDisplay as BookmarkDisplay) ? candidate.bookmarkDisplay as BookmarkDisplay : "list", bookmarkGridColumns: Math.round(clamp(candidate.bookmarkGridColumns, 1, 4, 2)) };
 }
 
-export function readAppearance(): Appearance { try { return normalizeAppearance(JSON.parse(window.localStorage.getItem(appearanceStorageKey) ?? window.localStorage.getItem("personal-vault:appearance:v6") ?? window.localStorage.getItem("personal-vault:appearance:v5") ?? window.localStorage.getItem("personal-vault:appearance:v4") ?? window.localStorage.getItem("personal-vault:appearance:v3") ?? window.localStorage.getItem("personal-vault:appearance:v2") ?? window.localStorage.getItem("personal-vault:appearance:v1") ?? "{}")); } catch { return appearanceDefaults; } }
+export function readAppearance(): Appearance { try { return normalizeAppearance(JSON.parse(window.localStorage.getItem(getAppearanceStorageKey()) ?? window.localStorage.getItem(legacyAppearanceStorageKey) ?? window.localStorage.getItem("personal-vault:appearance:v6") ?? window.localStorage.getItem("personal-vault:appearance:v5") ?? window.localStorage.getItem("personal-vault:appearance:v4") ?? window.localStorage.getItem("personal-vault:appearance:v3") ?? window.localStorage.getItem("personal-vault:appearance:v2") ?? window.localStorage.getItem("personal-vault:appearance:v1") ?? "{}")); } catch { return appearanceDefaults; } }
 export function activeBackground(appearance: Appearance) { return getBackgroundImageUrl(appearance.backgroundImages[appearance.backgroundActiveIndex] ?? appearance.backgroundImage); }
 export function nextBackground(appearance: Appearance): Appearance { return appearance.backgroundImages.length > 1 ? { ...appearance, backgroundActiveIndex: (appearance.backgroundActiveIndex + 1) % appearance.backgroundImages.length } : appearance; }
 export function applyAppearance(appearance: Appearance) {
@@ -107,4 +119,6 @@ export function applyAppearance(appearance: Appearance) {
   const font = normalized.fontFamily === "rounded" ? "ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif" : normalized.fontFamily === "serif" ? "Iowan Old Style, 'Noto Serif TC', Georgia, serif" : normalized.fontFamily === "mono" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "Inter, ui-sans-serif, system-ui, sans-serif";
   root.style.setProperty("--custom-brand", normalized.customColor); root.style.setProperty("--workspace-image", image ? `url("${image}")` : "none"); root.style.setProperty("--workspace-position", `${normalized.backgroundPositionX}% ${normalized.backgroundPositionY}%`); root.style.setProperty("--workspace-size", `${normalized.backgroundZoom}%`); root.style.setProperty("--workspace-tint", normalized.backgroundTint ?? "#FFFFFF"); root.style.setProperty("--workspace-canvas-color", normalized.canvasColor); root.style.setProperty("--workspace-font", font); root.style.setProperty("--user-font-scale", `${normalized.fontScale / 100}`); root.style.setProperty("--bookmark-grid-columns", String(normalized.bookmarkGridColumns)); root.style.setProperty("--user-text-color", normalized.textColor ?? ""); root.style.setProperty("--workspace-brightness", `${normalized.backgroundBrightness}%`); root.style.setProperty("--workspace-blur", `${normalized.backgroundBlur}px`); root.style.setProperty("--workspace-surface-opacity", `${normalized.surfaceOpacity}%`); root.dataset.hasWorkspaceImage = image && normalized.background === "image" ? "true" : "false"; root.dataset.hasCustomTextColor = normalized.textColor ? "true" : "false";
 }
-export function saveAppearance(appearance: Appearance) { const normalized = normalizeAppearance(appearance); applyAppearance(normalized); window.localStorage.setItem(appearanceStorageKey, JSON.stringify(normalized)); ["personal-vault:appearance:v1", "personal-vault:appearance:v2", "personal-vault:appearance:v3", "personal-vault:appearance:v4", "personal-vault:appearance:v5", "personal-vault:appearance:v6"].forEach((key) => window.localStorage.removeItem(key)); window.dispatchEvent(new Event("personal-vault:appearance")); }
+export function saveAppearance(appearance: Appearance) { const normalized = normalizeAppearance(appearance); applyAppearance(normalized); window.localStorage.setItem(getAppearanceStorageKey(), JSON.stringify(normalized)); window.dispatchEvent(new Event("personal-vault:appearance")); }
+export function migrateAppearanceForCurrentDevice(appearance: Appearance) { if (!hasScopedAppearance()) saveAppearance(appearance); }
+export function resetAppearanceForCurrentDevice() { window.localStorage.removeItem(getAppearanceStorageKey()); }
