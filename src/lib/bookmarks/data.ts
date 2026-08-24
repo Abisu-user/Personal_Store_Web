@@ -14,7 +14,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   const [entriesResult, categoriesResult, foldersResult, tagsResult] = await Promise.all([
     admin
       .from("entries")
-      .select("id, title, description, category_id, bookmark_folder_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_folders(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
+      .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_folders(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
       .eq("owner_id", ownerId)
       .eq("kind", "bookmark")
       .order("updated_at", { ascending: false })
@@ -41,6 +41,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     deletedAt: entry.deleted_at,
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
+    coverImageUrl: entry.cover_image_path ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null,
     category: Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories,
     folder,
     detail: Array.isArray(entry.bookmark_details) ? entry.bookmark_details[0] ?? null : entry.bookmark_details,

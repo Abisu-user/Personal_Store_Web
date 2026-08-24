@@ -30,5 +30,6 @@ export default async function CreateTypePage({ params }: { params: Promise<{ typ
     }
   })();
   if (!content) notFound();
-  return <main className="dashboard"><section className="dashboard-card"><div className="create-page-heading"><div><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1></div><Link className="secondary-button create-back-link" href="/create">← 返回選擇新增種類</Link></div>{content}</section></main>;
+  const returnHref = ({ bookmark: "/bookmarks", note: "/notes", code: "/code", file: "/files", photo: "/photos" } as Record<string, string>)[type] ?? "/create";
+  return <main className="dashboard"><section className="dashboard-card"><div className="create-page-heading"><div><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1></div><Link className="secondary-button create-back-link" href={returnHref}>取消並返回</Link></div>{content}</section></main>;
 }

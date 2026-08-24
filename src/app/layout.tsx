@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AppearanceProvider } from "@/components/appearance/appearance-provider";
@@ -19,6 +19,15 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-icon", sizes: "180x180", type: "image/png" }],
   },
   robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#6572df",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -12,6 +12,7 @@ export type Bookmark = {
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  coverImageUrl: string | null;
   category: Pick<BookmarkCategory, "id" | "name"> | null;
   folder: Pick<BookmarkFolder, "id" | "name" | "is_visible"> | null;
   detail: { url: string; favicon_url: string | null; site_title: string | null; notes: string | null } | null;

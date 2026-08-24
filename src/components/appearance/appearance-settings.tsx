@@ -45,7 +45,7 @@ export function AppearanceSettings() {
     const selected = [...files];
     if (selected.some((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 8_000_000)) { setImageNotice("請選擇單張 8 MB 以下的 JPG、PNG 或 WebP 圖片。"); return; }
     try {
-      const images = await Promise.all(selected.slice(0, 4).map(prepareImage)); const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-4); const activeIndex = Math.max(0, merged.length - references.length);
+      const available = Math.max(0, 10 - appearance.backgroundImages.length); const images = await Promise.all(selected.slice(0, available).map(prepareImage)); if (!images.length) { setImageNotice("背景圖片最多可保留 10 張，請先移除不需要的圖片。"); return; } const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-10); const activeIndex = Math.max(0, merged.length - references.length);
       void Promise.all(appearance.backgroundImages.filter((reference) => !merged.includes(reference)).map(removeBackgroundImage));
       commit({ ...appearance, background: "image", backgroundImages: merged, backgroundActiveIndex: activeIndex, backgroundImage: merged[activeIndex] });
       setImageNotice(images.some((item) => item.lowQuality) ? "已加入背景清單。原圖低於建議 2048 × 1152；過度放大或裁切後可能略為失真。" : `已加入 ${images.length} 張高畫質背景圖片。`);
