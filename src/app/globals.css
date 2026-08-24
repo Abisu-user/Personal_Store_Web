@@ -338,7 +338,7 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .page-heading .eyebrow { margin-top: 0; }
 .page-heading h1 { margin: 5px 0 0; }
 .page-heading p:not(.eyebrow) { margin-bottom: 0; }
-.page-create-button { flex: 0 0 auto; min-height: 42px; padding-inline: 16px; text-align: center; white-space: nowrap; }
+.page-create-button { width: auto; flex: 0 0 auto; min-height: 42px; padding-inline: 16px; text-align: center; white-space: nowrap; }
 @media (max-width: 700px) { .page-heading { align-items: flex-start; gap: 12px; }.page-create-button { min-height: 44px; padding-inline: 12px; font-size: .82rem; } }
 .background-image-controls > label:first-child { font-size: 0; }
 .background-image-controls > label:first-child::before { content: "上傳圖片（最多 10 張）"; font-size: .88rem; }

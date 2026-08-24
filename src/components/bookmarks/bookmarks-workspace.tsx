@@ -40,10 +40,17 @@ function expiry(value: string) { const days = Math.ceil(Math.max(0, new Date(val
 function BookmarkCoverField({ initialUrl }: { initialUrl?: string | null }) {
   const [ticket, setTicket] = useState("");
   const [coverError, setCoverError] = useState<string | null>(null);
+  const latestRequest = useRef(0);
   async function change(selection: CoverSelection) {
+    const request = ++latestRequest.current;
     setTicket(""); setCoverError(null);
     if (!selection) return;
-    try { setTicket((await uploadCover(selection)) ?? ""); } catch (error) { setCoverError(error instanceof Error ? error.message : "無法處理自訂封面。"); }
+    try {
+      const nextTicket = await uploadCover(selection);
+      if (request === latestRequest.current) setTicket(nextTicket ?? "");
+    } catch (error) {
+      if (request === latestRequest.current) setCoverError(error instanceof Error ? error.message : "無法處理自訂封面。");
+    }
   }
   return <div className="bookmark-custom-cover"><CoverImageField initialUrl={initialUrl} onChange={(selection) => void change(selection)} /><input name="coverTicket" type="hidden" value={ticket} />{coverError && <p className="notice error">{coverError}</p>}{!ticket && <p className="hint">未上傳時會使用網站自動封面；若網站沒有圖片則顯示預設封面。</p>}</div>;
 }
