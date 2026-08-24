@@ -6,6 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Personal Vault",
     description: "Secure personal information storage.",
     start_url: "/",
+    scope: "/",
     display: "standalone",
     background_color: "#6572df",
     theme_color: "#6572df",
