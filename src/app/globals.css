@@ -331,15 +331,15 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 @media (max-width: 700px) { input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), textarea, select { font-size: 16px !important; }.context-create-button { right: max(16px, env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom)); min-height: 48px; padding-inline: 18px; border-radius: 14px; } }
 
 /* A cover is cropped inside this fixed viewport; slider changes never resize or move the frame. */
-.content-cover-preview { position: relative; flex: 0 0 auto; overflow: hidden; }
+.content-cover-preview { position: relative; display: block; width: min(100%, 430px); height: min(305px, calc((100vw - 72px) * .709677)); min-height: 120px; flex: 0 0 auto; overflow: hidden; contain: layout paint; border-radius: 10px; }
 .content-cover-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .page-heading > div { min-width: 0; }
 .page-heading .eyebrow { margin-top: 0; }
 .page-heading h1 { margin: 5px 0 0; }
 .page-heading p:not(.eyebrow) { margin-bottom: 0; }
-.page-create-button { width: auto; flex: 0 0 auto; min-height: 42px; padding-inline: 16px; text-align: center; white-space: nowrap; }
-@media (max-width: 700px) { .page-heading { align-items: flex-start; gap: 12px; }.page-create-button { min-height: 44px; padding-inline: 12px; font-size: .82rem; } }
+.page-create-button { display: inline-flex; width: auto; flex: 0 0 auto; min-height: 42px; align-items: center; justify-content: center; box-sizing: border-box; padding-inline: 16px; line-height: 1; text-align: center; white-space: nowrap; }
+@media (max-width: 700px) { .page-heading { align-items: flex-start; gap: 12px; }.page-create-button { min-height: 42px; padding-inline: 12px; font-size: .82rem; } }
 .background-image-controls > label:first-child { font-size: 0; }
 .background-image-controls > label:first-child::before { content: "上傳圖片（最多 10 張）"; font-size: .88rem; }
 .background-image-controls > label:first-child input { font-size: .82rem; }
