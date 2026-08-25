@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
@@ -8,6 +8,8 @@ import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatc
 type Tab = "library" | "search" | "stats";
 const statusOrder: AnimeWatchStatus[] = ["watching", "planning", "completed", "paused", "dropped"];
 const emptyData: AnimeWorkspaceData = { library: [], tags: [], logs: [] };
+const searchDebounceMs = 700;
+const searchCacheTtlMs = 20 * 60 * 1_000;
 const progress = (anime: Pick<AnimeLibraryItem, "episodes" | "watchedEpisodes">) => anime.episodes ? Math.min(100, Math.round((anime.watchedEpisodes / anime.episodes) * 100)) : 0;
 const day = (value: string | null) => value ? new Intl.DateTimeFormat("zh-TW", { month: "short", day: "numeric" }).format(new Date(value)) : "尚未觀看";
 
@@ -26,11 +28,35 @@ function StatusPill({ status }: { status: AnimeWatchStatus }) { return <span cla
 
 export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceData }) {
   const [data, setData] = useState(initialData ?? emptyData); const [tab, setTab] = useState<Tab>("library"); const [filter, setFilter] = useState<"all" | AnimeWatchStatus | "favorite">("all"); const [query, setQuery] = useState(""); const [results, setResults] = useState<ExternalAnime[]>([]); const [searchLoading, setSearchLoading] = useState(false); const [searchError, setSearchError] = useState<string | null>(null); const [pending, setPending] = useState<string | null>(null); const [selected, setSelected] = useState<AnimeLibraryItem | null>(null); const [adding, setAdding] = useState<ExternalAnime | null>(null); const [removing, setRemoving] = useState<AnimeLibraryItem | null>(null); const [notice, setNotice] = useState<string | null>(null);
+  const searchCache = useRef(new Map<string, { expiresAt: number; results: ExternalAnime[] }>());
   const existingIds = useMemo(() => new Set(data.library.map((anime) => `${anime.externalSource}:${anime.externalId}`)), [data.library]);
   const library = useMemo(() => data.library.filter((anime) => (filter === "all" ? true : filter === "favorite" ? anime.favorite : anime.watchStatus === filter) && [anime.title, anime.titleJapanese, anime.titleEnglish, anime.notes, ...anime.tags.map((tag) => tag.name)].filter(Boolean).join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase())), [data.library, filter, query]);
   const stats = useMemo(() => ({ total: data.library.length, episodes: data.library.reduce((sum, anime) => sum + anime.watchedEpisodes, 0), minutes: data.library.reduce((sum, anime) => sum + anime.watchedEpisodes * (anime.episodeDuration ?? 0), 0), score: data.library.filter((anime) => anime.rating !== null).reduce((sum, anime, _index, rows) => sum + (anime.rating ?? 0) / rows.length, 0) }), [data.library]);
   const refresh = async () => { setPending("refresh"); try { setData(await request<AnimeWorkspaceData>("/api/anime/library")); } catch (caught) { setNotice(caught instanceof Error ? caught.message : "無法更新動漫資料。"); } finally { setPending(null); } };
-  useEffect(() => { if (tab !== "search" || query.trim().length < 2) return; const controller = new AbortController(); const timer = window.setTimeout(async () => { setSearchLoading(true); setSearchError(null); try { const data = await request<{ results: ExternalAnime[] }>(`/api/anime/search?q=${encodeURIComponent(query.trim())}`, { signal: controller.signal }); setResults(data.results); } catch (caught) { if (!controller.signal.aborted) setSearchError(caught instanceof Error ? caught.message : "搜尋失敗"); } finally { if (!controller.signal.aborted) setSearchLoading(false); } }, 420); return () => { controller.abort(); window.clearTimeout(timer); }; }, [query, tab]);
+  useEffect(() => {
+    const normalizedQuery = query.trim();
+    if (tab !== "search" || normalizedQuery.length < 2) { setSearchLoading(false); setSearchError(null); return; }
+    const cacheKey = normalizedQuery.normalize("NFKC").toLocaleLowerCase();
+    const cached = searchCache.current.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) { setResults(cached.results); setSearchLoading(false); setSearchError(null); return; }
+    if (cached) searchCache.current.delete(cacheKey);
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearchLoading(true); setSearchError(null);
+      try {
+        const answer = await request<{ results: ExternalAnime[] }>(`/api/anime/search?q=${encodeURIComponent(normalizedQuery)}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        setResults(answer.results);
+        searchCache.current.set(cacheKey, { expiresAt: Date.now() + searchCacheTtlMs, results: answer.results });
+      } catch (caught) {
+        if (!controller.signal.aborted) {
+          const offline = typeof navigator !== "undefined" && !navigator.onLine;
+          setSearchError(offline ? "目前沒有網路連線" : caught instanceof Error ? caught.message : "搜尋失敗，請稍後再試");
+        }
+      } finally { if (!controller.signal.aborted) setSearchLoading(false); }
+    }, searchDebounceMs);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [query, tab]);
   async function changeProgress(anime: AnimeLibraryItem, action: "increment" | "decrement") { setPending(`progress-${anime.id}`); try { const answer = await request<{ shouldComplete: boolean }>(`/api/anime/library/${anime.id}/progress`, { method: "POST", body: JSON.stringify({ action }) }); await refresh(); if (answer.shouldComplete) { setSelected(data.library.find((item) => item.id === anime.id) ?? anime); setNotice("已達到最後一集；可在詳細資訊將狀態標記為「已看完」。"); } } catch (caught) { setNotice(caught instanceof Error ? caught.message : "無法更新進度。"); } finally { setPending(null); } }
   async function removeAnime() { if (!removing) return; setPending("remove"); try { await request("/api/anime/library", { method: "DELETE", body: JSON.stringify({ id: removing.id }) }); setSelected(null); setRemoving(null); await refresh(); } catch (caught) { setNotice(caught instanceof Error ? caught.message : "無法移除動漫。"); } finally { setPending(null); } }
   return <section className="anime-workspace">
