@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CoverImageField, type CoverSelection, uploadCover } from "@/components/content/cover-image-field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
-import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData } from "@/lib/anime/types";
+import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
 
-type Tab = "library" | "stats";
+type Tab = "library" | "search" | "stats";
 type Filter = "all" | Exclude<AnimeWatchStatus, "paused">;
 const statuses: AnimeWatchStatus[] = ["planning", "watching", "completed", "paused", "dropped"];
 const visibleFilters: Filter[] = ["all", "watching", "planning", "completed", "dropped"];
 const empty: AnimeWorkspaceData = { library: [], tags: [], logs: [] };
+const searchKey = (anime: ExternalAnime) => `${anime.source}:${anime.id}`;
 
 async function api<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
@@ -53,6 +54,13 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
   const [removing, setRemoving] = useState<AnimeLibraryItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [submittedSearch, setSubmittedSearch] = useState("");
+  const [results, setResults] = useState<ExternalAnime[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
+  const searchCache = useRef(new Map<string, { until: number; rows: ExternalAnime[] }>());
 
   const refresh = async () => {
     const next = await api<AnimeWorkspaceData>("/api/anime/library");
@@ -64,6 +72,14 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     const haystack = [anime.title, anime.titleJapanese, anime.titleEnglish, anime.notes, ...anime.tags.map((category) => category.name)].filter(Boolean).join(" ").toLocaleLowerCase();
     return matchesFilter && matchesCategory && haystack.includes(query.toLocaleLowerCase());
   }), [categoryFilter, data.library, filter, query]);
+  useEffect(() => {
+    const text = submittedSearch.trim(); if (tab !== "search" || text.length < 2) return;
+    const key = text.normalize("NFKC").toLocaleLowerCase(); const cached = searchCache.current.get(key);
+    if (cached && cached.until > Date.now()) { setResults(cached.rows); setSearchError(null); return; }
+    const controller = new AbortController();
+    void (async () => { setSearching(true); setSearchError(null); try { const answer = await api<{ results: ExternalAnime[] }>(`/api/anime/search?q=${encodeURIComponent(text)}`, { signal: controller.signal }); if (!controller.signal.aborted) { setResults(answer.results); searchCache.current.set(key, { until: Date.now() + 20 * 60_000, rows: answer.results }); } } catch (cause) { if (!controller.signal.aborted) setSearchError(!navigator.onLine ? "目前沒有網路連線" : cause instanceof Error ? cause.message : "搜尋失敗，請稍後再試。"); } finally { if (!controller.signal.aborted) setSearching(false); } })();
+    return () => controller.abort();
+  }, [submittedSearch, tab]);
 
   const createCategory = async () => {
     const name = categoryName.trim();
@@ -101,6 +117,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     <div className="anime-toolbar">
       <div className="anime-tabs" role="tablist" aria-label="動漫功能">
         <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} type="button">我的動漫</button>
+        <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")} type="button">搜尋動漫</button>
         <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
       </div>
       <button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button>
@@ -124,8 +141,10 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
       </article>)}</div>
       {!library.length && <div className="anime-empty"><h3>{data.library.length ? "找不到符合的動漫" : "還沒有加入動漫"}</h3><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>}
     </>}
+    {tab === "search" && <><div className="anime-search-heading"><p className="eyebrow">ANIME DATABASE</p><h2>搜尋動漫</h2><p>輸入名稱後按 Enter 或搜尋按鈕；資料只用來帶入名稱與封面，不會連動任何串流平台。</p></div><form className="anime-search-box" onSubmit={(event) => { event.preventDefault(); const value = searchInput.trim(); if (value.length < 2) { setResults([]); setSearchError("請至少輸入 2 個字再搜尋。"); return; } setSearchError(null); setSubmittedSearch(value); }}><i>⌕</i><input autoFocus onChange={(event) => setSearchInput(event.target.value)} placeholder="例如：葬送的芙莉蓮、Frieren、進撃の巨人" value={searchInput} /><button aria-label="搜尋動漫" className="button compact" type="submit">搜尋</button></form>{searching && <div className="anime-search-state">正在搜尋動漫資料庫…</div>}{searchError && <div className="notice error">{searchError}</div>}<div className="anime-search-grid">{results.map((anime) => <article className="anime-search-card" key={searchKey(anime)}>{anime.coverUrl ? <img alt={`${anime.title} 封面`} className="anime-search-cover" src={anime.coverUrl} /> : <div className="anime-search-cover anime-cover-fallback">ANIME</div>}<div><p className="anime-result-type">{anime.animeType ?? "Anime"}{anime.releaseYear ? ` · ${anime.releaseYear}` : ""}</p><h3>{anime.title}</h3><p>{anime.titleJapanese || anime.titleEnglish || "未提供其他名稱"}</p><small>{anime.episodes ? `${anime.episodes} 集` : "集數未定"}</small><div className="anime-result-actions"><button className="secondary-button" onClick={() => setPrefill(anime)} type="button">使用此資料新增</button></div></div></article>)}</div>{!searching && submittedSearch.trim().length >= 2 && !searchError && !results.length && <div className="anime-empty"><h3>找不到相關動漫</h3><p>試試不同名稱、羅馬拼音或日文名稱。</p></div>}</>}
     {tab === "stats" && <AnimeStats data={data} />}
     {adding && <AnimeEditor categories={data.tags} onClose={() => setAdding(false)} onSaved={async () => { setAdding(false); setPending("refresh"); try { await refresh(); setTab("library"); setNotice("已新增動漫。"); } finally { setPending(null); } }} />}
+    {prefill && <AnimeEditor categories={data.tags} prefill={prefill} onClose={() => setPrefill(null)} onSaved={async () => { setPrefill(null); setPending("refresh"); try { await refresh(); setTab("library"); setNotice("已新增動漫。"); } finally { setPending(null); } }} />}
     {selected && <AnimeEditor anime={selected} categories={data.tags} onClose={() => setSelected(null)} onRemove={() => setRemoving(selected)} onSaved={async () => { setPending("refresh"); try { await refresh(); setSelected(null); setNotice("已儲存動漫資料。"); } finally { setPending(null); } }} />}
     <ConfirmDialog confirmLabel="移至垃圾桶" description={removing ? `確定要將《${removing.title}》移至垃圾桶嗎？` : ""} onCancel={() => setRemoving(null)} onConfirm={() => void remove()} open={Boolean(removing)} pending={pending === "remove"} title="移除我的動漫" />
   </section>;
@@ -138,8 +157,8 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
   return <><div className="anime-stats-grid"><article><small>總收藏</small><strong>{data.library.length}</strong><span>部動漫</span></article><article><small>已觀看集數</small><strong>{watched}</strong><span>集</span></article><article><small>正在觀看</small><strong>{data.library.filter((anime) => anime.watchStatus === "watching").length}</strong><span>部</span></article><article><small>平均評分</small><strong>{average}</strong><span>/ 10</span></article></div></>;
 }
 
-function AnimeEditor({ anime, categories, onClose, onSaved, onRemove }: { anime?: AnimeLibraryItem; categories: AnimeTag[]; onClose: () => void; onSaved: () => Promise<void>; onRemove?: () => void }) {
-  const [title, setTitle] = useState(anime?.title ?? "");
+function AnimeEditor({ anime, prefill, categories, onClose, onSaved, onRemove }: { anime?: AnimeLibraryItem; prefill?: ExternalAnime; categories: AnimeTag[]; onClose: () => void; onSaved: () => Promise<void>; onRemove?: () => void }) {
+  const [title, setTitle] = useState(anime?.title ?? prefill?.title ?? "");
   const [sourceUrl, setSourceUrl] = useState(anime?.sourceUrl ?? "");
   const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(anime?.watchStatus ?? "planning");
   const [rating, setRating] = useState<number | null>(anime?.rating ?? null);
@@ -153,7 +172,7 @@ function AnimeEditor({ anime, categories, onClose, onSaved, onRemove }: { anime?
     setPending(true); setMessage(null);
     try {
       const coverTicket = await uploadCover(cover);
-      const body = { ...(anime ? { id: anime.id } : {}), title, sourceUrl: sourceUrl.trim() || null, coverTicket, watchStatus, rating, notes, categoryIds };
+      const body = { ...(anime ? { id: anime.id } : {}), title, sourceUrl: sourceUrl.trim() || null, coverUrl: !cover && !anime ? prefill?.coverUrl ?? null : undefined, coverTicket, watchStatus, rating, notes, categoryIds };
       await api("/api/anime/library", { method: anime ? "PATCH" : "POST", body: JSON.stringify(body) });
       await onSaved();
     } catch (cause) {
@@ -162,7 +181,7 @@ function AnimeEditor({ anime, categories, onClose, onSaved, onRemove }: { anime?
       setPending(false);
     }
   };
-  const currentCover = anime ? coverUrl(anime) : null;
+  const currentCover = anime ? coverUrl(anime) : prefill?.coverUrl ?? null;
   return <ModalDialog onClose={onClose} open pending={pending} title={anime ? "修改動漫" : "新增動漫"}>
     <div className="anime-dialog">
       <label>動漫名稱<input autoFocus onChange={(event) => setTitle(event.target.value)} placeholder="例如：葬送的芙莉蓮" value={title} /></label>

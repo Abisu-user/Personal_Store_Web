@@ -14,6 +14,7 @@ const safeUrl = z.string().trim().url().max(1000).refine((value) => new URL(valu
 const commonFields = z.object({
   title: z.string().trim().min(1).max(500),
   sourceUrl: safeUrl.nullable().optional(),
+  coverUrl: safeUrl.nullable().optional(),
   coverTicket: z.string().max(3000).nullable().optional(),
   watchStatus: status.default("planning"),
   rating: z.number().min(0).max(10).nullable().optional(),
@@ -40,7 +41,7 @@ async function replaceCategories(userId: string, animeId: string, categoryIds: s
 
 function manualRow(input: z.infer<typeof commonFields>, coverPath: string | null) {
   const today = new Date().toISOString().slice(0, 10);
-  return { external_source: "manual", external_id: randomUUID(), title: input.title, cover_url: coverPath, banner_url: null, synopsis: null, anime_type: null, broadcast_status: null, episodes: null, watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
+  return { external_source: "manual", external_id: randomUUID(), title: input.title, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: null, anime_type: null, broadcast_status: null, episodes: null, watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
 }
 
 export async function GET() {
@@ -71,6 +72,7 @@ export async function PATCH(request: NextRequest) {
     const updates: Record<string, unknown> = {};
     if (changes.title !== undefined) updates.title = changes.title;
     if (changes.sourceUrl !== undefined) updates.source_url = changes.sourceUrl || null;
+    if (changes.coverUrl !== undefined && !coverPath) updates.cover_url = changes.coverUrl || null;
     if (changes.watchStatus !== undefined) { updates.watch_status = changes.watchStatus; if (changes.watchStatus === "watching" && current.watch_status !== "watching") updates.started_watching_at = new Date().toISOString().slice(0, 10); if (changes.watchStatus === "completed") updates.completed_at = new Date().toISOString().slice(0, 10); }
     if (changes.rating !== undefined) updates.rating = changes.rating;
     if (changes.notes !== undefined) updates.notes = changes.notes || null;
