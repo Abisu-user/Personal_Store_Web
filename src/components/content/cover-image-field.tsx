@@ -1,9 +1,10 @@
 "use client";
 
-import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { ChangeEvent, type CSSProperties, useEffect, useRef, useState } from "react";
 
 export type CoverCrop = { x: number; y: number; zoom: number };
-export type CoverSelection = { file: File; crop: CoverCrop } | null;
+export type CoverSize = { width: number; height: number };
+export type CoverSelection = { file: File; crop: CoverCrop; size?: CoverSize } | null;
 const coverWidth = 1240;
 const coverHeight = 880;
 
@@ -16,10 +17,10 @@ async function loadImage(source: string) {
   });
 }
 
-function drawCover(image: HTMLImageElement, crop: CoverCrop) {
+function drawCover(image: HTMLImageElement, crop: CoverCrop, size: CoverSize = { width: coverWidth, height: coverHeight }) {
   const canvas = document.createElement("canvas");
-  canvas.width = coverWidth;
-  canvas.height = coverHeight;
+  canvas.width = size.width;
+  canvas.height = size.height;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("無法處理封面圖片。");
   const scale = Math.max(canvas.width / image.naturalWidth, canvas.height / image.naturalHeight) * (crop.zoom / 100);
@@ -29,7 +30,7 @@ function drawCover(image: HTMLImageElement, crop: CoverCrop) {
   return canvas;
 }
 
-export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string | null; onChange: (value: CoverSelection) => void }) {
+export function CoverImageField({ initialUrl, onChange, cropSize }: { initialUrl?: string | null; onChange: (value: CoverSelection) => void; cropSize?: CoverSize }) {
   const [sourceUrl, setSourceUrl] = useState(initialUrl ?? "");
   const [preview, setPreview] = useState(initialUrl ?? "");
   const [crop, setCrop] = useState<CoverCrop>({ x: 50, y: 50, zoom: 100 });
@@ -40,7 +41,7 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
     if (!sourceUrl) { setPreview(""); return; }
     let cancelled = false;
     void loadImage(sourceUrl).then((image) => {
-      if (!cancelled) setPreview(drawCover(image, crop).toDataURL("image/webp", .92));
+      if (!cancelled) setPreview(drawCover(image, crop, cropSize).toDataURL("image/webp", .92));
     }).catch(() => { if (!cancelled) setPreview(sourceUrl); });
     return () => { cancelled = true; };
   }, [crop, sourceUrl]);
@@ -56,7 +57,7 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
   }, [initialUrl, sourceUrl]);
   function choose(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; if (!file) return;
-    sourceFile.current = file; setCrop({ x: 50, y: 50, zoom: 100 }); setSourceUrl(URL.createObjectURL(file)); onChange({ file, crop: { x: 50, y: 50, zoom: 100 } });
+    sourceFile.current = file; setCrop({ x: 50, y: 50, zoom: 100 }); setSourceUrl(URL.createObjectURL(file)); onChange({ file, crop: { x: 50, y: 50, zoom: 100 }, size: cropSize });
   }
   async function selectCrop(next: CoverCrop) {
     let file = sourceFile.current ?? fileInput.current?.files?.[0] ?? null;
@@ -64,10 +65,10 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
       const response = await fetch(sourceUrl, { cache: "no-store" });
       if (response.ok) { const blob = await response.blob(); file = new File([blob], "cover.webp", { type: blob.type || "image/webp" }); sourceFile.current = file; }
     }
-    if (file) onChange({ file, crop: next });
+    if (file) onChange({ file, crop: next, size: cropSize });
   }
   function change(key: keyof CoverCrop, value: number) { const next = { ...crop, [key]: value }; setCrop(next); void selectCrop(next); }
-  return <fieldset className="content-cover-field"><legend>封面圖片（選填）</legend><input accept="image/jpeg,image/png,image/webp" data-cover-file onChange={choose} ref={fileInput} type="file" />
+  return <fieldset className="content-cover-field" style={cropSize ? { "--cover-preview-aspect": `${cropSize.width} / ${cropSize.height}` } as CSSProperties : undefined}><legend>封面圖片（選填）</legend><input accept="image/jpeg,image/png,image/webp" data-cover-file onChange={choose} ref={fileInput} type="file" />
     {preview && <><div aria-label="封面裁切預覽" className="content-cover-preview"><img alt="封面裁切預覽" src={preview} /></div>
       <div className="cover-crop-controls"><label>水平<input max="100" min="0" onChange={(event) => change("x", Number(event.target.value))} type="range" value={crop.x} /></label><label>垂直<input max="100" min="0" onChange={(event) => change("y", Number(event.target.value))} type="range" value={crop.y} /></label><label>放大<input max="180" min="100" onChange={(event) => change("zoom", Number(event.target.value))} type="range" value={crop.zoom} /></label></div></>}
   </fieldset>;
@@ -75,11 +76,11 @@ export function CoverImageField({ initialUrl, onChange }: { initialUrl?: string 
 
 export async function uploadCover(selection: CoverSelection) {
   if (!selection) return null;
-  const { file, crop } = selection;
+  const { file, crop, size } = selection;
   const sourceUrl = URL.createObjectURL(file);
   let image: HTMLImageElement;
   try { image = await loadImage(sourceUrl); } finally { URL.revokeObjectURL(sourceUrl); }
-  const canvas = drawCover(image, crop);
+  const canvas = drawCover(image, crop, size);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", .92)); if (!blob) throw new Error("無法處理封面圖片。");
   const ticketResponse = await fetch("/api/content-covers/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mimeType: "image/webp", byteSize: blob.size }) });
   const ticket = await ticketResponse.json().catch(() => null); if (!ticketResponse.ok || !ticket?.token) throw new Error(ticket?.error ?? "無法準備封面上傳。");

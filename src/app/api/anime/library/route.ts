@@ -11,10 +11,14 @@ export const dynamic = "force-dynamic";
 const id = z.string().uuid();
 const status = z.enum(["planning", "watching", "completed", "paused", "dropped"]);
 const safeUrl = z.string().trim().url().max(1000).refine((value) => new URL(value).protocol === "https:", "請使用 HTTPS 連結。");
+const catalogueMetadata = z.object({
+  titleJapanese: z.string().max(500).nullable().optional(), titleEnglish: z.string().max(500).nullable().optional(), titleChinese: z.string().max(500).nullable().optional(), originalTitle: z.string().max(500).nullable().optional(), synopsis: z.string().max(12000).nullable().optional(), animeType: z.string().max(100).nullable().optional(), broadcastStatus: z.string().max(100).nullable().optional(), episodes: z.number().int().min(0).max(100000).nullable().optional(), episodeDuration: z.number().int().min(0).max(10000).nullable().optional(), releaseYear: z.number().int().min(1900).max(2200).nullable().optional(), season: z.string().max(50).nullable().optional(), startDate: z.string().date().nullable().optional(), endDate: z.string().date().nullable().optional(), ageRating: z.string().max(100).nullable().optional(), sourceMaterial: z.string().max(100).nullable().optional(), publicScore: z.number().min(0).max(10).nullable().optional(), genres: z.array(z.string().max(100)).max(30).optional(), studios: z.array(z.string().max(100)).max(30).optional(), relations: z.array(z.object({ relation: z.string().max(100), malId: z.number().int(), title: z.string().max(500), type: z.string().max(100).nullable() })).max(30).optional(),
+});
 const commonFields = z.object({
   title: z.string().trim().min(1).max(500),
   sourceUrl: safeUrl.nullable().optional(),
   coverUrl: safeUrl.nullable().optional(),
+  metadata: catalogueMetadata.optional(),
   coverTicket: z.string().max(3000).nullable().optional(),
   watchStatus: status.default("planning"),
   rating: z.number().min(0).max(10).nullable().optional(),
@@ -41,7 +45,8 @@ async function replaceCategories(userId: string, animeId: string, categoryIds: s
 
 function manualRow(input: z.infer<typeof commonFields>, coverPath: string | null) {
   const today = new Date().toISOString().slice(0, 10);
-  return { external_source: "manual", external_id: randomUUID(), title: input.title, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: null, anime_type: null, broadcast_status: null, episodes: null, watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
+  const metadata = input.metadata;
+  return { external_source: "manual", external_id: randomUUID(), title: input.title, title_japanese: metadata?.titleJapanese ?? null, title_english: metadata?.titleEnglish ?? null, title_chinese: metadata?.titleChinese ?? null, original_title: metadata?.originalTitle ?? null, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: metadata?.synopsis ?? null, anime_type: metadata?.animeType ?? null, broadcast_status: metadata?.broadcastStatus ?? null, episodes: metadata?.episodes ?? null, episode_duration: metadata?.episodeDuration ?? null, release_year: metadata?.releaseYear ?? null, season: metadata?.season ?? null, start_date: metadata?.startDate ?? null, end_date: metadata?.endDate ?? null, age_rating: metadata?.ageRating ?? null, source_material: metadata?.sourceMaterial ?? null, public_score: metadata?.publicScore ?? null, genres: metadata?.genres ?? [], studios: metadata?.studios ?? [], relations: metadata?.relations ?? [], watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
 }
 
 export async function GET() {
