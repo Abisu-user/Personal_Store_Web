@@ -394,3 +394,8 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .mobile-navigation-slot-grid { grid-template-columns: 1fr; }
 }
 @media (min-width: 701px) { .mobile-navigation-settings { display: none; } }
+
+/* Anime search is intentionally submitted by Enter or the adjacent action button. */
+.anime-search-box { grid-template-columns: 28px minmax(0, 1fr) auto; gap: 8px; padding: 6px 7px 6px 13px; }
+.anime-search-box .button { min-height: 36px; padding: 0 14px; }
+@media (max-width: 700px) { .anime-search-box .button { min-height: 40px; padding: 0 12px; } }
