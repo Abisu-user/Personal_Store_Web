@@ -45,7 +45,7 @@ function StarRating({ value, onChange, readonly = false }: { value: number | nul
 
 export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceData }) {
   const [data, setData] = useState(initialData ?? empty);
-  const [tab, setTab] = useState<Tab>("discover");
+  const [tab, setTab] = useState<Tab>("library");
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -118,8 +118,8 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     {pending && <OperationStatus label={pending === "category" ? "正在新增類別…" : "正在儲存動漫資料…"} />}
     <div className="anime-toolbar">
       <div className="anime-tabs" role="tablist" aria-label="動漫功能">
-        <button className={tab === "discover" ? "active" : ""} onClick={() => setTab("discover")} type="button">探索</button>
         <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} type="button">我的動漫</button>
+        <button className={tab === "discover" ? "active" : ""} onClick={() => setTab("discover")} type="button">探索</button>
         <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")} type="button">搜尋動漫</button>
         <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
       </div>

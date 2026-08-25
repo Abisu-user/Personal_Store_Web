@@ -20,6 +20,7 @@ export type CatalogueFilters = {
 };
 export type CataloguePage = { items: ExternalAnime[]; page: number; hasNextPage: boolean; total: number };
 export type CatalogueTaxonomy = { genres: string[]; tags: string[] };
+export type DiscoveryHome = { current: CataloguePage; upcoming: CataloguePage; popular: CataloguePage; top: CataloguePage; taxonomy: CatalogueTaxonomy; unavailable: string[] };
 
 const catalogueQuery = `query AnimeCatalogue($page: Int!, $perPage: Int!, $season: MediaSeason, $seasonYear: Int, $genre: String, $tag: String, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort!]) {
   Page(page: $page, perPage: $perPage) {
@@ -87,8 +88,24 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
 export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
   const data = await request<any>(taxonomyQuery, {}, TAXONOMY_TTL);
   const genres = Array.isArray(data?.GenreCollection) ? data.GenreCollection.filter((item: unknown): item is string => typeof item === "string").sort() : [];
-  const tags = Array.isArray(data?.MediaTagCollection) ? data.MediaTagCollection.filter((item: any) => typeof item?.name === "string" && !item.isMediaSpoiler && Number(item.rank ?? 0) >= 55).sort((a: any, b: any) => Number(b.rank ?? 0) - Number(a.rank ?? 0)).map((item: any) => item.name).slice(0, 120) : [];
+  const tags = Array.isArray(data?.MediaTagCollection) ? data.MediaTagCollection.filter((item: any) => typeof item?.name === "string" && !item.isMediaSpoiler && !String(item.category ?? "").includes("Sexual")).map((item: any) => item.name).sort().slice(0, 120) : [];
   return { genres, tags };
+}
+
+export async function getDiscoveryHome(): Promise<DiscoveryHome> {
+  const current = currentSeason(); const upcoming = nextSeason();
+  const jobs = await Promise.allSettled([
+    getCatalogue({ season: current.season, seasonYear: current.year, sort: "POPULARITY_DESC", perPage: 12 }),
+    getCatalogue({ season: upcoming.season, seasonYear: upcoming.year, sort: "POPULARITY_DESC", perPage: 12 }),
+    getCatalogue({ sort: "POPULARITY_DESC", perPage: 12 }),
+    getCatalogue({ sort: "SCORE_DESC", perPage: 12 }),
+    getCatalogueTaxonomy(),
+  ]);
+  const empty: CataloguePage = { items: [], page: 1, hasNextPage: false, total: 0 };
+  const pageAt = (index: number) => jobs[index]?.status === "fulfilled" ? jobs[index].value as CataloguePage : empty;
+  const tax = jobs[4]?.status === "fulfilled" ? jobs[4].value as CatalogueTaxonomy : { genres: [], tags: [] };
+  const unavailable = jobs.flatMap((job, index) => job.status === "rejected" ? [index === 0 ? "本季新番" : index === 1 ? "下季新番" : index === 2 ? "熱門動漫" : index === 3 ? "高評分動漫" : "分類"] : []);
+  return { current: pageAt(0), upcoming: pageAt(1), popular: pageAt(2), top: pageAt(3), taxonomy: tax, unavailable };
 }
 
 export function currentSeason(today = new Date()) {

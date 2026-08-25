@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCatalogue, getCatalogueTaxonomy, type CatalogueFilters } from "@/lib/anime/anilist-catalogue";
+import { getCatalogue, getCatalogueTaxonomy, getDiscoveryHome, type CatalogueFilters } from "@/lib/anime/anilist-catalogue";
 import { getSecurityContext } from "@/lib/security/activity";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,10 @@ const positive = (value: string | null, fallback: number) => { const parsed = Nu
 export async function GET(request: NextRequest) {
   if (!(await getSecurityContext())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = request.nextUrl.searchParams;
+  if (params.get("view") === "home") {
+    try { return NextResponse.json(await getDiscoveryHome(), { headers: { "Cache-Control": "private, max-age=900" } }); }
+    catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得探索動漫。" }, { status: 503 }); }
+  }
   if (params.get("resource") === "taxonomy") {
     try { return NextResponse.json(await getCatalogueTaxonomy(), { headers: { "Cache-Control": "private, max-age=3600" } }); }
     catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得動漫分類。" }, { status: 503 }); }
