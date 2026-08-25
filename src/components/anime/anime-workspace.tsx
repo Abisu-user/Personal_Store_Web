@@ -6,6 +6,7 @@ import { CoverImageField, type CoverSelection, uploadCover } from "@/components/
 import { AnimeDiscovery } from "@/components/anime/anime-discovery";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { PinPad } from "@/components/security/pin-pad";
 import { animeStatusLabels, type AnimeLibraryItem, type AnimePreferences, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
 
 type Tab = "discover" | "library" | "stats" | "adult";
@@ -106,11 +107,11 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : "無法開啟成人內容。"); }
     finally { setPending(null); }
   };
-  const unlockAdultWithPin = async () => {
+  const unlockAdultWithPin = async (value = adultPin) => {
     const length = preferences.adultAccessMode === "pin6" ? 6 : 4;
-    if (!new RegExp(`^\\d{${length}}$`).test(adultPin)) { setAdultPinError(`請輸入 ${length} 位數 PIN。`); return; }
+    if (!new RegExp(`^\\d{${length}}$`).test(value)) { setAdultPinError(`請輸入 ${length} 位數 PIN。`); return; }
     setPending("adult-access"); setAdultPinError(null);
-    try { await api("/api/anime/preferences/pin", { method: "POST", body: JSON.stringify({ action: "verify", pin: adultPin }) }); setAdultPinPrompt(false); await loadAdult(); }
+    try { await api("/api/anime/preferences/pin", { method: "POST", body: JSON.stringify({ action: "verify", pin: value }) }); setAdultPinPrompt(false); await loadAdult(); }
     catch (cause) { setAdultPinError(cause instanceof Error ? cause.message : "PIN 驗證失敗。"); }
     finally { setPending(null); }
   };
@@ -171,7 +172,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
         <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
         {preferences.adultModeEnabled && <button className={tab === "adult" ? "active" : ""} onClick={() => void openAdult()} type="button">成人內容</button>}
       </div>
-      <div className="anime-toolbar-actions"><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>
+      <div className="anime-toolbar-actions">{tab !== "adult" && <button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button>}</div>
     </div>
     {notice && <div className="notice success anime-notice"><span>{notice}</span><button aria-label="關閉提示" onClick={() => setNotice(null)} type="button">×</button></div>}
     {tab === "discover" && <AnimeDiscovery library={data.library} onAdd={setPrefill} />}
@@ -201,7 +202,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     {selected && <AnimeDetailDialog anime={selected} onClose={() => setSelected(null)} onEdit={() => { setEditing(selected); setSelected(null); }} />}
     {editing && <AnimeEditor anime={editing} categories={data.tags} onClose={() => setEditing(null)} onRemove={() => { setRemoving(editing); setEditing(null); }} onSaved={async () => { setPending("refresh"); try { await refresh(); setEditing(null); setNotice("已儲存動漫資料。"); } finally { setPending(null); } }} />}
     <ConfirmDialog confirmLabel="移至垃圾桶" description={removing ? `確定要將《${removing.title}》移至垃圾桶嗎？` : ""} onCancel={() => setRemoving(null)} onConfirm={() => void remove()} open={Boolean(removing)} pending={pending === "remove"} title="移除我的動漫" />
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => { if (!pending) setAdultPinPrompt(false); }} open={adultPinPrompt} pending={pending === "adult-access"} title="解鎖成人內容"><form className="anime-category-dialog" onSubmit={(event) => { event.preventDefault(); void unlockAdultWithPin(); }}><p>請輸入獨立的 {preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。</p><label>成人區 PIN<input autoComplete="current-password" autoFocus inputMode="numeric" maxLength={preferences.adultAccessMode === "pin6" ? 6 : 4} onChange={(event) => setAdultPin(event.target.value.replace(/\\D/g, ""))} pattern="[0-9]*" type="password" value={adultPin} /></label>{adultPinError && <p className="notice error" role="alert">{adultPinError}</p>}<div className="dialog-actions"><button className="secondary-button" disabled={pending === "adult-access"} onClick={() => setAdultPinPrompt(false)} type="button">取消</button><button className="button" disabled={pending === "adult-access"} type="submit">解鎖</button></div></form></ModalDialog>
+    <ModalDialog className="mobile-sheet-dialog" onClose={() => { if (!pending) setAdultPinPrompt(false); }} open={adultPinPrompt} pending={pending === "adult-access"} title="解鎖成人內容"><div className="anime-category-dialog"><p>請輸入獨立的 {preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。</p><PinPad disabled={pending === "adult-access"} label={preferences.adultAccessMode === "pin6" ? "輸入 6 位數成人區 PIN" : "輸入 4 位數成人區 PIN"} length={preferences.adultAccessMode === "pin6" ? 6 : 4} onChange={(value) => { setAdultPin(value); setAdultPinError(null); }} onComplete={(value) => void unlockAdultWithPin(value)} value={adultPin} />{adultPinError && <p className="notice error" role="alert">{adultPinError}</p>}<div className="dialog-actions"><button className="secondary-button" disabled={pending === "adult-access"} onClick={() => setAdultPinPrompt(false)} type="button">取消</button></div></div></ModalDialog>
   </section>;
 }
 

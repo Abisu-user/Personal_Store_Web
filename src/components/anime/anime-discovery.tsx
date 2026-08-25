@@ -103,9 +103,9 @@ export function AnimeDiscovery({ library, onAdd, adultMode = false }: { library:
   };
 
   return <section className="anime-discovery">
-    <div className="anime-discovery-tabs"><button className={screen === "home" ? "active" : ""} onClick={() => setScreen("home")} type="button">探索首頁</button><button className={screen === "all" ? "active" : ""} onClick={() => openAll()} type="button">全部動漫</button></div>
+    {!adultMode && <div className="anime-discovery-tabs"><button className={screen === "home" ? "active" : ""} onClick={() => setScreen("home")} type="button">探索首頁</button><button className={screen === "all" ? "active" : ""} onClick={() => openAll()} type="button">全部動漫</button></div>}
     {error && <div className="notice error anime-catalogue-error"><span>{error}</span><button className="secondary-button compact" onClick={() => void (screen === "home" ? reloadHome() : load(1, true))} type="button">重試</button></div>}
-    {screen === "home" && <><section className="anime-discovery-hero"><div><p className="eyebrow">動漫探索</p><h2>探索正在播出的好作品</h2><p>本季、下季、熱門與高評分作品都從同一個動漫資料來源取得；只有加入後才會寫入你的私人動漫庫。</p></div><button className="secondary-button" onClick={() => openAll()} type="button">搜尋／瀏覽全部動漫 →</button></section>
+    {screen === "home" && !adultMode && <><section className="anime-discovery-hero"><div><p className="eyebrow">動漫探索</p><h2>探索正在播出的好作品</h2><p>本季、下季、熱門與高評分作品都從同一個動漫資料來源取得；只有加入後才會寫入你的私人動漫庫。</p></div><button className="secondary-button" onClick={() => openAll()} type="button">搜尋／瀏覽全部動漫 →</button></section>
       <Rail loading={homeLoading} title={"本季新番 · " + seasonName(current.season, current.year)} items={thisSeason} hasItem={hasItem} onAdd={onAdd} onDetail={setDetail} />
       <Rail loading={homeLoading} title={"下季新番 · " + seasonName(next.season, next.year)} items={nextSeason} hasItem={hasItem} onAdd={onAdd} onDetail={setDetail} />
       <Rail loading={homeLoading} title="熱門動漫" items={popular} hasItem={hasItem} onAdd={onAdd} onDetail={setDetail} />
