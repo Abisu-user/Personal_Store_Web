@@ -14,16 +14,19 @@ export type AnimeLibraryItem = {
   watchStatus: AnimeWatchStatus; watchedEpisodes: number; rating: number | null; favorite: boolean; personalRank: AnimePersonalRank | null; notes: string | null;
   startedWatchingAt: string | null; completedAt: string | null; lastWatchedAt: string | null; createdAt: string; updatedAt: string; tags: AnimeTag[];
   sourceUrl: string | null;
+  isAdult: boolean; contentRating: string | null; adultSource: string | null; externalUrl: string | null;
 };
 
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };
-export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[]; };
+export type AnimePreferences = { adultModeEnabled: boolean; adultHiddenByDefault: boolean; requireAdultPasskey: boolean; blurAdultCovers: boolean; showAdultInMainLibrary: boolean; };
+export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; };
 
 export type ExternalAnime = {
   id: string; source: "jikan" | "anilist" | "bangumi"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;
   coverUrl: string | null; bannerUrl: string | null; synopsis: string | null; animeType: string | null; broadcastStatus: string | null; episodes: number | null;
   episodeDuration: number | null; releaseYear: number | null; season: string | null; startDate: string | null; endDate: string | null; ageRating: string | null;
   sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];
+  isAdult: boolean; contentRating: string | null; externalUrl: string | null;
 };
 
 export const animeStatusLabels: Record<AnimeWatchStatus, string> = { planning: "想看", watching: "正在觀看", completed: "已看完", paused: "暫停", dropped: "棄番" };

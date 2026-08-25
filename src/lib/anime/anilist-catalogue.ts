@@ -18,6 +18,8 @@ export type CatalogueFilters = {
   format?: "TV" | "MOVIE" | "OVA" | "ONA" | "SPECIAL";
   status?: "RELEASING" | "FINISHED" | "NOT_YET_RELEASED";
   sort?: "POPULARITY_DESC" | "SCORE_DESC" | "START_DATE_DESC" | "NEXT_AIRING_EPISODE_DESC" | "TITLE_ROMAJI" | "FAVOURITES_DESC";
+  includeAdult?: boolean;
+  search?: string;
 };
 export type CataloguePage = { items: ExternalAnime[]; page: number; hasNextPage: boolean; total: number };
 export type CatalogueTaxonomy = { genres: string[]; tags: string[] };
@@ -26,7 +28,7 @@ export type DiscoveryHome = { current: CataloguePage; upcoming: CataloguePage; p
 const mediaFields = `
   id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false)
   format status episodes duration season seasonYear startDate { year month day } endDate { year month day }
-  averageScore genres studios { nodes { name } } source
+  averageScore genres studios { nodes { name } } source isAdult siteUrl
 `;
 
 /**
@@ -37,7 +39,7 @@ const mediaFields = `
  */
 function buildCatalogueQuery(filters: CatalogueFilters) {
   const variableTypes = ["$page: Int!", "$perPage: Int!", "$sort: [MediaSort!]"];
-  const mediaArguments = ["type: ANIME", "isAdult: false", "sort: $sort"];
+  const mediaArguments = ["type: ANIME", `isAdult: ${filters.includeAdult ? "true" : "false"}`, "sort: $sort"];
   const add = (name: string, type: string, value: unknown) => {
     if (value === undefined || value === null || value === "") return;
     variableTypes.push(`$${name}: ${type}`);
@@ -50,6 +52,7 @@ function buildCatalogueQuery(filters: CatalogueFilters) {
   add("tag", "String", filters.tag);
   add("format", "MediaFormat", filters.format);
   add("status", "MediaStatus", filters.status);
+  add("search", "String", filters.search);
 
   return `query AnimeCatalogue(${variableTypes.join(", ")}) {
     Page(page: $page, perPage: $perPage) {
@@ -77,7 +80,7 @@ function mapAnime(row: any): ExternalAnime {
     startDate: date(row?.startDate), endDate: date(row?.endDate), ageRating: null, sourceMaterial: asText(row?.source),
     publicScore: asNumber(row?.averageScore) === null ? null : (asNumber(row?.averageScore) ?? 0) / 10,
     genres: Array.isArray(row?.genres) ? row.genres.filter((item: unknown): item is string => typeof item === "string") : [],
-    studios: Array.isArray(row?.studios?.nodes) ? row.studios.nodes.map((item: any) => asText(item?.name)).filter(Boolean) : [], relations: [],
+    studios: Array.isArray(row?.studios?.nodes) ? row.studios.nodes.map((item: any) => asText(item?.name)).filter(Boolean) : [], relations: [], isAdult: Boolean(row?.isAdult), contentRating: row?.isAdult ? "成人內容" : null, externalUrl: asText(row?.siteUrl),
   };
 }
 
@@ -107,7 +110,7 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
   const perPage = Math.min(30, Math.max(12, Math.floor(filters.perPage ?? 20)));
   const ttl = filters.season || (!filters.genre && !filters.tag && !filters.format && !filters.status) ? CATALOGUE_TTL : FILTER_TTL;
   const variables: Record<string, unknown> = { page, perPage, sort: [filters.sort ?? "POPULARITY_DESC"] };
-  for (const [key, value] of Object.entries({ season: filters.season, seasonYear: filters.seasonYear, genre: filters.genre, tag: filters.tag, format: filters.format, status: filters.status })) {
+  for (const [key, value] of Object.entries({ season: filters.season, seasonYear: filters.seasonYear, genre: filters.genre, tag: filters.tag, format: filters.format, status: filters.status, search: filters.search })) {
     if (value !== undefined && value !== null && value !== "") variables[key] = value;
   }
   const data = await request<any>(buildCatalogueQuery(filters), variables, ttl);

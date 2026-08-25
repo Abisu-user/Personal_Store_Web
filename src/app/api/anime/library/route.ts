@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteCover, verifiedCoverPath } from "@/lib/content/server";
-import { getAnimeWorkspaceData } from "@/lib/anime/data";
+import { getAnimePreferences, getAnimeWorkspaceData } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -24,6 +24,10 @@ const commonFields = z.object({
   rating: z.number().min(0).max(10).nullable().optional(),
   notes: z.string().trim().max(12000).nullable().optional(),
   categoryIds: z.array(id).max(30).default([]),
+  isAdult: z.boolean().optional(),
+  contentRating: z.string().trim().max(80).nullable().optional(),
+  adultSource: z.string().trim().max(120).nullable().optional(),
+  externalUrl: safeUrl.nullable().optional(),
 });
 const createSchema = commonFields;
 const updateSchema = commonFields.partial().extend({ id });
@@ -46,12 +50,14 @@ async function replaceCategories(userId: string, animeId: string, categoryIds: s
 function manualRow(input: z.infer<typeof commonFields>, coverPath: string | null) {
   const today = new Date().toISOString().slice(0, 10);
   const metadata = input.metadata;
-  return { external_source: "manual", external_id: randomUUID(), title: input.title, title_japanese: metadata?.titleJapanese ?? null, title_english: metadata?.titleEnglish ?? null, title_chinese: metadata?.titleChinese ?? null, original_title: metadata?.originalTitle ?? null, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: metadata?.synopsis ?? null, anime_type: metadata?.animeType ?? null, broadcast_status: metadata?.broadcastStatus ?? null, episodes: metadata?.episodes ?? null, episode_duration: metadata?.episodeDuration ?? null, release_year: metadata?.releaseYear ?? null, season: metadata?.season ?? null, start_date: metadata?.startDate ?? null, end_date: metadata?.endDate ?? null, age_rating: metadata?.ageRating ?? null, source_material: metadata?.sourceMaterial ?? null, public_score: metadata?.publicScore ?? null, genres: metadata?.genres ?? [], studios: metadata?.studios ?? [], relations: metadata?.relations ?? [], watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
+  return { external_source: "manual", external_id: randomUUID(), title: input.title, title_japanese: metadata?.titleJapanese ?? null, title_english: metadata?.titleEnglish ?? null, title_chinese: metadata?.titleChinese ?? null, original_title: metadata?.originalTitle ?? null, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: metadata?.synopsis ?? null, anime_type: metadata?.animeType ?? null, broadcast_status: metadata?.broadcastStatus ?? null, episodes: metadata?.episodes ?? null, episode_duration: metadata?.episodeDuration ?? null, release_year: metadata?.releaseYear ?? null, season: metadata?.season ?? null, start_date: metadata?.startDate ?? null, end_date: metadata?.endDate ?? null, age_rating: metadata?.ageRating ?? null, source_material: metadata?.sourceMaterial ?? null, public_score: metadata?.publicScore ?? null, genres: metadata?.genres ?? [], studios: metadata?.studios ?? [], relations: metadata?.relations ?? [], watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, is_adult: input.isAdult ?? false, content_rating: input.contentRating || (input.isAdult ? "成人內容" : null), adult_source: input.isAdult ? input.adultSource || "manual" : null, external_url: input.externalUrl || input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
-  try { return NextResponse.json(await getAnimeWorkspaceData(context.userId), { headers: { "Cache-Control": "private, no-store" } }); }
+  const adultScope = request.nextUrl.searchParams.get("scope") === "adult";
+  if (adultScope && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
+  try { return NextResponse.json(await getAnimeWorkspaceData(context.userId, adultScope ? "adult" : "standard"), { headers: { "Cache-Control": "private, no-store" } }); }
   catch { return error("動漫收藏資料尚未啟用或暫時無法讀取。", 503); }
 }
 
@@ -60,6 +66,7 @@ export async function POST(request: NextRequest) {
   const parsed = createSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查動漫名稱、連結與其他欄位。", 400);
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
+    if (parsed.data.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
     const admin = createAdminClient(); const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, coverPath) }).select("id").single();
     if (insertError) throw insertError; await replaceCategories(context.userId, data.id, parsed.data.categoryIds);
     return NextResponse.json({ id: data.id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
@@ -72,7 +79,7 @@ export async function PATCH(request: NextRequest) {
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     const admin = createAdminClient(); const { id: animeId, categoryIds } = parsed.data; const changes = parsed.data;
-    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,watch_status").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
+    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,watch_status,is_adult").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
     if (currentError) throw currentError; if (!current) return error("找不到這部動漫。", 404);
     const updates: Record<string, unknown> = {};
     if (changes.title !== undefined) updates.title = changes.title;
@@ -81,6 +88,13 @@ export async function PATCH(request: NextRequest) {
     if (changes.watchStatus !== undefined) { updates.watch_status = changes.watchStatus; if (changes.watchStatus === "watching" && current.watch_status !== "watching") updates.started_watching_at = new Date().toISOString().slice(0, 10); if (changes.watchStatus === "completed") updates.completed_at = new Date().toISOString().slice(0, 10); }
     if (changes.rating !== undefined) updates.rating = changes.rating;
     if (changes.notes !== undefined) updates.notes = changes.notes || null;
+    if (changes.isAdult !== undefined) {
+      if (changes.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
+      updates.is_adult = changes.isAdult;
+    }
+    if (changes.contentRating !== undefined) updates.content_rating = changes.contentRating || null;
+    if (changes.adultSource !== undefined) updates.adult_source = changes.isAdult === false ? null : changes.adultSource || (current.is_adult ? "manual" : null);
+    if (changes.externalUrl !== undefined) updates.external_url = changes.externalUrl || null;
     if (coverPath) updates.cover_url = coverPath;
     if (Object.keys(updates).length) { const { error: updateError } = await admin.from("anime_library").update(updates).eq("id", animeId).eq("user_id", context.userId); if (updateError) throw updateError; }
     if (coverPath && coverPath !== current.cover_url && current.cover_url?.startsWith(`${context.userId}/covers/`)) await deleteCover(current.cover_url);

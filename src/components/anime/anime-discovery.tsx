@@ -41,7 +41,7 @@ async function get<T>(url: string) {
   return body as T;
 }
 
-export function AnimeDiscovery({ library, onAdd }: { library: AnimeLibraryItem[]; onAdd: (anime: ExternalAnime) => void }) {
+export function AnimeDiscovery({ library, onAdd, adultMode = false }: { library: AnimeLibraryItem[]; onAdd: (anime: ExternalAnime) => void; adultMode?: boolean }) {
   const current = useMemo(nowSeason, []); const next = useMemo(followingSeason, []);
   const [thisSeason, setThisSeason] = useState<ExternalAnime[]>([]);
   const [nextSeason, setNextSeason] = useState<ExternalAnime[]>([]);
@@ -72,18 +72,18 @@ export function AnimeDiscovery({ library, onAdd }: { library: AnimeLibraryItem[]
     } catch (cause) { setError(cause instanceof Error ? cause.message : "動漫資料暫時無法載入。"); }
     finally { setHomeLoading(false); }
   }, []);
-  useEffect(() => { void reloadHome(); }, [reloadHome]);
+  useEffect(() => { if (adultMode) { setHomeLoading(false); setScreen("all"); return; } void reloadHome(); }, [adultMode, reloadHome]);
 
   const load = useCallback(async (requestedPage: number, replace = false) => {
     if (loading) return;
     setLoading(true); setError(null);
     try {
-      const response = await get<Catalogue>("/api/anime/catalogue?" + query({ page: requestedPage, perPage: 24, season: filters.season || undefined, seasonYear: filters.season ? filters.year : undefined, genre: filters.genre || undefined, tag: filters.tag || undefined, format: filters.format || undefined, status: filters.status || undefined, sort: filters.sort }));
+      const response = await get<Catalogue>("/api/anime/catalogue?" + query({ page: requestedPage, perPage: 24, season: filters.season || undefined, seasonYear: filters.season ? filters.year : undefined, genre: filters.genre || undefined, tag: filters.tag || undefined, format: filters.format || undefined, status: filters.status || undefined, sort: filters.sort, adult: adultMode ? 1 : undefined }));
       setAll((currentRows) => replace ? response.items : currentRows.concat(response.items.filter((anime) => !currentRows.some((row) => row.id === anime.id))));
       setPage(response.page); setHasMore(response.hasNextPage);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "動漫資料暫時無法載入。"); }
     finally { setLoading(false); }
-  }, [filters, loading]);
+  }, [adultMode, filters, loading]);
   const filterHash = JSON.stringify(filters);
   useEffect(() => { if (screen !== "all" || seen.current === filterHash) return; seen.current = filterHash; void load(1, true); }, [filterHash, load, screen]);
   useEffect(() => {
@@ -97,7 +97,7 @@ export function AnimeDiscovery({ library, onAdd }: { library: AnimeLibraryItem[]
     const value = catalogueSearchInput.trim();
     if (value.length < 2) { setError("請至少輸入 2 個字再搜尋。"); return; }
     setCatalogueSearching(true); setError(null); setCatalogueSearch(value);
-    try { setCatalogueSearchResults((await get<{ results: ExternalAnime[] }>(`/api/anime/search?q=${encodeURIComponent(value)}`)).results); }
+    try { const answer = await get<{ results?: ExternalAnime[]; items?: ExternalAnime[] }>(adultMode ? `/api/anime/catalogue?${query({ page: 1, perPage: 24, adult: 1, search: value })}` : `/api/anime/search?q=${encodeURIComponent(value)}`); setCatalogueSearchResults(answer.results ?? answer.items ?? []); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "搜尋失敗，請稍後再試。"); }
     finally { setCatalogueSearching(false); }
   };

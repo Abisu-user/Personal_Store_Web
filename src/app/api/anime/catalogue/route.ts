@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCatalogue, getCatalogueTaxonomy, getDiscoveryHome, type CatalogueFilters } from "@/lib/anime/anilist-catalogue";
+import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +14,11 @@ const safeValue = (value: string | null, accepted: Set<string>) => value && acce
 const positive = (value: string | null, fallback: number) => { const parsed = Number(value); return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback; };
 
 export async function GET(request: NextRequest) {
-  if (!(await getSecurityContext())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const security = await getSecurityContext();
+  if (!security) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = request.nextUrl.searchParams;
+  const includeAdult = params.get("adult") === "1" && (await getAnimePreferences(security.userId)).adultModeEnabled;
+  if (params.get("adult") === "1" && !includeAdult) return NextResponse.json({ error: "成人內容模式尚未啟用。" }, { status: 403 });
   if (params.get("view") === "home") {
     try { return NextResponse.json(await getDiscoveryHome(), { headers: { "Cache-Control": "private, max-age=900" } }); }
     catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得探索動漫。" }, { status: 503 }); }
@@ -28,7 +32,7 @@ export async function GET(request: NextRequest) {
   const status = safeValue(params.get("status"), statuses) as CatalogueFilters["status"];
   const sort = safeValue(params.get("sort"), sorts) as CatalogueFilters["sort"];
   const clean = (value: string | null) => value?.trim().slice(0, 80) || undefined;
-  const filters: CatalogueFilters = { page: positive(params.get("page"), 1), perPage: Math.min(30, positive(params.get("perPage"), 20)), season, seasonYear: params.get("seasonYear") ? positive(params.get("seasonYear"), new Date().getFullYear()) : undefined, genre: clean(params.get("genre")), tag: clean(params.get("tag")), format, status, sort };
+  const filters: CatalogueFilters = { page: positive(params.get("page"), 1), perPage: Math.min(30, positive(params.get("perPage"), 20)), season, seasonYear: params.get("seasonYear") ? positive(params.get("seasonYear"), new Date().getFullYear()) : undefined, genre: clean(params.get("genre")), tag: clean(params.get("tag")), format, status, sort, includeAdult, search: clean(params.get("search")) };
   try {
     return NextResponse.json(await getCatalogue(filters), { headers: { "Cache-Control": "private, max-age=900" } });
   } catch (cause) {
