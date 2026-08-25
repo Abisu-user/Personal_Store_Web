@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CoverImageField, type CoverSelection, uploadCover } from "@/components/content/cover-image-field";
+import { AnimeDiscovery } from "@/components/anime/anime-discovery";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
 
-type Tab = "library" | "search" | "stats";
+type Tab = "discover" | "library" | "search" | "stats";
 type Filter = "all" | Exclude<AnimeWatchStatus, "paused">;
 const statuses: AnimeWatchStatus[] = ["planning", "watching", "completed", "paused", "dropped"];
 const visibleFilters: Filter[] = ["all", "watching", "planning", "completed", "dropped"];
@@ -44,7 +45,7 @@ function StarRating({ value, onChange, readonly = false }: { value: number | nul
 
 export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceData }) {
   const [data, setData] = useState(initialData ?? empty);
-  const [tab, setTab] = useState<Tab>("library");
+  const [tab, setTab] = useState<Tab>("discover");
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -117,6 +118,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     {pending && <OperationStatus label={pending === "category" ? "正在新增類別…" : "正在儲存動漫資料…"} />}
     <div className="anime-toolbar">
       <div className="anime-tabs" role="tablist" aria-label="動漫功能">
+        <button className={tab === "discover" ? "active" : ""} onClick={() => setTab("discover")} type="button">探索</button>
         <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} type="button">我的動漫</button>
         <button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")} type="button">搜尋動漫</button>
         <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
@@ -124,6 +126,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
       <button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button>
     </div>
     {notice && <div className="notice success anime-notice"><span>{notice}</span><button aria-label="關閉提示" onClick={() => setNotice(null)} type="button">×</button></div>}
+    {tab === "discover" && <AnimeDiscovery library={data.library} onAdd={setPrefill} onSearch={(value) => { setSearchInput(value); setSubmittedSearch(value); setTab("search"); }} />}
     {tab === "library" && <>
       <div className="anime-filter-bar">
         <div className="anime-filter-scroll">{visibleFilters.map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)} type="button">{value === "all" ? "全部" : animeStatusLabels[value]}</button>)}</div>
