@@ -11,5 +11,12 @@ export async function GET(request: NextRequest) {
   const parsed = querySchema.safeParse(request.nextUrl.searchParams.get("q") ?? "");
   if (!parsed.success) return NextResponse.json({ error: "請至少輸入 2 個字搜尋動漫。" }, { status: 400 });
   try { return NextResponse.json({ results: await searchAnime(parsed.data) }, { headers: { "Cache-Control": "private, no-store" } }); }
-  catch { return NextResponse.json({ error: "動漫資料服務暫時無法使用，請稍後再試。" }, { status: 503 }); }
+  catch (caught) {
+    // Do not log the search phrase itself; a user's anime searches are private.
+    console.error("[api/anime/search] catalogue lookup failed", {
+      error: caught instanceof Error ? caught.message : String(caught),
+      queryLength: parsed.data.length,
+    });
+    return NextResponse.json({ error: "動漫資料服務暫時無法使用，請稍後再試。" }, { status: 503 });
+  }
 }
