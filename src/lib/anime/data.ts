@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AnimeLibraryItem, AnimeRelation, AnimeTag, AnimeWatchLog, AnimeWorkspaceData } from "@/lib/anime/types";
+import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
 
 const asStrings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 const asRelations = (value: unknown): AnimeRelation[] => Array.isArray(value) ? value.filter((item): item is AnimeRelation => Boolean(item) && typeof item === "object" && typeof (item as AnimeRelation).malId === "number" && typeof (item as AnimeRelation).title === "string") : [];
@@ -18,7 +19,7 @@ export async function getAnimeWorkspaceData(userId: string): Promise<AnimeWorksp
     admin.from("anime_watch_logs").select("id,anime_id,from_episode,to_episode,action,watched_at").eq("user_id", userId).order("watched_at", { ascending: false }).limit(120),
   ]);
   if (libraryError || tagError || logError) throw new Error("Anime library unavailable");
-  const library = (rows ?? []).map(toAnime); const animeIds = library.map((anime) => anime.id);
+  const library = await localizeAnimeTitles((rows ?? []).map(toAnime)); const animeIds = library.map((anime) => anime.id);
   const { data: links, error: linkError } = animeIds.length ? await admin.from("anime_library_tags").select("anime_id,tag_id").in("anime_id", animeIds) : { data: [], error: null };
   if (linkError) throw new Error("Anime tags unavailable");
   const tags = (tagRows ?? []).map((row: any): AnimeTag => ({ id: row.id, name: row.name, color: row.color }));

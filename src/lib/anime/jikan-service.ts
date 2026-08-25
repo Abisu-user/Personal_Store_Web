@@ -1,5 +1,6 @@
 import "server-only";
 import type { AnimeRelation, ExternalAnime } from "@/lib/anime/types";
+import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
 
 const JIKAN_ROOT = (process.env.ANIME_JIKAN_API_URL || "https://api.jikan.moe/v4").replace(/\/+$/, "");
 const ANILIST_URL = process.env.ANIME_ANILIST_API_URL || "https://graphql.anilist.co";
@@ -172,7 +173,7 @@ export async function searchAnime(query: string, callerSignal?: AbortSignal): Pr
     try {
       const results = await request();
       providerAnswered = true;
-      if (results.length > 0) { cacheSearch(key, results); return results; }
+      if (results.length > 0) { const localized = await localizeAnimeTitles(results); cacheSearch(key, localized); return localized; }
     } catch (caught) {
       if (callerSignal?.aborted) throw caught;
       failures.push(caught instanceof AnimeProviderError ? caught : new AnimeProviderError("anilist", 502, "unknown", caught instanceof Error ? caught.message : "Catalogue search failed"));
@@ -184,8 +185,9 @@ export async function searchAnime(query: string, callerSignal?: AbortSignal): Pr
   try {
     const result = await jikanRequest(`/anime?${new URLSearchParams({ q: query, limit: "12", sfw: "true", order_by: "score", sort: "desc" })}`, callerSignal);
     const results = Array.isArray(result.data) ? result.data.map(mapJikan).filter((anime) => anime.id) : [];
-    cacheSearch(key, results);
-    return results;
+    const localized = await localizeAnimeTitles(results);
+    cacheSearch(key, localized);
+    return localized;
   } catch (caught) {
     if (callerSignal?.aborted) throw caught;
     failures.push(caught instanceof AnimeProviderError ? caught : new AnimeProviderError("jikan", 502, "unknown", caught instanceof Error ? caught.message : "Jikan search failed"));
@@ -195,9 +197,9 @@ export async function searchAnime(query: string, callerSignal?: AbortSignal): Pr
 
 export async function getAnimeDetail(source: AnimeProvider, externalId: string): Promise<ExternalAnime> {
   if (!/^\d{1,12}$/.test(externalId)) throw new Error("Invalid external anime id");
-  if (source === "anilist") { const [anime] = await anilist({ id: Number(externalId) }); if (!anime) throw new Error("Anime was not found"); return anime; }
-  if (source === "bangumi") return bangumiDetail(externalId);
+  if (source === "anilist") { const [anime] = await anilist({ id: Number(externalId) }); if (!anime) throw new Error("Anime was not found"); return (await localizeAnimeTitles([anime]))[0]!; }
+  if (source === "bangumi") return (await localizeAnimeTitles([await bangumiDetail(externalId)]))[0]!;
   const result = await jikanRequest(`/anime/${externalId}/full`);
   if (!result.data || typeof result.data !== "object") throw new Error("Anime was not found");
-  return mapJikan(result.data);
+  return (await localizeAnimeTitles([mapJikan(result.data)]))[0]!;
 }

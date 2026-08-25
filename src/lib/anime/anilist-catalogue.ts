@@ -1,5 +1,6 @@
 import "server-only";
 import type { ExternalAnime } from "@/lib/anime/types";
+import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
 
 const ANILIST_URL = process.env.ANIME_ANILIST_API_URL || "https://graphql.anilist.co";
 const CATALOGUE_TTL = 45 * 60_000;
@@ -111,7 +112,8 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
   }
   const data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
   const info = data?.Page?.pageInfo;
-  return { items: Array.isArray(data?.Page?.media) ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id) : [], page: Number(info?.currentPage ?? page), hasNextPage: Boolean(info?.hasNextPage), total: Number(info?.total ?? 0) };
+  const items = Array.isArray(data?.Page?.media) ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id) : [];
+  return { items: await localizeAnimeTitles(items), page: Number(info?.currentPage ?? page), hasNextPage: Boolean(info?.hasNextPage), total: Number(info?.total ?? 0) };
 }
 
 export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
