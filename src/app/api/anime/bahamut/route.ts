@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
       error: error instanceof Error ? error.message : "unknown",
       name: error instanceof Error ? error.name : "unknown",
       status: error instanceof BahamutLookupError ? error.status : null,
+      serverDeploymentRegion: process.env.VERCEL_REGION || "local-or-unknown",
       titleLength: parsed.data.title.length,
     });
     const status = error instanceof BahamutLookupError ? error.status : null;

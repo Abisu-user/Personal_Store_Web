@@ -26,6 +26,8 @@ const checkedAt = () => new Date().toISOString();
 const cacheKey = (titles: string[]) => titles.map(normalize).filter(Boolean).sort().join("|");
 const responseSnippet = (body: string) => body.replace(/\s+/g, " ").slice(0, 600);
 const endpoint = (url: URL) => `${url.origin}${url.pathname}`;
+const deploymentRegion = () => process.env.VERCEL_REGION || "local-or-unknown";
+const responseHeaders = (headers: Headers) => Object.fromEntries([...headers.entries()].filter(([name]) => !["set-cookie", "cookie", "authorization"].includes(name.toLowerCase())));
 
 function fromCache(key: string) {
   const entry = lookupCache.get(key);
@@ -88,13 +90,13 @@ export async function findBahamutAnime(titles: Array<string | null | undefined>)
     });
   } catch (caught) {
     const reason = caught instanceof Error && caught.name === "AbortError" ? "Bahamut catalogue request timed out" : caught instanceof Error ? caught.message : "Bahamut catalogue request failed";
-    console.error("[bahamut-upstream]", { provider: "bahamut", upstreamUrl: endpoint(url), httpStatus: null, error: reason, responseBody: null, timeout: controller.signal.aborted, rateLimit: false, durationMs: Date.now() - startedAt });
+    console.error("[bahamut-upstream]", { provider: "bahamut", requestUrl: url.toString(), upstreamUrl: endpoint(url), redirectUrl: null, serverDeploymentRegion: deploymentRegion(), httpStatus: null, responseHeaders: null, error: reason, responseBody: null, timeout: controller.signal.aborted, rateLimit: false, durationMs: Date.now() - startedAt });
     throw new BahamutLookupError(reason);
   } finally {
     clearTimeout(timeout);
   }
   const html = await response.text();
-  console.info("[bahamut-upstream]", { provider: "bahamut", upstreamUrl: endpoint(url), httpStatus: response.status, error: response.ok ? null : `Bahamut catalogue returned ${response.status}`, responseBody: responseSnippet(html), timeout: false, rateLimit: response.status === 429, durationMs: Date.now() - startedAt, redirected: response.redirected });
+  console.info("[bahamut-upstream]", { provider: "bahamut", requestUrl: url.toString(), upstreamUrl: endpoint(url), redirectUrl: response.url, serverDeploymentRegion: deploymentRegion(), httpStatus: response.status, responseHeaders: responseHeaders(response.headers), error: response.ok ? null : `Bahamut catalogue returned ${response.status}`, responseBody: responseSnippet(html), timeout: false, rateLimit: response.status === 429, durationMs: Date.now() - startedAt, redirected: response.redirected });
   if (!response.ok) throw new BahamutLookupError(`Bahamut catalogue returned ${response.status}`, response.status);
   if (!html.includes("animeRef.php") && !html.includes("animeVideo.php")) throw new BahamutLookupError("Bahamut catalogue returned an unexpected response", response.status);
   const match = findCandidates(html, names)[0];
