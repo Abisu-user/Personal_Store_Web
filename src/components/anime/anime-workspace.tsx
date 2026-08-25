@@ -1,60 +1,179 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useMemo, useState } from "react";
+import { CoverImageField, type CoverSelection, uploadCover } from "@/components/content/cover-image-field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
-import type { BahamutLookupResponse } from "@/lib/anime/bahamut-anime-service";
-import { animeStatusLabels, type AnimeLibraryItem, type AnimeStreamingPlatform, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
+import { animeStatusLabels, type AnimeLibraryItem, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData } from "@/lib/anime/types";
 
-type Tab = "library" | "search" | "stats";
-const statuses: AnimeWatchStatus[] = ["watching", "planning", "completed", "paused", "dropped"];
-const empty: AnimeWorkspaceData = { library: [], tags: [], logs: [], preferences: { preferredStreamingPlatform: "bahamut" } };
-const keyOf = (a: ExternalAnime) => `${a.source}:${a.id}`;
-const date = (value: string | null) => value ? new Intl.DateTimeFormat("zh-TW", { month: "short", day: "numeric" }).format(new Date(value)) : "尚未觀看";
-const pct = (a: AnimeLibraryItem) => a.episodes ? Math.min(100, Math.round(a.watchedEpisodes / a.episodes * 100)) : 0;
-async function api<T>(url: string, init?: RequestInit) { const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } }); const body = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof body.error === "string" ? body.error : "操作失敗，請稍後再試。"); return body as T; }
-function Cover({ anime, className = "anime-cover" }: { anime: Pick<AnimeLibraryItem | ExternalAnime, "coverUrl" | "title">; className?: string }) { return anime.coverUrl ? <img alt={`${anime.title} 封面`} className={className} loading="lazy" src={anime.coverUrl} /> : <div className={`${className} anime-cover-fallback`}>ANIME</div>; }
-function Status({ value }: { value: AnimeWatchStatus }) { return <span className={`anime-status status-${value}`}>{animeStatusLabels[value]}</span>; }
+type Tab = "library" | "stats";
+type Filter = "all" | Exclude<AnimeWatchStatus, "paused">;
+const statuses: AnimeWatchStatus[] = ["planning", "watching", "completed", "paused", "dropped"];
+const visibleFilters: Filter[] = ["all", "watching", "planning", "completed", "dropped"];
+const empty: AnimeWorkspaceData = { library: [], tags: [], logs: [] };
+
+async function api<T>(url: string, init?: RequestInit) {
+  const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "操作失敗，請稍後再試。");
+  return body as T;
+}
+
+function coverUrl(anime: AnimeLibraryItem) {
+  return anime.coverUrl?.startsWith("/") || anime.coverUrl?.startsWith("http") ? anime.coverUrl : anime.coverUrl ? `/api/anime/library/${anime.id}/cover?v=${encodeURIComponent(anime.updatedAt)}` : null;
+}
+
+function Cover({ anime, className = "anime-cover" }: { anime: AnimeLibraryItem; className?: string }) {
+  const src = coverUrl(anime);
+  return src ? <img alt={`${anime.title} 封面`} className={className} loading="lazy" src={src} /> : <div className={`${className} anime-cover-fallback`}>ANIME</div>;
+}
+
+function Status({ value }: { value: AnimeWatchStatus }) {
+  return <span className={`anime-status status-${value}`}>{animeStatusLabels[value]}</span>;
+}
+
+function StarRating({ value, onChange, readonly = false }: { value: number | null; onChange?: (next: number | null) => void; readonly?: boolean }) {
+  return <div aria-label={value === null ? "尚未評分" : `我的評分 ${value} / 10`} className={`anime-stars${readonly ? " readonly" : ""}`}>
+    {Array.from({ length: 10 }, (_, index) => {
+      const star = index + 1;
+      return <button aria-label={`${star} 星`} className={value !== null && star <= value ? "active" : ""} disabled={readonly} key={star} onClick={() => onChange?.(value === star ? null : star)} type="button">★</button>;
+    })}
+  </div>;
+}
 
 export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceData }) {
-  const [data, setData] = useState(initialData ?? empty); const [tab, setTab] = useState<Tab>("library"); const [filter, setFilter] = useState<"all" | "favorite" | AnimeWatchStatus>("all"); const [query, setQuery] = useState(""); const [searchInput, setSearchInput] = useState(""); const [submittedSearch, setSubmittedSearch] = useState(""); const [results, setResults] = useState<ExternalAnime[]>([]); const [loading, setLoading] = useState(false); const [searchError, setSearchError] = useState<string | null>(null); const [pending, setPending] = useState<string | null>(null); const [selected, setSelected] = useState<AnimeLibraryItem | null>(null); const [adding, setAdding] = useState<ExternalAnime | null>(null); const [removing, setRemoving] = useState<AnimeLibraryItem | null>(null); const [notice, setNotice] = useState<string | null>(null); const [bahamut, setBahamut] = useState<Record<string, BahamutLookupResponse | undefined>>({});
-    const cache = useRef(new Map<string, { until: number; rows: ExternalAnime[] }>());
-  const library = useMemo(() => data.library.filter((a) => (filter === "all" ? true : filter === "favorite" ? a.favorite : a.watchStatus === filter) && [a.title, a.titleJapanese, a.titleEnglish, a.notes, ...a.tags.map((t) => t.name)].filter(Boolean).join(" ").toLocaleLowerCase().includes(query.toLocaleLowerCase())), [data.library, filter, query]);
-  const existing = useMemo(() => new Set(data.library.map((a) => `${a.externalSource}:${a.externalId}`)), [data.library]);
-  const refresh = async () => { setPending("refresh"); try { setData(await api<AnimeWorkspaceData>("/api/anime/library")); } catch (e) { setNotice(e instanceof Error ? e.message : "無法更新動漫資料。"); } finally { setPending(null); } };
-  useEffect(() => { const text = submittedSearch.trim(); if (tab !== "search" || text.length < 2) { setLoading(false); return; } const cacheKey = text.normalize("NFKC").toLocaleLowerCase(); const hit = cache.current.get(cacheKey); if (hit && hit.until > Date.now()) { setResults(hit.rows); setLoading(false); setSearchError(null); return; } const controller = new AbortController(); void (async () => { setLoading(true); setSearchError(null); try { const answer = await api<{ results: ExternalAnime[] }>(`/api/anime/search?q=${encodeURIComponent(text)}`, { signal: controller.signal }); if (!controller.signal.aborted) { setResults(answer.results); cache.current.set(cacheKey, { until: Date.now() + 20 * 60 * 1_000, rows: answer.results }); } } catch (e) { if (!controller.signal.aborted) setSearchError(!navigator.onLine ? "目前沒有網路連線" : e instanceof Error ? e.message : "搜尋失敗，請稍後再試"); } finally { if (!controller.signal.aborted) setLoading(false); } })(); return () => controller.abort(); }, [submittedSearch, tab]);
-  const submitSearch = () => { const text = searchInput.trim(); if (text.length < 2) { setResults([]); setSearchError("請至少輸入 2 個字再搜尋。"); return; } setSearchError(null); setSubmittedSearch(text); };
-  const setPreference = async (preferredStreamingPlatform: AnimeStreamingPlatform) => { setPending("preference"); try { await api("/api/anime/preferences", { method: "PATCH", body: JSON.stringify({ preferredStreamingPlatform }) }); setData((v) => ({ ...v, preferences: { preferredStreamingPlatform } })); } catch (e) { setNotice(e instanceof Error ? e.message : "無法儲存串流平台偏好。"); } finally { setPending(null); } };
-  const alterProgress = async (anime: AnimeLibraryItem, action: "increment" | "decrement") => { setPending(`progress-${anime.id}`); try { await api(`/api/anime/library/${anime.id}/progress`, { method: "POST", body: JSON.stringify({ action }) }); await refresh(); } catch (e) { setNotice(e instanceof Error ? e.message : "無法更新進度。"); } finally { setPending(null); } };
-  const remove = async () => { if (!removing) return; setPending("remove"); try { await api("/api/anime/library", { method: "DELETE", body: JSON.stringify({ id: removing.id }) }); setSelected(null); setRemoving(null); await refresh(); } catch (e) { setNotice(e instanceof Error ? e.message : "無法移除動漫。"); } finally { setPending(null); } };
+  const [data, setData] = useState(initialData ?? empty);
+  const [tab, setTab] = useState<Tab>("library");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState<string | null>(null);
+  const [selected, setSelected] = useState<AnimeLibraryItem | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<AnimeLibraryItem | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [categoryName, setCategoryName] = useState("");
+
+  const refresh = async () => {
+    const next = await api<AnimeWorkspaceData>("/api/anime/library");
+    setData(next);
+  };
+  const library = useMemo(() => data.library.filter((anime) => {
+    const matchesFilter = filter === "all" || anime.watchStatus === filter;
+    const matchesCategory = !categoryFilter || anime.tags.some((category) => category.id === categoryFilter);
+    const haystack = [anime.title, anime.titleJapanese, anime.titleEnglish, anime.notes, ...anime.tags.map((category) => category.name)].filter(Boolean).join(" ").toLocaleLowerCase();
+    return matchesFilter && matchesCategory && haystack.includes(query.toLocaleLowerCase());
+  }), [categoryFilter, data.library, filter, query]);
+
+  const createCategory = async () => {
+    const name = categoryName.trim();
+    if (!name) return;
+    setPending("category");
+    try {
+      const answer = await api<{ tag: AnimeTag }>("/api/anime/tags", { method: "POST", body: JSON.stringify({ name }) });
+      setData((current) => current.tags.some((category) => category.id === answer.tag.id) ? current : { ...current, tags: [...current.tags, answer.tag].sort((a, b) => a.name.localeCompare(b.name, "zh-TW")) });
+      setCategoryName("");
+      setNotice("已新增類別。");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "無法新增類別。");
+    } finally {
+      setPending(null);
+    }
+  };
+  const remove = async () => {
+    if (!removing) return;
+    setPending("remove");
+    try {
+      await api("/api/anime/library", { method: "DELETE", body: JSON.stringify({ id: removing.id }) });
+      setData((current) => ({ ...current, library: current.library.filter((anime) => anime.id !== removing.id) }));
+      setSelected(null);
+      setRemoving(null);
+      setNotice("已移至垃圾桶。");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "無法移除動漫。");
+    } finally {
+      setPending(null);
+    }
+  };
+
   return <section className="anime-workspace">
-    {pending && <OperationStatus label={pending === "refresh" ? "正在同步動漫資料…" : "正在儲存動漫資料…"} />}
-    <div className="anime-toolbar"><div className="anime-tabs" role="tablist" aria-label="動漫功能"><button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} type="button">我的動漫</button><button className={tab === "search" ? "active" : ""} onClick={() => setTab("search")} type="button">搜尋動漫</button><button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button></div>{tab !== "search" && <button className="button compact" onClick={() => setTab("search")} type="button">＋ 搜尋並加入</button>}</div>
+    {pending && <OperationStatus label={pending === "category" ? "正在新增類別…" : "正在儲存動漫資料…"} />}
+    <div className="anime-toolbar">
+      <div className="anime-tabs" role="tablist" aria-label="動漫功能">
+        <button className={tab === "library" ? "active" : ""} onClick={() => setTab("library")} type="button">我的動漫</button>
+        <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
+      </div>
+      <button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button>
+    </div>
     {notice && <div className="notice success anime-notice"><span>{notice}</span><button aria-label="關閉提示" onClick={() => setNotice(null)} type="button">×</button></div>}
-    {tab === "library" && <><div className="anime-library-intro"><div><p className="eyebrow">PERSONAL ANIME LIBRARY</p><h2>繼續觀看</h2><p>作品資料與觀看紀錄保存在你的私人收藏庫。</p></div><div className="anime-library-preferences"><label>偏好串流平台<select disabled={Boolean(pending)} onChange={(e) => void setPreference(e.target.value as AnimeStreamingPlatform)} value={data.preferences.preferredStreamingPlatform}><option value="bahamut">動畫瘋</option><option value="netflix">Netflix</option><option value="crunchyroll">Crunchyroll</option><option value="other">其他</option></select></label><div className="anime-mini-stats"><strong>{data.library.filter((a) => a.watchStatus === "watching").length}</strong><span>正在觀看</span></div></div></div><div className="anime-filter-bar"><div className="anime-filter-scroll">{(["all", ...statuses, "favorite"] as const).map((v) => <button className={filter === v ? "active" : ""} key={v} onClick={() => setFilter(v)} type="button">{v === "all" ? "全部" : v === "favorite" ? "收藏" : animeStatusLabels[v]}</button>)}</div><input aria-label="搜尋自己的動漫" onChange={(e) => setQuery(e.target.value)} placeholder="搜尋名稱、標籤或備註" value={query} /></div><div className="anime-grid">{library.map((a) => <article className="anime-card" key={a.id}><button className="anime-card-main" onClick={() => setSelected(a)} type="button"><Cover anime={a} /><div className="anime-card-copy"><div className="anime-card-line"><Status value={a.watchStatus} />{a.favorite && <span className="anime-favorite">♥</span>}</div><h3>{a.title}</h3><p>{a.titleJapanese || a.titleEnglish || a.animeType || "Anime"}</p><div className="anime-progress"><span>{a.watchedEpisodes} / {a.episodes ?? "?"} 集</span><i><b style={{ width: `${pct(a)}%` }} /></i></div></div></button>{a.watchStatus === "watching" && <div className="anime-quick-progress"><button disabled={a.watchedEpisodes === 0 || Boolean(pending)} onClick={() => void alterProgress(a, "decrement")} type="button">−</button><strong>{a.watchedEpisodes}</strong><button disabled={Boolean(pending)} onClick={() => void alterProgress(a, "increment")} type="button">＋1</button></div>}</article>)}</div>{library.length === 0 && <div className="anime-empty"><h3>{data.library.length ? "找不到符合的動漫" : "還沒有加入動漫"}</h3><button className="button compact" onClick={() => setTab("search")} type="button">搜尋動漫</button></div>}</>}
-    {tab === "search" && <><div className="anime-search-heading"><p className="eyebrow">ANIME DATABASE</p><h2>搜尋動漫</h2><p>輸入名稱後按 Enter 或搜尋按鈕；外部動漫資料與動畫瘋資訊會分開確認。</p></div><form className="anime-search-box" onSubmit={(event) => { event.preventDefault(); submitSearch(); }}><i>⌕</i><input autoFocus onChange={(e) => setSearchInput(e.target.value)} placeholder="例如：進擊的巨人、Frieren、進撃の巨人" value={searchInput} /><button aria-label="搜尋動漫" className="button compact" type="submit">搜尋</button></form>{loading && <div className="anime-search-state">正在搜尋 Anime Database…</div>}{searchError && <div className="notice error">{searchError}</div>}<div className="anime-search-grid">{submittedSearch.trim().length >= 2 && results.map((a) => { const match = bahamut[keyOf(a)]?.match; return <article className="anime-search-card" key={keyOf(a)}><Cover anime={a} className="anime-search-cover" /><div><p className="anime-result-type">{a.animeType ?? "Anime"} {a.releaseYear ? `· ${a.releaseYear}` : ""}</p><h3>{a.title}</h3><p>{a.titleJapanese || a.titleEnglish || "未提供其他名稱"}</p><small>{a.episodes ? `${a.episodes} 集` : "集數未定"}</small>{match?.available && <small className="bahamut-available">動畫瘋 ✓</small>}{match?.available === false && <small>動畫瘋目前未找到</small>}<div className="anime-result-actions"><button className="secondary-button" onClick={() => setAdding(a)} type="button">{existing.has(keyOf(a)) ? "查看／更新" : "＋ 加入我的動漫"}</button></div></div></article>; })}</div>{!loading && submittedSearch.trim().length >= 2 && !searchError && results.length === 0 && <div className="anime-empty"><h3>找不到相關動漫</h3><p>試試不同名稱、羅馬拼音或日文名稱。</p></div>}</>}
+    {tab === "library" && <>
+      <div className="anime-library-intro">
+        <div><p className="eyebrow">PERSONAL ANIME LIBRARY</p><h2>我的動漫收藏</h2><p>自行記錄封面、觀看連結、觀看狀態、評分、類別與私人備註。</p></div>
+        <div className="anime-mini-stats"><strong>{data.library.filter((anime) => anime.watchStatus === "watching").length}</strong><span>正在觀看</span></div>
+      </div>
+      <div className="anime-filter-bar">
+        <div className="anime-filter-scroll">{visibleFilters.map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)} type="button">{value === "all" ? "全部" : animeStatusLabels[value]}</button>)}</div>
+        <input aria-label="搜尋自己的動漫" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋名稱、類別或備註" value={query} />
+      </div>
+      <section className="anime-category-bar" aria-label="動漫類別">
+        <div className="anime-category-scroll"><button className={!categoryFilter ? "active" : ""} onClick={() => setCategoryFilter(null)} type="button">所有類別</button>{data.tags.map((category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter(category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>)}</div>
+        <form className="anime-category-add" onSubmit={(event) => { event.preventDefault(); void createCategory(); }}><input disabled={Boolean(pending)} onChange={(event) => setCategoryName(event.target.value)} placeholder="新增類別" value={categoryName} /><button className="secondary-button compact" disabled={Boolean(pending) || !categoryName.trim()} type="submit">＋ 類別</button></form>
+      </section>
+      <div className="anime-grid">{library.map((anime) => <article className="anime-card" key={anime.id}>
+        <button className="anime-card-main" onClick={() => setSelected(anime)} type="button"><Cover anime={anime} /><div className="anime-card-copy"><div className="anime-card-line"><Status value={anime.watchStatus} />{anime.rating !== null && <span className="anime-rating-summary">★ {anime.rating}</span>}</div><h3>{anime.title}</h3><p>{anime.tags.map((category) => category.name).join(" · ") || "未分類"}</p><div className="anime-card-link">{anime.sourceUrl ? "已設定觀看連結" : "尚未設定觀看連結"}</div></div></button>
+      </article>)}</div>
+      {!library.length && <div className="anime-empty"><h3>{data.library.length ? "找不到符合的動漫" : "還沒有加入動漫"}</h3><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>}
+    </>}
     {tab === "stats" && <AnimeStats data={data} />}
-      {adding && <AddDialog anime={adding} existing={data.library.find((a) => a.externalId === adding.id && a.externalSource === adding.source) ?? null} onClose={() => setAdding(null)} onSaved={async () => { setAdding(null); await refresh(); setTab("library"); }} tags={data.tags} />}
-    {selected && <DetailDialog anime={selected} preferred={data.preferences.preferredStreamingPlatform} onClose={() => setSelected(null)} onRemove={() => setRemoving(selected)} onSaved={async () => { await refresh(); setSelected(null); }} tags={data.tags} />}
+    {adding && <AnimeEditor categories={data.tags} onClose={() => setAdding(false)} onSaved={async () => { setAdding(false); setPending("refresh"); try { await refresh(); setTab("library"); setNotice("已新增動漫。"); } finally { setPending(null); } }} />}
+    {selected && <AnimeEditor anime={selected} categories={data.tags} onClose={() => setSelected(null)} onRemove={() => setRemoving(selected)} onSaved={async () => { setPending("refresh"); try { await refresh(); setSelected(null); setNotice("已儲存動漫資料。"); } finally { setPending(null); } }} />}
     <ConfirmDialog confirmLabel="移至垃圾桶" description={removing ? `確定要將《${removing.title}》移至垃圾桶嗎？` : ""} onCancel={() => setRemoving(null)} onConfirm={() => void remove()} open={Boolean(removing)} pending={pending === "remove"} title="移除我的動漫" />
   </section>;
 }
-function AnimeStats({ data }: { data: AnimeWorkspaceData }) { const watched = data.library.reduce((n, a) => n + a.watchedEpisodes, 0); return <><div className="anime-stats-grid"><article><small>總收藏</small><strong>{data.library.length}</strong><span>部動漫</span></article><article><small>已觀看集數</small><strong>{watched}</strong><span>集</span></article><article><small>正在觀看</small><strong>{data.library.filter((a) => a.watchStatus === "watching").length}</strong><span>部</span></article><article><small>平均評分</small><strong>—</strong><span>/ 10</span></article></div><section className="anime-history"><h2>最近觀看</h2>{data.logs.slice(0, 8).map((log) => <div key={log.id}><span>{date(log.watchedAt)}</span><strong>{data.library.find((a) => a.id === log.animeId)?.title ?? "已移除的動漫"}</strong><small>第 {log.fromEpisode} 集 → 第 {log.toEpisode} 集</small></div>)}</section></>; }
-function AddDialog({ anime, existing, tags, onClose, onSaved }: { anime: ExternalAnime; existing: AnimeLibraryItem | null; tags: AnimeTag[]; onClose: () => void; onSaved: () => Promise<void> }) {
-  const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(existing?.watchStatus ?? "planning");
-  const [watchedEpisodes, setEpisodes] = useState(existing?.watchedEpisodes ?? 0);
-  const [favorite, setFavorite] = useState(existing?.favorite ?? false);
-  const [tagIds, setTagIds] = useState(existing?.tags.map((t) => t.id) ?? []);
-  const [bahamutUrl, setBahamutUrl] = useState(existing?.bahamutUrl ?? "");
+
+function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
+  const watched = data.library.reduce((total, anime) => total + anime.watchedEpisodes, 0);
+  const scores = data.library.flatMap((anime) => anime.rating === null ? [] : [anime.rating]);
+  const average = scores.length ? (scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(1) : "—";
+  return <><div className="anime-stats-grid"><article><small>總收藏</small><strong>{data.library.length}</strong><span>部動漫</span></article><article><small>已觀看集數</small><strong>{watched}</strong><span>集</span></article><article><small>正在觀看</small><strong>{data.library.filter((anime) => anime.watchStatus === "watching").length}</strong><span>部</span></article><article><small>平均評分</small><strong>{average}</strong><span>/ 10</span></article></div></>;
+}
+
+function AnimeEditor({ anime, categories, onClose, onSaved, onRemove }: { anime?: AnimeLibraryItem; categories: AnimeTag[]; onClose: () => void; onSaved: () => Promise<void>; onRemove?: () => void }) {
+  const [title, setTitle] = useState(anime?.title ?? "");
+  const [sourceUrl, setSourceUrl] = useState(anime?.sourceUrl ?? "");
+  const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(anime?.watchStatus ?? "planning");
+  const [rating, setRating] = useState<number | null>(anime?.rating ?? null);
+  const [notes, setNotes] = useState(anime?.notes ?? "");
+  const [categoryIds, setCategoryIds] = useState(anime?.tags.map((category) => category.id) ?? []);
+  const [cover, setCover] = useState<CoverSelection>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const searchUrl = `https://ani.gamer.com.tw/search.php?keyword=${encodeURIComponent(anime.title)}`;
-  const save = async () => { setPending(true); try { await api("/api/anime/library", { method: "POST", body: JSON.stringify({ externalId: anime.id, externalSource: anime.source, watchStatus, watchedEpisodes, favorite, tagIds, bahamutUrl: bahamutUrl.trim() || null }) }); await onSaved(); } catch (e) { setMessage(e instanceof Error ? e.message : "無法加入動漫。"); } finally { setPending(false); } };
-  return <ModalDialog onClose={onClose} open pending={pending} title={existing ? "更新我的動漫" : "加入我的動漫"}><div className="anime-dialog"><div className="anime-dialog-title"><Cover anime={anime} /><div><Status value={watchStatus} /><h3>{anime.title}</h3><p>{anime.titleJapanese || anime.titleEnglish}</p></div></div><section className="anime-streaming-inline"><strong>動畫瘋</strong><p>目前無法從動畫瘋確認上架資訊。</p><a className="secondary-button compact" href={searchUrl} rel="noreferrer" target="_blank">前往動畫瘋搜尋</a><label>動畫瘋連結（選填）<input onChange={(event) => setBahamutUrl(event.target.value)} placeholder="https://ani.gamer.com.tw/..." type="url" value={bahamutUrl} /></label></section><label>觀看狀態<select onChange={(e) => setWatchStatus(e.target.value as AnimeWatchStatus)} value={watchStatus}>{statuses.map((s) => <option key={s} value={s}>{animeStatusLabels[s]}</option>)}</select></label><label>目前看到第幾集<input max={anime.episodes ?? undefined} min="0" onChange={(e) => setEpisodes(Math.max(0, Number(e.target.value) || 0))} type="number" value={watchedEpisodes} /></label><label className="anime-check"><input checked={favorite} onChange={(e) => setFavorite(e.target.checked)} type="checkbox" /> 加入我的收藏</label><fieldset><legend>自訂標籤</legend><div className="anime-tag-picker">{tags.map((t) => <label key={t.id}><input checked={tagIds.includes(t.id)} onChange={() => setTagIds((ids) => ids.includes(t.id) ? ids.filter((id) => id !== t.id) : [...ids, t.id])} type="checkbox" /> {t.name}</label>)}</div></fieldset>{message && <p className="notice error">{message}</p>}<div className="dialog-actions"><button className="button" disabled={pending} onClick={() => void save()} type="button">{pending ? "儲存中…" : "加入我的動漫"}</button><button className="secondary-button" disabled={pending} onClick={onClose} type="button">取消</button></div></div></ModalDialog>;
-}
-function DetailDialog({ anime, preferred, tags, onClose, onSaved, onRemove }: { anime: AnimeLibraryItem; preferred: AnimeStreamingPlatform; tags: AnimeTag[]; onClose: () => void; onSaved: () => void; onRemove: () => void }) {
-  const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(anime.watchStatus); const [rating, setRating] = useState(anime.rating?.toString() ?? ""); const [notes, setNotes] = useState(anime.notes ?? ""); const [favorite, setFavorite] = useState(anime.favorite); const [tagIds, setTagIds] = useState(anime.tags.map((t) => t.id)); const [bahamutUrl, setBahamutUrl] = useState(anime.bahamutUrl ?? ""); const [pending, setPending] = useState(false);
-  const savedBahamutUrl = bahamutUrl.trim() || null;
-  const searchUrl = `https://ani.gamer.com.tw/search.php?keyword=${encodeURIComponent(anime.title)}`;
-  const save = async () => { setPending(true); try { await api("/api/anime/library", { method: "PATCH", body: JSON.stringify({ id: anime.id, watchStatus, rating: rating === "" ? null : Number(rating), notes, favorite, tagIds, bahamutUrl: savedBahamutUrl }) }); await onSaved(); } finally { setPending(false); } };
-  return <ModalDialog onClose={onClose} open pending={pending} title="動漫詳細資訊"><div className="anime-detail"><div className="anime-detail-hero">{anime.bannerUrl && <img alt="" src={anime.bannerUrl} />}<div><Cover anime={anime} /><div><Status value={anime.watchStatus} /><h3>{anime.title}</h3><p>{anime.titleJapanese || anime.titleEnglish || anime.originalTitle}</p></div></div></div><section className="anime-streaming"><h4>串流平台</h4>{savedBahamutUrl ? <><p><strong>動畫瘋 ✓</strong> 已儲存官方連結</p><a className="button compact" href={savedBahamutUrl} rel="noreferrer" target="_blank">{preferred === "bahamut" ? "▶ 繼續觀看" : "前往動畫瘋觀看"}</a></> : <><p>目前無法從動畫瘋確認上架資訊。</p><a className="secondary-button compact" href={searchUrl} rel="noreferrer" target="_blank">前往動畫瘋搜尋</a></>}<label>動畫瘋連結（選填）<input onChange={(event) => setBahamutUrl(event.target.value)} placeholder="https://ani.gamer.com.tw/..." type="url" value={bahamutUrl} /></label></section>{anime.synopsis && <section><h4>劇情介紹</h4><p>{anime.synopsis}</p></section>}<div className="anime-edit-grid"><label>觀看狀態<select onChange={(e) => setWatchStatus(e.target.value as AnimeWatchStatus)} value={watchStatus}>{statuses.map((s) => <option key={s} value={s}>{animeStatusLabels[s]}</option>)}</select></label><label>我的評分（0–10）<input max="10" min="0" onChange={(e) => setRating(e.target.value)} step="0.5" type="number" value={rating} /></label></div><label className="anime-check"><input checked={favorite} onChange={(e) => setFavorite(e.target.checked)} type="checkbox" /> 收藏這部動漫</label><fieldset><legend>我的標籤</legend><div className="anime-tag-picker">{tags.map((t) => <label key={t.id}><input checked={tagIds.includes(t.id)} onChange={() => setTagIds((ids) => ids.includes(t.id) ? ids.filter((id) => id !== t.id) : [...ids, t.id])} type="checkbox" /> {t.name}</label>)}</div></fieldset><label>私人備註<textarea onChange={(e) => setNotes(e.target.value)} rows={4} value={notes} /></label><div className="dialog-actions anime-detail-actions"><button className="button" disabled={pending} onClick={() => void save()} type="button">{pending ? "儲存中…" : "儲存修改"}</button><button className="secondary-button" disabled={pending} onClick={onRemove} type="button">移至垃圾桶</button></div></div></ModalDialog>;
+  const save = async () => {
+    if (!title.trim()) { setMessage("請輸入動漫名稱。"); return; }
+    setPending(true); setMessage(null);
+    try {
+      const coverTicket = await uploadCover(cover);
+      const body = { ...(anime ? { id: anime.id } : {}), title, sourceUrl: sourceUrl.trim() || null, coverTicket, watchStatus, rating, notes, categoryIds };
+      await api("/api/anime/library", { method: anime ? "PATCH" : "POST", body: JSON.stringify(body) });
+      await onSaved();
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "無法儲存動漫。");
+    } finally {
+      setPending(false);
+    }
+  };
+  const currentCover = anime ? coverUrl(anime) : null;
+  return <ModalDialog onClose={onClose} open pending={pending} title={anime ? "修改動漫" : "新增動漫"}>
+    <div className="anime-dialog">
+      <label>動漫名稱<input autoFocus onChange={(event) => setTitle(event.target.value)} placeholder="例如：葬送的芙莉蓮" value={title} /></label>
+      <CoverImageField initialUrl={currentCover} onChange={setCover} />
+      <label>觀看連結（選填）<input onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://..." type="url" value={sourceUrl} /></label>
+      <label>觀看狀態<select onChange={(event) => setWatchStatus(event.target.value as AnimeWatchStatus)} value={watchStatus}>{statuses.map((status) => <option key={status} value={status}>{animeStatusLabels[status]}</option>)}</select></label>
+      <fieldset><legend>我的評分（10 星）</legend><StarRating onChange={setRating} value={rating} /><small className="anime-rating-help">{rating === null ? "尚未評分" : `${rating} / 10`}</small></fieldset>
+      <fieldset><legend>類別（可複選）</legend><div className="anime-tag-picker">{categories.length ? categories.map((category) => <label key={category.id}><input checked={categoryIds.includes(category.id)} onChange={() => setCategoryIds((ids) => ids.includes(category.id) ? ids.filter((id) => id !== category.id) : [...ids, category.id])} type="checkbox" /> {category.name}</label>) : <p className="anime-field-hint">先在清單上方新增類別後即可選取。</p>}</div></fieldset>
+      <label>私人備註<textarea onChange={(event) => setNotes(event.target.value)} placeholder="記錄心得、進度或提醒…" rows={4} value={notes} /></label>
+      {message && <p className="notice error">{message}</p>}
+      <div className="dialog-actions anime-detail-actions"><div>{anime && onRemove && <button className="danger-button" disabled={pending} onClick={onRemove} type="button">移至垃圾桶</button>}</div><div><button className="secondary-button" disabled={pending} onClick={onClose} type="button">取消</button><button className="button" disabled={pending} onClick={() => void save()} type="button">{pending ? "儲存中…" : anime ? "儲存修改" : "新增動漫"}</button></div></div>
+    </div>
+  </ModalDialog>;
 }
