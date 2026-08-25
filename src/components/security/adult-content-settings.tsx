@@ -56,8 +56,8 @@ export function AdultContentSettings() {
 
   return <section className="passkey-settings adult-security-settings">
     <div><p className="eyebrow">ADULT CONTENT</p><h2>成人內容保護</h2><p>成人作品獨立於一般動漫庫。設定與開啟此區需要既有 Vault 解鎖，作品不會出現在首頁、最近使用或一般探索。</p></div>
-    <label><input checked={preferences.adultModeEnabled} disabled={pending} onChange={(event) => void save({ adultModeEnabled: event.target.checked })} type="checkbox" /> 啟用 18+ 成人內容模式</label>
-    <label><input checked={preferences.blurAdultCovers} disabled={!preferences.adultModeEnabled || pending} onChange={(event) => void save({ blurAdultCovers: event.target.checked })} type="checkbox" /> 成人封面預設模糊</label>
+    <label className="setting-check"><input checked={preferences.adultModeEnabled} disabled={pending} onChange={(event) => void save({ adultModeEnabled: event.target.checked })} type="checkbox" /><span>啟用 18+ 成人內容模式</span></label>
+    <label className="setting-check"><input checked={preferences.blurAdultCovers} disabled={!preferences.adultModeEnabled || pending} onChange={(event) => void save({ blurAdultCovers: event.target.checked })} type="checkbox" /><span>成人封面預設模糊</span></label>
     <label>開啟成人區時驗證<select disabled={!preferences.adultModeEnabled || pending} onChange={(event) => void setAccessMode(event.target.value as AdultAccessMode)} value={preferences.adultAccessMode}><option value="none">不額外要求（仍受 Vault 鎖定保護）</option><option value="passkey">Face ID / Passkey</option><option value="pin4">獨立 4 位數 PIN</option><option value="pin6">獨立 6 位數 PIN</option></select></label>
     <form className="app-pin-settings" onSubmit={savePin}>
       <div><p className="eyebrow">ADULT AREA PIN</p><h2>{pinConfigured ? "更新成人區 PIN" : "設定成人區 PIN"}</h2><p>這是獨立的成人區密碼，僅格式與 App PIN 相同；不會使用你的登入密碼或 App PIN。</p></div>
