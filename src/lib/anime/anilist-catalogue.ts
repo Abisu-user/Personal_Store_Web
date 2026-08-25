@@ -22,16 +22,41 @@ export type CataloguePage = { items: ExternalAnime[]; page: number; hasNextPage:
 export type CatalogueTaxonomy = { genres: string[]; tags: string[] };
 export type DiscoveryHome = { current: CataloguePage; upcoming: CataloguePage; popular: CataloguePage; top: CataloguePage; taxonomy: CatalogueTaxonomy; unavailable: string[] };
 
-const catalogueQuery = `query AnimeCatalogue($page: Int!, $perPage: Int!, $season: MediaSeason, $seasonYear: Int, $genre: String, $tag: String, $format: MediaFormat, $status: MediaStatus, $sort: [MediaSort!]) {
-  Page(page: $page, perPage: $perPage) {
-    pageInfo { currentPage hasNextPage total }
-    media(type: ANIME, isAdult: false, season: $season, seasonYear: $seasonYear, genre: $genre, tag: $tag, format: $format, status: $status, sort: $sort) {
-      id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false)
-      format status episodes duration season seasonYear startDate { year month day } endDate { year month day }
-      averageScore genres studios { nodes { name } } source
+const mediaFields = `
+  id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false)
+  format status episodes duration season seasonYear startDate { year month day } endDate { year month day }
+  averageScore genres studios { nodes { name } } source
+`;
+
+/**
+ * AniList interprets a nullable variable explicitly passed as `null` as a
+ * filter, rather than as an omitted filter.  Build the operation with only
+ * the active filters so an unfiltered "popular" request does not become an
+ * impossible `season = null` query.
+ */
+function buildCatalogueQuery(filters: CatalogueFilters) {
+  const variableTypes = ["$page: Int!", "$perPage: Int!", "$sort: [MediaSort!]"];
+  const mediaArguments = ["type: ANIME", "isAdult: false", "sort: $sort"];
+  const add = (name: string, type: string, value: unknown) => {
+    if (value === undefined || value === null || value === "") return;
+    variableTypes.push(`$${name}: ${type}`);
+    mediaArguments.push(`${name}: $${name}`);
+  };
+
+  add("season", "MediaSeason", filters.season);
+  add("seasonYear", "Int", filters.seasonYear);
+  add("genre", "String", filters.genre);
+  add("tag", "String", filters.tag);
+  add("format", "MediaFormat", filters.format);
+  add("status", "MediaStatus", filters.status);
+
+  return `query AnimeCatalogue(${variableTypes.join(", ")}) {
+    Page(page: $page, perPage: $perPage) {
+      pageInfo { currentPage hasNextPage total }
+      media(${mediaArguments.join(", ")}) { ${mediaFields} }
     }
-  }
-}`;
+  }`;
+}
 const taxonomyQuery = `query AnimeTaxonomy {
   GenreCollection
   MediaTagCollection { name rank isMediaSpoiler category }
@@ -80,7 +105,11 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
   const page = Math.max(1, Math.floor(filters.page ?? 1));
   const perPage = Math.min(30, Math.max(12, Math.floor(filters.perPage ?? 20)));
   const ttl = filters.season || (!filters.genre && !filters.tag && !filters.format && !filters.status) ? CATALOGUE_TTL : FILTER_TTL;
-  const data = await request<any>(catalogueQuery, { page, perPage, season: filters.season ?? null, seasonYear: filters.seasonYear ?? null, genre: filters.genre ?? null, tag: filters.tag ?? null, format: filters.format ?? null, status: filters.status ?? null, sort: [filters.sort ?? "POPULARITY_DESC"] }, ttl);
+  const variables: Record<string, unknown> = { page, perPage, sort: [filters.sort ?? "POPULARITY_DESC"] };
+  for (const [key, value] of Object.entries({ season: filters.season, seasonYear: filters.seasonYear, genre: filters.genre, tag: filters.tag, format: filters.format, status: filters.status })) {
+    if (value !== undefined && value !== null && value !== "") variables[key] = value;
+  }
+  const data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
   const info = data?.Page?.pageInfo;
   return { items: Array.isArray(data?.Page?.media) ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id) : [], page: Number(info?.currentPage ?? page), hasNextPage: Boolean(info?.hasNextPage), total: Number(info?.total ?? 0) };
 }
