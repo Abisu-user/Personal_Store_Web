@@ -9,6 +9,7 @@ const choices = [
   { href: "/create/code", icon: "⌘", title: "建立程式碼", description: "儲存程式片段、語言與說明。" },
   { href: "/create/file", icon: "▣", title: "上傳檔案", description: "上傳到受保護的私人檔案空間。" },
   { href: "/create/photo", icon: "▧", title: "儲存照片", description: "上傳私有照片，以類別與資料夾整理。" },
+  { href: "/vocabulary?new=1", icon: "文", title: "新增單字", description: "記錄日文、英文與其他語言的單字。" },
 ];
 
 export default function CreatePage() {

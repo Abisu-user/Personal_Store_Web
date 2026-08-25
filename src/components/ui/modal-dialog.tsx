@@ -4,13 +4,14 @@ import { ReactNode, useEffect, useId, useRef } from "react";
 
 type ModalDialogProps = {
   children: ReactNode;
+  className?: string;
   onClose: () => void;
   open: boolean;
   pending?: boolean;
   title: string;
 };
 
-export function ModalDialog({ children, onClose, open, pending = false, title }: ModalDialogProps) {
+export function ModalDialog({ children, className, onClose, open, pending = false, title }: ModalDialogProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const titleId = useId();
@@ -32,7 +33,7 @@ export function ModalDialog({ children, onClose, open, pending = false, title }:
   return <div className="modal-dialog-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !pending) onClose();
   }}>
-    <section aria-labelledby={titleId} aria-modal="true" className="modal-dialog" role="dialog">
+    <section aria-labelledby={titleId} aria-modal="true" className={`modal-dialog${className ? ` ${className}` : ""}`} role="dialog">
       <header className="modal-dialog-header">
         <div><p className="eyebrow">EDIT PRIVATE ITEM</p><h2 id={titleId}>{title}</h2></div>
         <button aria-label="關閉視窗" className="modal-dialog-close" disabled={pending} onClick={onClose} ref={closeButton} type="button">×</button>

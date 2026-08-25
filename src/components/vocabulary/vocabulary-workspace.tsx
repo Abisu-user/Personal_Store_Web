@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { FlashcardReview } from "@/components/vocabulary/flashcard-review";
@@ -16,9 +17,12 @@ const vocabularyButtonCss = `.vocabulary-primary-action,.vocabulary-export-actio
 const fromCard = (card: VocabularyCard): Draft => ({ id: card.id, language: card.language, word: card.word, reading: card.reading || "", romaji: card.romaji || "", primaryTranslation: card.primaryTranslation || "", englishDefinition: card.englishDefinition || "", partOfSpeech: card.partOfSpeech || "", jlptLevel: card.jlptLevel || "", cefrLevel: card.cefrLevel || "", notes: card.notes || "", languageDetails: JSON.stringify(card.languageDetails || {}, null, 2), tagIds: card.tags.map((tag) => tag.id), deckIds: card.deckIds, meaningsText: card.meanings.map((meaning) => meaning.meaning).join("\n"), examplesText: card.examples.map((example) => `${example.sentence}${example.translation ? `｜${example.translation}` : ""}`).join("\n"), isFavorite: card.isFavorite, learningStatus: card.learningStatus, masteryLevel: card.masteryLevel });
 
 export function VocabularyWorkspace({ initialData }: { initialData: VocabularyWorkspaceData }) {
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [data, setData] = useState(initialData); const [tab, setTab] = useState<Tab>("overview"); const [query, setQuery] = useState(""); const [language, setLanguage] = useState("all"); const [deckFilter, setDeckFilter] = useState<string | null>(null); const [pending, setPending] = useState(false); const [error, setError] = useState<string | null>(null); const [draft, setDraft] = useState<Draft | null>(null); const [selected, setSelected] = useState<VocabularyCard | null>(null); const [deleting, setDeleting] = useState<VocabularyCard | null>(null); const [chosen, setChosen] = useState(new Set<string>()); const [tagName, setTagName] = useState(""); const [deckName, setDeckName] = useState(""); const [quizAnswer, setQuizAnswer] = useState(""); const [quizMessage, setQuizMessage] = useState<string | null>(null);
   const trash = tab === "trash";
   useEffect(() => { const node = document.createElement("style"); node.dataset.vocabularyStyles = "true"; node.textContent = `${vocabularyCss}${vocabularyButtonCss}`; document.head.appendChild(node); return () => node.remove(); }, []);
+  useEffect(() => { if (searchParams.get("new") !== "1") return; setDraft((current) => current ?? blankDraft()); router.replace("/vocabulary", { scroll: false }); }, [router, searchParams]);
   const cards = useMemo(() => data.cards.filter((card) => { const text = `${card.word} ${card.reading || ""} ${card.primaryTranslation || ""} ${card.notes || ""} ${card.tags.map((tag) => tag.name).join(" ")}`.toLowerCase(); return (language === "all" || card.language === language) && text.includes(query.trim().toLowerCase()) && (tab !== "favorites" || card.isFavorite) && (!deckFilter || card.deckIds.includes(deckFilter)); }), [data.cards, deckFilter, language, query, tab]);
   const dueCards = useMemo(() => data.cards.filter((card) => card.learningStatus !== "paused" && card.nextReviewAt && new Date(card.nextReviewAt).getTime() <= Date.now()), [data.cards]);
   const stat = useMemo(() => ({ total: data.cards.length, ja: data.cards.filter((card) => card.language === "ja").length, en: data.cards.filter((card) => card.language === "en").length, mastered: data.cards.filter((card) => card.masteryLevel >= 5).length, learning: data.cards.filter((card) => card.learningStatus === "learning" || card.learningStatus === "reviewing").length, reviewed: data.reviewLogs.filter((log) => day(log.reviewedAt) === day(new Date().toISOString())).length, correct: data.reviewLogs.filter((log) => day(log.reviewedAt) === day(new Date().toISOString()) && log.answerResult).length }), [data]);
