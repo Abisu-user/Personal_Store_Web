@@ -29,6 +29,13 @@ create table if not exists public.anime_preferences (
   updated_at timestamptz not null default now()
 );
 
+alter table public.anime_preferences
+  add column if not exists adult_mode_enabled boolean not null default false,
+  add column if not exists adult_hidden_by_default boolean not null default true,
+  add column if not exists require_adult_passkey boolean not null default false,
+  add column if not exists blur_adult_covers boolean not null default true,
+  add column if not exists show_adult_in_main_library boolean not null default false;
+
 drop trigger if exists vault_app_anime_preferences_updated_at on public.anime_preferences;
 create trigger vault_app_anime_preferences_updated_at
 before update on public.anime_preferences
