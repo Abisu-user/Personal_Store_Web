@@ -119,7 +119,7 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
 export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
   const data = await request<any>(taxonomyQuery, {}, TAXONOMY_TTL);
   const genres = Array.isArray(data?.GenreCollection) ? data.GenreCollection.filter((item: unknown): item is string => typeof item === "string").sort() : [];
-  const tags = Array.isArray(data?.MediaTagCollection) ? data.MediaTagCollection.filter((item: any) => typeof item?.name === "string" && !item.isMediaSpoiler && !String(item.category ?? "").includes("Sexual")).map((item: any) => item.name).sort().slice(0, 120) : [];
+  const tags = Array.isArray(data?.MediaTagCollection) ? data.MediaTagCollection.filter((item: any) => typeof item?.name === "string" && !item.isMediaSpoiler && !String(item.category ?? "").includes("Sexual")).sort((left: any, right: any) => Number(right.rank ?? 0) - Number(left.rank ?? 0) || String(left.name).localeCompare(String(right.name))).slice(0, 100).map((item: any) => item.name) : [];
   return { genres, tags };
 }
 
