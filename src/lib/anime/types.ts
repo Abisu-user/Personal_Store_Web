@@ -5,7 +5,7 @@ export type AnimeTag = { id: string; name: string; color: string | null };
 export type AnimeRelation = { relation: string; malId: number; title: string; type: string | null };
 
 export type AnimeLibraryItem = {
-  id: string; externalId: string; externalSource: "jikan"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null;
+  id: string; externalId: string; externalSource: "jikan" | "anilist"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null;
   originalTitle: string | null; coverUrl: string | null; bannerUrl: string | null; synopsis: string | null; animeType: string | null; broadcastStatus: string | null;
   episodes: number | null; episodeDuration: number | null; releaseYear: number | null; season: string | null; startDate: string | null; endDate: string | null;
   ageRating: string | null; sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];
@@ -17,7 +17,7 @@ export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; 
 export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[] };
 
 export type ExternalAnime = {
-  id: string; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;
+  id: string; source: "jikan" | "anilist"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;
   coverUrl: string | null; bannerUrl: string | null; synopsis: string | null; animeType: string | null; broadcastStatus: string | null; episodes: number | null;
   episodeDuration: number | null; releaseYear: number | null; season: string | null; startDate: string | null; endDate: string | null; ageRating: string | null;
   sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];

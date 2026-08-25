@@ -9,13 +9,13 @@ export const dynamic = "force-dynamic";
 const id = z.string().uuid();
 const status = z.enum(["planning", "watching", "completed", "paused", "dropped"]);
 const rank = z.enum(["normal", "like", "love", "masterpiece"]);
-const createSchema = z.object({ externalId: z.string().regex(/^\d{1,12}$/), watchStatus: status.default("planning"), watchedEpisodes: z.number().int().min(0).max(100000).default(0), tagIds: z.array(id).max(30).default([]), favorite: z.boolean().default(false) });
+const createSchema = z.object({ externalId: z.string().regex(/^\d{1,12}$/), externalSource: z.enum(["jikan", "anilist"]).default("jikan"), watchStatus: status.default("planning"), watchedEpisodes: z.number().int().min(0).max(100000).default(0), tagIds: z.array(id).max(30).default([]), favorite: z.boolean().default(false) });
 const updateSchema = z.object({ id, watchStatus: status.optional(), watchedEpisodes: z.number().int().min(0).max(100000).optional(), rating: z.number().min(0).max(10).nullable().optional(), favorite: z.boolean().optional(), personalRank: rank.nullable().optional(), notes: z.string().trim().max(12000).nullable().optional(), tagIds: z.array(id).max(30).optional() });
 const deleteSchema = z.object({ id });
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });
 
 function rowFor(anime: Awaited<ReturnType<typeof getAnimeDetail>>) {
-  return { external_source: "jikan", external_id: anime.id, title: anime.title, title_japanese: anime.titleJapanese, title_english: anime.titleEnglish, title_chinese: anime.titleChinese, original_title: anime.originalTitle, cover_url: anime.coverUrl, banner_url: anime.bannerUrl, synopsis: anime.synopsis, anime_type: anime.animeType, broadcast_status: anime.broadcastStatus, episodes: anime.episodes, episode_duration: anime.episodeDuration, release_year: anime.releaseYear, season: anime.season, start_date: anime.startDate, end_date: anime.endDate, age_rating: anime.ageRating, source_material: anime.sourceMaterial, public_score: anime.publicScore, genres: anime.genres, studios: anime.studios, relations: anime.relations };
+  return { external_source: anime.source, external_id: anime.id, title: anime.title, title_japanese: anime.titleJapanese, title_english: anime.titleEnglish, title_chinese: anime.titleChinese, original_title: anime.originalTitle, cover_url: anime.coverUrl, banner_url: anime.bannerUrl, synopsis: anime.synopsis, anime_type: anime.animeType, broadcast_status: anime.broadcastStatus, episodes: anime.episodes, episode_duration: anime.episodeDuration, release_year: anime.releaseYear, season: anime.season, start_date: anime.startDate, end_date: anime.endDate, age_rating: anime.ageRating, source_material: anime.sourceMaterial, public_score: anime.publicScore, genres: anime.genres, studios: anime.studios, relations: anime.relations };
 }
 
 async function replaceTags(userId: string, animeId: string, tagIds: string[]) {
@@ -30,7 +30,7 @@ export async function GET() { const context = await getSecurityContext(); if (!c
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401); const parsed = createSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查加入動漫的資料。", 400);
   try {
-    const [anime, admin] = await Promise.all([getAnimeDetail(parsed.data.externalId), Promise.resolve(createAdminClient())]);
+    const [anime, admin] = await Promise.all([getAnimeDetail(parsed.data.externalSource, parsed.data.externalId), Promise.resolve(createAdminClient())]);
     if (anime.episodes !== null && parsed.data.watchedEpisodes > anime.episodes) return error("觀看集數不能大於作品總集數。", 400);
     const isCompleted = anime.episodes !== null && parsed.data.watchedEpisodes === anime.episodes;
     const { data, error: insertError } = await admin.from("anime_library").upsert({ user_id: context.userId, ...rowFor(anime), watch_status: isCompleted ? "completed" : parsed.data.watchStatus, watched_episodes: parsed.data.watchedEpisodes, favorite: parsed.data.favorite, started_watching_at: parsed.data.watchStatus === "watching" ? new Date().toISOString().slice(0, 10) : null, completed_at: isCompleted || parsed.data.watchStatus === "completed" ? new Date().toISOString().slice(0, 10) : null }, { onConflict: "user_id,external_source,external_id" }).select("id").single();
