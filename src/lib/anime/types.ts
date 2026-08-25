@@ -11,10 +11,12 @@ export type AnimeLibraryItem = {
   ageRating: string | null; sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];
   watchStatus: AnimeWatchStatus; watchedEpisodes: number; rating: number | null; favorite: boolean; personalRank: AnimePersonalRank | null; notes: string | null;
   startedWatchingAt: string | null; completedAt: string | null; lastWatchedAt: string | null; createdAt: string; updatedAt: string; tags: AnimeTag[];
+  bahamutAvailable: boolean | null; bahamutUrl: string | null; bahamutTitle: string | null; bahamutSn: number | null; bahamutLastCheckedAt: string | null;
 };
 
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };
-export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[] };
+export type AnimeStreamingPlatform = "bahamut" | "netflix" | "crunchyroll" | "other";
+export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[]; preferences: { preferredStreamingPlatform: AnimeStreamingPlatform } };
 
 export type ExternalAnime = {
   id: string; source: "jikan" | "anilist"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;

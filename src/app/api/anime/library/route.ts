@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getAnimeDetail } from "@/lib/anime/jikan-service";
+import { findBahamutAnime, type BahamutAnimeMatch } from "@/lib/anime/bahamut-anime-service";
 import { getAnimeWorkspaceData } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -14,8 +15,8 @@ const updateSchema = z.object({ id, watchStatus: status.optional(), watchedEpiso
 const deleteSchema = z.object({ id });
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });
 
-function rowFor(anime: Awaited<ReturnType<typeof getAnimeDetail>>) {
-  return { external_source: anime.source, external_id: anime.id, title: anime.title, title_japanese: anime.titleJapanese, title_english: anime.titleEnglish, title_chinese: anime.titleChinese, original_title: anime.originalTitle, cover_url: anime.coverUrl, banner_url: anime.bannerUrl, synopsis: anime.synopsis, anime_type: anime.animeType, broadcast_status: anime.broadcastStatus, episodes: anime.episodes, episode_duration: anime.episodeDuration, release_year: anime.releaseYear, season: anime.season, start_date: anime.startDate, end_date: anime.endDate, age_rating: anime.ageRating, source_material: anime.sourceMaterial, public_score: anime.publicScore, genres: anime.genres, studios: anime.studios, relations: anime.relations };
+function rowFor(anime: Awaited<ReturnType<typeof getAnimeDetail>>, bahamut?: BahamutAnimeMatch) {
+  return { external_source: anime.source, external_id: anime.id, title: anime.title, title_japanese: anime.titleJapanese, title_english: anime.titleEnglish, title_chinese: anime.titleChinese, original_title: anime.originalTitle, cover_url: anime.coverUrl, banner_url: anime.bannerUrl, synopsis: anime.synopsis, anime_type: anime.animeType, broadcast_status: anime.broadcastStatus, episodes: anime.episodes, episode_duration: anime.episodeDuration, release_year: anime.releaseYear, season: anime.season, start_date: anime.startDate, end_date: anime.endDate, age_rating: anime.ageRating, source_material: anime.sourceMaterial, public_score: anime.publicScore, genres: anime.genres, studios: anime.studios, relations: anime.relations, ...(bahamut ? { bahamut_available: bahamut.available, bahamut_url: bahamut.url, bahamut_title: bahamut.title, bahamut_sn: bahamut.sn, bahamut_last_checked_at: bahamut.lastCheckedAt } : {}) };
 }
 
 async function replaceTags(userId: string, animeId: string, tagIds: string[]) {
@@ -31,9 +32,12 @@ export async function POST(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401); const parsed = createSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查加入動漫的資料。", 400);
   try {
     const [anime, admin] = await Promise.all([getAnimeDetail(parsed.data.externalSource, parsed.data.externalId), Promise.resolve(createAdminClient())]);
+    let bahamut: BahamutAnimeMatch | undefined;
+    try { bahamut = await findBahamutAnime([anime.titleChinese, anime.title, anime.titleJapanese, anime.titleEnglish, anime.originalTitle], request.signal); }
+    catch (caught) { console.warn("[api/anime/library] Bahamut lookup skipped", { error: caught instanceof Error ? caught.message : "unknown" }); }
     if (anime.episodes !== null && parsed.data.watchedEpisodes > anime.episodes) return error("觀看集數不能大於作品總集數。", 400);
     const isCompleted = anime.episodes !== null && parsed.data.watchedEpisodes === anime.episodes;
-    const { data, error: insertError } = await admin.from("anime_library").upsert({ user_id: context.userId, ...rowFor(anime), watch_status: isCompleted ? "completed" : parsed.data.watchStatus, watched_episodes: parsed.data.watchedEpisodes, favorite: parsed.data.favorite, started_watching_at: parsed.data.watchStatus === "watching" ? new Date().toISOString().slice(0, 10) : null, completed_at: isCompleted || parsed.data.watchStatus === "completed" ? new Date().toISOString().slice(0, 10) : null }, { onConflict: "user_id,external_source,external_id" }).select("id").single();
+    const { data, error: insertError } = await admin.from("anime_library").upsert({ user_id: context.userId, ...rowFor(anime, bahamut), watch_status: isCompleted ? "completed" : parsed.data.watchStatus, watched_episodes: parsed.data.watchedEpisodes, favorite: parsed.data.favorite, started_watching_at: parsed.data.watchStatus === "watching" ? new Date().toISOString().slice(0, 10) : null, completed_at: isCompleted || parsed.data.watchStatus === "completed" ? new Date().toISOString().slice(0, 10) : null }, { onConflict: "user_id,external_source,external_id" }).select("id").single();
     if (insertError) throw insertError; await replaceTags(context.userId, data.id, parsed.data.tagIds); return NextResponse.json({ id: data.id }, { status: 201 });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime tag") return error("選取的標籤不存在。", 400); return error("無法加入動漫，請稍後再試。", 503); }
 }
