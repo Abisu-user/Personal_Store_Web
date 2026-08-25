@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 const schema = z.object({
-  adultModeEnabled: z.boolean().optional(), adultHiddenByDefault: z.boolean().optional(), requireAdultPasskey: z.boolean().optional(), blurAdultCovers: z.boolean().optional(), showAdultInMainLibrary: z.boolean().optional(),
+  adultModeEnabled: z.boolean().optional(), adultHiddenByDefault: z.boolean().optional(), adultAccessMode: z.enum(["none", "passkey", "pin4", "pin6"]).optional(), blurAdultCovers: z.boolean().optional(),
 });
 const fail = (message: string, status = 400) => NextResponse.json({ error: message }, { status });
 
@@ -29,9 +29,9 @@ export async function PATCH(request: NextRequest) {
       user_id: context.userId,
       adult_mode_enabled: next.adultModeEnabled,
       adult_hidden_by_default: next.adultHiddenByDefault,
-      require_adult_passkey: next.requireAdultPasskey,
+      require_adult_passkey: next.adultAccessMode === "passkey",
       blur_adult_covers: next.blurAdultCovers,
-      show_adult_in_main_library: next.showAdultInMainLibrary,
+      adult_access_mode: next.adultAccessMode,
     }, { onConflict: "user_id" });
     if (error) throw error;
     return NextResponse.json(next, { headers: { "Cache-Control": "private, no-store" } });

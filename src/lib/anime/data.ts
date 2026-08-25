@@ -11,15 +11,16 @@ const toAnime = (row: any): AnimeLibraryItem => ({
   coverUrl: row.cover_url, bannerUrl: row.banner_url, synopsis: row.synopsis, animeType: row.anime_type, broadcastStatus: row.broadcast_status, episodes: row.episodes, episodeDuration: row.episode_duration, releaseYear: row.release_year, season: row.season, startDate: row.start_date, endDate: row.end_date, ageRating: row.age_rating, sourceMaterial: row.source_material, publicScore: row.public_score === null ? null : Number(row.public_score), genres: asStrings(row.genres), studios: asStrings(row.studios), relations: asRelations(row.relations), watchStatus: row.watch_status, watchedEpisodes: row.watched_episodes, rating: row.rating === null ? null : Number(row.rating), favorite: row.favorite, personalRank: row.personal_rank, notes: row.notes, startedWatchingAt: row.started_watching_at, completedAt: row.completed_at, lastWatchedAt: row.last_watched_at, createdAt: row.created_at, updatedAt: row.updated_at, tags: [], sourceUrl: row.source_url, isAdult: Boolean(row.is_adult), contentRating: row.content_rating ?? null, adultSource: row.adult_source ?? null, externalUrl: row.external_url ?? null,
 });
 
-export const defaultAnimePreferences: AnimePreferences = { adultModeEnabled: false, adultHiddenByDefault: true, requireAdultPasskey: false, blurAdultCovers: true, showAdultInMainLibrary: false };
+export const defaultAnimePreferences: AnimePreferences = { adultModeEnabled: false, adultHiddenByDefault: true, adultAccessMode: "none", blurAdultCovers: true };
 
 function toPreferences(row: any): AnimePreferences {
   if (!row) return defaultAnimePreferences;
-  return { adultModeEnabled: Boolean(row.adult_mode_enabled), adultHiddenByDefault: row.adult_hidden_by_default !== false, requireAdultPasskey: Boolean(row.require_adult_passkey), blurAdultCovers: row.blur_adult_covers !== false, showAdultInMainLibrary: Boolean(row.show_adult_in_main_library) };
+  const accessMode = row.adult_access_mode;
+  return { adultModeEnabled: Boolean(row.adult_mode_enabled), adultHiddenByDefault: row.adult_hidden_by_default !== false, adultAccessMode: accessMode === "passkey" || accessMode === "pin4" || accessMode === "pin6" ? accessMode : row.require_adult_passkey ? "passkey" : "none", blurAdultCovers: row.blur_adult_covers !== false };
 }
 
 export async function getAnimePreferences(userId: string): Promise<AnimePreferences> {
-  const { data, error } = await createAdminClient().from("anime_preferences").select("adult_mode_enabled,adult_hidden_by_default,require_adult_passkey,blur_adult_covers,show_adult_in_main_library").eq("user_id", userId).maybeSingle();
+  const { data, error } = await createAdminClient().from("anime_preferences").select("adult_mode_enabled,adult_hidden_by_default,require_adult_passkey,blur_adult_covers,adult_access_mode").eq("user_id", userId).maybeSingle();
   // Allows the ordinary Anime Library to continue working until this additive
   // migration is applied; adult mode remains securely off in that situation.
   if (error) return defaultAnimePreferences;

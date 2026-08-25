@@ -9,10 +9,11 @@ import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { animeStatusLabels, type AnimeLibraryItem, type AnimePreferences, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
 
 type Tab = "discover" | "library" | "stats" | "adult";
+type AdultView = "library" | "discover";
 type Filter = "all" | AnimeWatchStatus;
 const statuses: AnimeWatchStatus[] = ["planning", "watching", "completed", "paused", "dropped"];
 const visibleFilters: Filter[] = ["all", ...statuses];
-const defaultPreferences: AnimePreferences = { adultModeEnabled: false, adultHiddenByDefault: true, requireAdultPasskey: false, blurAdultCovers: true, showAdultInMainLibrary: false };
+const defaultPreferences: AnimePreferences = { adultModeEnabled: false, adultHiddenByDefault: true, adultAccessMode: "none", blurAdultCovers: true };
 const empty: AnimeWorkspaceData = { library: [], tags: [], logs: [], preferences: defaultPreferences };
 const displayTitle = (anime: Pick<AnimeLibraryItem, "title" | "titleChinese">) => anime.titleChinese ?? anime.title;
 async function api<T>(url: string, init?: RequestInit) {
@@ -65,7 +66,10 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
   const [adultUnlocked, setAdultUnlocked] = useState(false);
-  const [adultSettingsOpen, setAdultSettingsOpen] = useState(false);
+  const [adultView, setAdultView] = useState<AdultView>("library");
+  const [adultPinPrompt, setAdultPinPrompt] = useState(false);
+  const [adultPin, setAdultPin] = useState("");
+  const [adultPinError, setAdultPinError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState(initialData?.preferences ?? defaultPreferences);
   const [libraryPage, setLibraryPage] = useState(1);
   const libraryPageSize = 12;
@@ -84,18 +88,30 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : "無法儲存成人內容設定。"); }
     finally { setPending(null); }
   };
+  const loadAdult = async () => {
+    const next = await api<AnimeWorkspaceData>("/api/anime/library?scope=adult");
+    if (document.visibilityState !== "visible") return;
+    setAdultData(next); setAdultUnlocked(true); setAdultView("library"); setTab("adult");
+  };
   const openAdult = async () => {
-    if (!preferences.adultModeEnabled) { setAdultSettingsOpen(true); return; }
+    if (!preferences.adultModeEnabled) { setNotice("請先前往安全中心啟用成人內容模式。"); return; }
+    if (preferences.adultAccessMode === "pin4" || preferences.adultAccessMode === "pin6") { setAdultPin(""); setAdultPinError(null); setAdultPinPrompt(true); return; }
     setPending("adult-access"); setNotice(null);
     try {
-      if (preferences.requireAdultPasskey) {
+      if (preferences.adultAccessMode === "passkey") {
         const { error } = await createClient().auth.signInWithPasskey();
         if (error) throw new Error("Face ID / Passkey 驗證未完成，成人內容仍保持隱藏。");
       }
-      const next = await api<AnimeWorkspaceData>("/api/anime/library?scope=adult");
-      if (document.visibilityState !== "visible") return;
-      setAdultData(next); setAdultUnlocked(true); setTab("adult");
+      await loadAdult();
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : "無法開啟成人內容。"); }
+    finally { setPending(null); }
+  };
+  const unlockAdultWithPin = async () => {
+    const length = preferences.adultAccessMode === "pin6" ? 6 : 4;
+    if (!new RegExp(`^\\d{${length}}$`).test(adultPin)) { setAdultPinError(`請輸入 ${length} 位數 PIN。`); return; }
+    setPending("adult-access"); setAdultPinError(null);
+    try { await api("/api/anime/preferences/pin", { method: "POST", body: JSON.stringify({ action: "verify", pin: adultPin }) }); setAdultPinPrompt(false); await loadAdult(); }
+    catch (cause) { setAdultPinError(cause instanceof Error ? cause.message : "PIN 驗證失敗。"); }
     finally { setPending(null); }
   };
   useEffect(() => {
@@ -155,11 +171,11 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
         <button className={tab === "stats" ? "active" : ""} onClick={() => setTab("stats")} type="button">統計</button>
         {preferences.adultModeEnabled && <button className={tab === "adult" ? "active" : ""} onClick={() => void openAdult()} type="button">成人內容</button>}
       </div>
-      <div className="anime-toolbar-actions"><button className="secondary-button compact" onClick={() => setAdultSettingsOpen(true)} type="button">成人內容設定</button><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>
+      <div className="anime-toolbar-actions"><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>
     </div>
     {notice && <div className="notice success anime-notice"><span>{notice}</span><button aria-label="關閉提示" onClick={() => setNotice(null)} type="button">×</button></div>}
     {tab === "discover" && <AnimeDiscovery library={data.library} onAdd={setPrefill} />}
-    {tab === "adult" && adultUnlocked && adultData && <section className="anime-adult-workspace"><div className="anime-adult-heading"><div><p className="eyebrow">ADULT CONTENT</p><h2>成人內容</h2><p>此區內容不會出現在一般動漫頁、探索首頁或最近觀看中；離開 App 時會立即重新隱藏。</p></div><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 手動新增成人作品</button></div><AnimeDiscovery adultMode library={adultData.library} onAdd={setAdultPrefill} /><div className="anime-grid">{adultData.library.map((anime) => <article className="anime-card anime-adult-card" key={anime.id}><button className="anime-card-main" onClick={() => setSelected(anime)} type="button"><Cover anime={anime} blur={preferences.blurAdultCovers} /><div className="anime-card-copy"><div className="anime-card-line"><Status value={anime.watchStatus} /><span className="anime-adult-badge">18+</span></div><h3>{displayTitle(anime)}</h3><p>{anime.tags.map((category) => category.name).join(" · ") || "未分類"}</p></div></button></article>)}</div>{!adultData.library.length && <p className="anime-field-hint">尚未收藏成人作品。可使用下方搜尋，或手動新增並設定外部作品連結。</p>}</section>}
+    {tab === "adult" && adultUnlocked && adultData && <section className="anime-adult-workspace"><div className="anime-adult-heading"><div><p className="eyebrow">ADULT CONTENT</p><h2>成人內容</h2><p>此區內容與一般動漫庫完全分開；切換 App 時會立即重新隱藏。</p></div><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增成人作品</button></div><div className="anime-tabs" role="tablist" aria-label="成人內容功能"><button className={adultView === "library" ? "active" : ""} onClick={() => setAdultView("library")} type="button">我的動漫</button><button className={adultView === "discover" ? "active" : ""} onClick={() => setAdultView("discover")} type="button">探索</button></div>{adultView === "library" ? <><div className="anime-grid">{adultData.library.map((anime) => <article className="anime-card anime-adult-card" key={anime.id}><button className="anime-card-main" onClick={() => setSelected(anime)} type="button"><Cover anime={anime} blur={preferences.blurAdultCovers} /><div className="anime-card-copy"><div className="anime-card-line"><Status value={anime.watchStatus} /><span className="anime-adult-badge">18+</span></div><h3>{displayTitle(anime)}</h3><p>{anime.tags.map((category) => category.name).join(" · ") || "未分類"}</p></div></button></article>)}</div>{!adultData.library.length && <div className="anime-empty"><h3>尚未收藏成人作品</h3><p>可新增作品，或切換至探索搜尋作品資料後加入。</p><button className="button compact" onClick={() => setAdultView("discover")} type="button">前往探索</button></div>}</> : <AnimeDiscovery adultMode library={adultData.library} onAdd={setAdultPrefill} />}</section>}
     {tab === "library" && <>
       <div className="anime-filter-bar">
         <div className="anime-filter-scroll">{visibleFilters.map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)} type="button">{value === "all" ? "全部" : animeStatusLabels[value]}</button>)}</div>
@@ -185,7 +201,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     {selected && <AnimeDetailDialog anime={selected} onClose={() => setSelected(null)} onEdit={() => { setEditing(selected); setSelected(null); }} />}
     {editing && <AnimeEditor anime={editing} categories={data.tags} onClose={() => setEditing(null)} onRemove={() => { setRemoving(editing); setEditing(null); }} onSaved={async () => { setPending("refresh"); try { await refresh(); setEditing(null); setNotice("已儲存動漫資料。"); } finally { setPending(null); } }} />}
     <ConfirmDialog confirmLabel="移至垃圾桶" description={removing ? `確定要將《${removing.title}》移至垃圾桶嗎？` : ""} onCancel={() => setRemoving(null)} onConfirm={() => void remove()} open={Boolean(removing)} pending={pending === "remove"} title="移除我的動漫" />
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => setAdultSettingsOpen(false)} open={adultSettingsOpen} title="成人內容設定"><div className="anime-adult-settings"><p>成人內容預設關閉，且不會顯示在一般動漫頁。此設定只保存作品 metadata 與你提供的 HTTPS 外部連結，不會存取第三方帳號或 Cookie。</p><label><input checked={preferences.adultModeEnabled} onChange={(event) => void updateAdultPreferences({ adultModeEnabled: event.target.checked })} type="checkbox" /> 啟用 18+ 成人內容模式</label><label><input checked={preferences.adultHiddenByDefault} disabled={!preferences.adultModeEnabled} onChange={(event) => void updateAdultPreferences({ adultHiddenByDefault: event.target.checked })} type="checkbox" /> 成人內容預設隱藏</label><label><input checked={preferences.blurAdultCovers} disabled={!preferences.adultModeEnabled} onChange={(event) => void updateAdultPreferences({ blurAdultCovers: event.target.checked })} type="checkbox" /> 成人封面預設模糊</label><label><input checked={preferences.requireAdultPasskey} disabled={!preferences.adultModeEnabled} onChange={(event) => void updateAdultPreferences({ requireAdultPasskey: event.target.checked })} type="checkbox" /> 每次開啟成人區要求 Face ID / Passkey</label><label><input checked={preferences.showAdultInMainLibrary} disabled={!preferences.adultModeEnabled} onChange={(event) => void updateAdultPreferences({ showAdultInMainLibrary: event.target.checked })} type="checkbox" /> 解鎖後允許在一般動漫清單顯示成人內容</label><p className="anime-field-hint">切換 App、鎖定螢幕或頁面進入背景時，成人區會立即隱藏；iOS 多工預覽由既有 Vault 鎖定遮罩保護。</p></div></ModalDialog>
+    <ModalDialog className="mobile-sheet-dialog" onClose={() => { if (!pending) setAdultPinPrompt(false); }} open={adultPinPrompt} pending={pending === "adult-access"} title="解鎖成人內容"><form className="anime-category-dialog" onSubmit={(event) => { event.preventDefault(); void unlockAdultWithPin(); }}><p>請輸入獨立的 {preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。</p><label>成人區 PIN<input autoComplete="current-password" autoFocus inputMode="numeric" maxLength={preferences.adultAccessMode === "pin6" ? 6 : 4} onChange={(event) => setAdultPin(event.target.value.replace(/\\D/g, ""))} pattern="[0-9]*" type="password" value={adultPin} /></label>{adultPinError && <p className="notice error" role="alert">{adultPinError}</p>}<div className="dialog-actions"><button className="secondary-button" disabled={pending === "adult-access"} onClick={() => setAdultPinPrompt(false)} type="button">取消</button><button className="button" disabled={pending === "adult-access"} type="submit">解鎖</button></div></form></ModalDialog>
   </section>;
 }
 

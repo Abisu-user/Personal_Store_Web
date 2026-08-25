@@ -18,7 +18,8 @@ export type AnimeLibraryItem = {
 };
 
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };
-export type AnimePreferences = { adultModeEnabled: boolean; adultHiddenByDefault: boolean; requireAdultPasskey: boolean; blurAdultCovers: boolean; showAdultInMainLibrary: boolean; };
+export type AdultAccessMode = "none" | "passkey" | "pin4" | "pin6";
+export type AnimePreferences = { adultModeEnabled: boolean; adultHiddenByDefault: boolean; adultAccessMode: AdultAccessMode; blurAdultCovers: boolean; };
 export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; };
 
 export type ExternalAnime = {
