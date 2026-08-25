@@ -1,0 +1,11 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { getSecurityContext } from "@/lib/security/activity";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export const dynamic = "force-dynamic";
+const bodySchema = z.object({ action: z.enum(["increment", "decrement", "set"]), episode: z.number().int().min(0).max(100000).optional() });
+export async function POST(request: NextRequest, context: RouteContext<"/api/anime/library/[id]/progress">) {
+  const security = await getSecurityContext(); if (!security) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); const parsed = bodySchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "請檢查進度資料。" }, { status: 400 }); const { id } = await context.params;
+  try { const admin = createAdminClient(); const { data: anime, error } = await admin.from("anime_library").select("id,episodes,watched_episodes,watch_status").eq("id", id).eq("user_id", security.userId).is("deleted_at", null).maybeSingle(); if (error) throw error; if (!anime) return NextResponse.json({ error: "找不到這部動漫。" }, { status: 404 }); const next = parsed.data.action === "increment" ? anime.watched_episodes + 1 : parsed.data.action === "decrement" ? anime.watched_episodes - 1 : parsed.data.episode ?? anime.watched_episodes; if (next < 0 || (anime.episodes !== null && next > anime.episodes)) return NextResponse.json({ error: "觀看進度超出可用範圍。" }, { status: 400 }); if (next === anime.watched_episodes) return NextResponse.json({ ok: true, watchedEpisodes: next, shouldComplete: false }); const { error: updateError } = await admin.from("anime_library").update({ watched_episodes: next, last_watched_at: new Date().toISOString() }).eq("id", id).eq("user_id", security.userId); if (updateError) throw updateError; const { error: logError } = await admin.from("anime_watch_logs").insert({ user_id: security.userId, anime_id: id, from_episode: anime.watched_episodes, to_episode: next, action: parsed.data.action }); if (logError) throw logError; return NextResponse.json({ ok: true, watchedEpisodes: next, shouldComplete: anime.episodes !== null && next === anime.episodes && anime.watch_status !== "completed" }); } catch { return NextResponse.json({ error: "無法更新觀看進度。" }, { status: 503 }); }
+}
