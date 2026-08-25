@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 const id = z.string().uuid();
 const status = z.enum(["planning", "watching", "completed", "paused", "dropped"]);
 const rank = z.enum(["normal", "like", "love", "masterpiece"]);
-const createSchema = z.object({ externalId: z.string().regex(/^\d{1,12}$/), externalSource: z.enum(["jikan", "anilist"]).default("jikan"), watchStatus: status.default("planning"), watchedEpisodes: z.number().int().min(0).max(100000).default(0), tagIds: z.array(id).max(30).default([]), favorite: z.boolean().default(false) });
+const createSchema = z.object({ externalId: z.string().regex(/^\d{1,12}$/), externalSource: z.enum(["jikan", "anilist", "bangumi"]).default("jikan"), watchStatus: status.default("planning"), watchedEpisodes: z.number().int().min(0).max(100000).default(0), tagIds: z.array(id).max(30).default([]), favorite: z.boolean().default(false) });
 const updateSchema = z.object({ id, watchStatus: status.optional(), watchedEpisodes: z.number().int().min(0).max(100000).optional(), rating: z.number().min(0).max(10).nullable().optional(), favorite: z.boolean().optional(), personalRank: rank.nullable().optional(), notes: z.string().trim().max(12000).nullable().optional(), tagIds: z.array(id).max(30).optional() });
 const deleteSchema = z.object({ id });
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });

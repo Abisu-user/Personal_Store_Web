@@ -17,10 +17,15 @@ export class BahamutLookupError extends Error {
   }
 }
 
+export type BahamutLookupState = "available" | "not_found" | "unavailable";
+export type BahamutLookupResponse = { match: BahamutAnimeMatch | null; state: BahamutLookupState; reason: "forbidden" | "rate_limited" | "timeout" | "upstream" | "network" | null };
+
 const normalize = (value: string) => value.normalize("NFKC").replace(/[\s\-–—:：・!！?？'"「」『』（）()【】\[\]]/g, "").toLocaleLowerCase();
 const plainText = (value: string) => value.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&#(?:x[\da-f]+|\d+);/gi, " ").replace(/\s+/g, " ").trim();
 const checkedAt = () => new Date().toISOString();
 const cacheKey = (titles: string[]) => titles.map(normalize).filter(Boolean).sort().join("|");
+const responseSnippet = (body: string) => body.replace(/\s+/g, " ").slice(0, 600);
+const endpoint = (url: URL) => `${url.origin}${url.pathname}`;
 
 function fromCache(key: string) {
   const entry = lookupCache.get(key);
@@ -69,6 +74,7 @@ export async function findBahamutAnime(titles: Array<string | null | undefined>)
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
   let response: Response;
+  const startedAt = Date.now();
   try {
     response = await fetch(url, {
       headers: {
@@ -82,12 +88,14 @@ export async function findBahamutAnime(titles: Array<string | null | undefined>)
     });
   } catch (caught) {
     const reason = caught instanceof Error && caught.name === "AbortError" ? "Bahamut catalogue request timed out" : caught instanceof Error ? caught.message : "Bahamut catalogue request failed";
+    console.error("[bahamut-upstream]", { provider: "bahamut", upstreamUrl: endpoint(url), httpStatus: null, error: reason, responseBody: null, timeout: controller.signal.aborted, rateLimit: false, durationMs: Date.now() - startedAt });
     throw new BahamutLookupError(reason);
   } finally {
     clearTimeout(timeout);
   }
-  if (!response.ok) throw new BahamutLookupError(`Bahamut catalogue returned ${response.status}`, response.status);
   const html = await response.text();
+  console.info("[bahamut-upstream]", { provider: "bahamut", upstreamUrl: endpoint(url), httpStatus: response.status, error: response.ok ? null : `Bahamut catalogue returned ${response.status}`, responseBody: responseSnippet(html), timeout: false, rateLimit: response.status === 429, durationMs: Date.now() - startedAt, redirected: response.redirected });
+  if (!response.ok) throw new BahamutLookupError(`Bahamut catalogue returned ${response.status}`, response.status);
   if (!html.includes("animeRef.php") && !html.includes("animeVideo.php")) throw new BahamutLookupError("Bahamut catalogue returned an unexpected response", response.status);
   const match = findCandidates(html, names)[0];
   if (!match || match.score < 30) return cache(key, { available: false, url: null, title: null, sn: null, lastCheckedAt: checkedAt() });

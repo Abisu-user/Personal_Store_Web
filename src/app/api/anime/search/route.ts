@@ -4,12 +4,15 @@ import { AnimeSearchError, searchAnime } from "@/lib/anime/jikan-service";
 import { getSecurityContext } from "@/lib/security/activity";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 const querySchema = z.string().trim().min(2).max(100);
 const messageFor = (code: AnimeSearchError["code"]) => ({
   rate_limited: "搜尋太頻繁，請稍後再試",
+  forbidden: "動漫資料服務拒絕這次請求，請稍後再試",
+  upstream_error: "動漫資料服務發生內部錯誤，請稍後再試",
+  upstream_unavailable: "動漫資料服務暫時無法使用，請稍後再試",
   timeout: "動漫資料服務回應較慢，請再試一次",
-  maintenance: "動漫資料服務暫時維護中",
-  network: "目前沒有網路連線",
+  network: "動漫資料服務網路連線失敗，請再試一次",
   unknown: "搜尋失敗，請稍後再試",
 }[code]);
 
@@ -31,6 +34,8 @@ export async function GET(request: NextRequest) {
       provider: failure.provider,
       providerStatus: failure.status,
       providerResponse: failure.responseSnippet,
+      timeout: failure.code === "timeout",
+      rateLimit: failure.code === "rate_limited",
       error: failure.message,
       queryLength: parsed.data.length,
     });

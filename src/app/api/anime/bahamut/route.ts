@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { BahamutLookupError, findBahamutAnime } from "@/lib/anime/bahamut-anime-service";
+import { BahamutLookupError, findBahamutAnime, type BahamutLookupResponse } from "@/lib/anime/bahamut-anime-service";
 import { getSecurityContext } from "@/lib/security/activity";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "請提供有效的動漫名稱。" }, { status: 400 });
   try {
     const match = await findBahamutAnime([parsed.data.chinese, parsed.data.title, parsed.data.japanese, parsed.data.english]);
-    return NextResponse.json({ match }, { headers: { "Cache-Control": "private, no-store" } });
+    const body: BahamutLookupResponse = { match, state: match.available ? "available" : "not_found", reason: null };
+    return NextResponse.json(body, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("[api/anime/bahamut] catalogue lookup failed", {
       error: error instanceof Error ? error.message : "unknown",
@@ -22,6 +23,11 @@ export async function GET(request: NextRequest) {
       status: error instanceof BahamutLookupError ? error.status : null,
       titleLength: parsed.data.title.length,
     });
-    return NextResponse.json({ error: "動畫瘋資料暫時無法確認。" }, { status: 503 });
+    const status = error instanceof BahamutLookupError ? error.status : null;
+    const reason = status === 403 ? "forbidden" : status === 429 ? "rate_limited" : status === null && /timed out/i.test(error instanceof Error ? error.message : "") ? "timeout" : status && [500, 502, 503, 504].includes(status) ? "upstream" : "network";
+    // Bahamut is an optional metadata provider. Its availability must never turn
+    // an otherwise valid anime search into a 503 failure for the user.
+    const body: BahamutLookupResponse = { match: null, state: "unavailable", reason };
+    return NextResponse.json(body, { headers: { "Cache-Control": "private, no-store" } });
   }
 }
