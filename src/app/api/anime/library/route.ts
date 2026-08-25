@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   try {
     const [anime, admin] = await Promise.all([getAnimeDetail(parsed.data.externalSource, parsed.data.externalId), Promise.resolve(createAdminClient())]);
     let bahamut: BahamutAnimeMatch | undefined;
-    try { bahamut = await findBahamutAnime([anime.titleChinese, anime.title, anime.titleJapanese, anime.titleEnglish, anime.originalTitle], request.signal); }
+      try { bahamut = await findBahamutAnime([anime.titleChinese, anime.title, anime.titleJapanese, anime.titleEnglish, anime.originalTitle]); }
     catch (caught) { console.warn("[api/anime/library] Bahamut lookup skipped", { error: caught instanceof Error ? caught.message : "unknown" }); }
     if (anime.episodes !== null && parsed.data.watchedEpisodes > anime.episodes) return error("觀看集數不能大於作品總集數。", 400);
     const isCompleted = anime.episodes !== null && parsed.data.watchedEpisodes === anime.episodes;
