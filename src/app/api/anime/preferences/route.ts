@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { defaultAnimePreferences, getAnimePreferences } from "@/lib/anime/data";
+import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -35,8 +35,10 @@ export async function PATCH(request: NextRequest) {
     }, { onConflict: "user_id" });
     if (error) throw error;
     return NextResponse.json(next, { headers: { "Cache-Control": "private, no-store" } });
-  } catch {
-    // A missing migration must never accidentally enable adult mode.
-    return fail("成人內容設定尚未啟用，請先套用資料庫 migration。", 503);
+  } catch (caught) {
+    const databaseError = caught as { code?: string; message?: string; details?: string };
+    console.error("[anime-preferences] unable to save", { code: databaseError.code, message: databaseError.message, details: databaseError.details });
+    if (databaseError.code === "PGRST205" || databaseError.code === "42P01") return fail("成人內容資料表正在同步，請稍候後重新整理再試。", 503);
+    return fail("無法儲存成人內容設定，請稍後再試。", 503);
   }
 }

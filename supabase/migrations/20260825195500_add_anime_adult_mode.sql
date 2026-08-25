@@ -36,8 +36,12 @@ for each row execute procedure public.vault_app_set_updated_at();
 
 alter table public.anime_preferences enable row level security;
 revoke all on table public.anime_preferences from anon, authenticated;
+grant select, insert, update, delete on table public.anime_preferences to service_role;
 drop policy if exists "anime preferences: owner" on public.anime_preferences;
 create policy "anime preferences: owner" on public.anime_preferences
 for all to authenticated
 using ((select auth.uid()) = user_id)
 with check ((select auth.uid()) = user_id);
+
+-- Make the newly-added table visible to the PostgREST Data API immediately.
+notify pgrst, 'reload schema';
