@@ -17,18 +17,17 @@ export async function GET(request: NextRequest) {
   if (!query || query.length > 300) return NextResponse.json({ error: "請輸入 1 至 300 個字元的查詢。" }, { status: 400 });
   try {
     const inputLanguage = detectLookupInputLanguage(query);
-    const dictionaryLanguage = inputLanguage === "en" ? "en" : "ja";
+    const dictionaryLanguage = language.data;
     let dictionaryQuery = query;
-    if (inputLanguage === "zh") {
-      dictionaryQuery = commonChineseJapanese[query] ?? await translateDictionaryText(query, "zh-TW", "ja") ?? "";
-      if (!dictionaryQuery) return NextResponse.json({ error: "目前無法將中文轉為日文查詢，請稍後再試。" }, { status: 503 });
+    if (inputLanguage !== dictionaryLanguage) {
+      const source = inputLanguage === "zh" ? "zh-TW" : inputLanguage;
+      dictionaryQuery = dictionaryLanguage === "ja" && inputLanguage === "zh" ? commonChineseJapanese[query] ?? await translateDictionaryText(query, source, "ja") ?? "" : await translateDictionaryText(query, source, dictionaryLanguage) ?? "";
+      if (!dictionaryQuery) return NextResponse.json({ error: `目前無法將輸入內容轉為${dictionaryLanguage === "ja" ? "日文" : "英文"}查詢，請稍後再試。` }, { status: 503 });
     }
     const items = await searchDictionary(dictionaryLanguage, dictionaryQuery);
     const localizedItems = await Promise.all(items.map(async (item) => {
-      const english = item.meanings[0] || item.primaryTranslation || item.englishDefinition?.split("；")[0] || null;
-      const japanese = item.language === "ja" ? item.word : await translateDictionaryText(item.word, "en", "ja");
-      const chinese = inputLanguage === "zh" ? query : await translateDictionaryText(item.language === "ja" ? item.word : item.word, item.language, "zh-TW");
-      return { ...item, translations: { inputLanguage, chinese, japanese, english: inputLanguage === "en" ? query : english } };
+      const chinese = inputLanguage === "zh" ? query : await translateDictionaryText(item.word, item.language, "zh-TW");
+      return { ...item, translations: { chinese, japanese: item.language === "ja" ? item.word : null, english: item.language === "en" ? item.word : null } };
     }));
     await recordVocabularySearch(context.userId, language.data, query);
     return NextResponse.json({ items: localizedItems, source: "dictionary", dictionaryQuery, dictionaryLanguage }, { headers: { "Cache-Control": "private, no-store" } });
