@@ -10,10 +10,11 @@ const toCard = (row: any): VocabularyCard => ({
   lastReviewedAt: row.last_reviewed_at, nextReviewAt: row.next_review_at, deletedAt: row.deleted_at, createdAt: row.created_at, updatedAt: row.updated_at, meanings: [], examples: [], tags: [], deckIds: [],
 });
 
-export async function getVocabularyWorkspaceData(userId: string, includeTrash = false): Promise<VocabularyWorkspaceData> {
+export async function getVocabularyWorkspaceData(userId: string, includeTrash = false, language?: "ja" | "en"): Promise<VocabularyWorkspaceData> {
   const admin = createAdminClient();
   let cardsQuery = admin.from("vocabulary_cards").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(300);
   cardsQuery = includeTrash ? cardsQuery.not("deleted_at", "is", null) : cardsQuery.is("deleted_at", null);
+  if (language) cardsQuery = cardsQuery.eq("language", language);
   const [{ data: cardRows, error: cardError }, { data: tagRows, error: tagError }, { data: deckRows, error: deckError }, { data: settingRow, error: settingsError }, { data: logRows, error: logsError }] = await Promise.all([
     cardsQuery, admin.from("vocabulary_tags").select("id,name,color").eq("user_id", userId).order("name").limit(100), admin.from("vocabulary_decks").select("id,name,description,language").eq("user_id", userId).order("updated_at", { ascending: false }).limit(100), admin.from("vocabulary_settings").select("*").eq("user_id", userId).maybeSingle(), admin.from("vocabulary_review_logs").select("id,card_id,rating,answer_result,old_mastery,new_mastery,old_interval,new_interval,reviewed_at").eq("user_id", userId).order("reviewed_at", { ascending: false }).limit(200),
   ]);
