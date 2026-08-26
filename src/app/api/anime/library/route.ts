@@ -34,10 +34,10 @@ const updateSchema = commonFields.partial().extend({ id });
 const deleteSchema = z.object({ id });
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });
 
-async function replaceCategories(userId: string, animeId: string, categoryIds: string[]) {
+async function replaceCategories(userId: string, animeId: string, categoryIds: string[], scope: "standard" | "adult") {
   const admin = createAdminClient();
   if (categoryIds.length) {
-    const { data, error: categoryError } = await admin.from("anime_tags").select("id").eq("user_id", userId).in("id", categoryIds);
+    const { data, error: categoryError } = await admin.from("anime_tags").select("id").eq("user_id", userId).eq("scope", scope).in("id", categoryIds);
     if (categoryError || (data?.length ?? 0) !== categoryIds.length) throw new Error("Invalid anime category");
   }
   const { error: deleteError } = await admin.from("anime_library_tags").delete().eq("anime_id", animeId);
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
   try {
     if (parsed.data.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
     const admin = createAdminClient(); const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, coverPath) }).select("id").single();
-    if (insertError) throw insertError; await replaceCategories(context.userId, data.id, parsed.data.categoryIds);
+    if (insertError) throw insertError; await replaceCategories(context.userId, data.id, parsed.data.categoryIds, parsed.data.isAdult ? "adult" : "standard");
     return NextResponse.json({ id: data.id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error("無法新增動漫，請稍後再試。", 503); }
 }
@@ -98,7 +98,7 @@ export async function PATCH(request: NextRequest) {
     if (coverPath) updates.cover_url = coverPath;
     if (Object.keys(updates).length) { const { error: updateError } = await admin.from("anime_library").update(updates).eq("id", animeId).eq("user_id", context.userId); if (updateError) throw updateError; }
     if (coverPath && coverPath !== current.cover_url && current.cover_url?.startsWith(`${context.userId}/covers/`)) await deleteCover(current.cover_url);
-    if (categoryIds !== undefined) await replaceCategories(context.userId, animeId, categoryIds);
+    if (categoryIds !== undefined) await replaceCategories(context.userId, animeId, categoryIds, (changes.isAdult ?? current.is_adult) ? "adult" : "standard");
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error("無法儲存動漫資料，請稍後再試。", 503); }
 }

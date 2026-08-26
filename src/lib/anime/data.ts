@@ -40,7 +40,7 @@ export async function getAnimeWorkspaceData(userId: string, scope: "standard" | 
     const legacy = await admin.from("anime_library").select("*").eq("user_id", userId).is("deleted_at", null).order("updated_at", { ascending: false }).limit(400);
     rows = legacy.data; libraryError = legacy.error;
   }
-  const { data: tagRows, error: tagError } = await admin.from("anime_tags").select("id,name,color").eq("user_id", userId).order("name").limit(100);
+  const { data: tagRows, error: tagError } = await admin.from("anime_tags").select("id,name,color").eq("user_id", userId).eq("scope", scope).order("name").limit(100);
   if (libraryError || tagError) throw new Error("Anime library unavailable");
   const library = await localizeAnimeTitles((rows ?? []).map(toAnime)); const animeIds = library.map((anime) => anime.id);
   const [{ data: links, error: linkError }, { data: logRows, error: logError }] = await Promise.all([
