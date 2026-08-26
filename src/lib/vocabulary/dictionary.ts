@@ -2,6 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type DictionaryLanguage = "ja" | "en";
+export type LookupInputLanguage = "zh" | DictionaryLanguage;
 export type DictionaryEntry = {
   id: string;
   language: DictionaryLanguage;
@@ -23,6 +24,7 @@ export type DictionaryEntry = {
 
 const CACHE_HOURS = 12;
 const normalize = (value: string) => value.trim().toLocaleLowerCase();
+const translationCache = new Map<string, { expiresAt: number; value: string | null }>();
 
 function withTimeout(url: string, init: RequestInit = {}, ms = 7_500) {
   const controller = new AbortController();
@@ -49,6 +51,36 @@ async function cached<T>(provider: "japanese_dictionary" | "english_dictionary",
 }
 
 function isNonLatinQuery(value: string) { return /[\u3400-\u9fff]/.test(value); }
+
+export function detectLookupInputLanguage(value: string): LookupInputLanguage {
+  if (/[\u3040-\u30ff]/.test(value)) return "ja";
+  if (/[\u3400-\u9fff]/.test(value)) return "zh";
+  return "en";
+}
+
+export async function translateDictionaryText(value: string, source: "zh-TW" | "ja" | "en", target: "zh-TW" | "ja" | "en") {
+  if (!value.trim() || source === target) return value.trim() || null;
+  const key = `${source}:${target}:${normalize(value)}`;
+  const cachedValue = translationCache.get(key);
+  if (cachedValue && cachedValue.expiresAt > Date.now()) return cachedValue.value;
+  try {
+    const url = new URL("https://translate.googleapis.com/translate_a/single");
+    url.searchParams.set("client", "gtx");
+    url.searchParams.set("sl", source);
+    url.searchParams.set("tl", target);
+    url.searchParams.append("dt", "t");
+    url.searchParams.set("q", value);
+    const response = await withTimeout(url.toString(), { headers: { Accept: "application/json", "User-Agent": "Personal-Vault/1.0 vocabulary translation" } });
+    if (!response.ok) throw new Error(`Translation upstream ${response.status}`);
+    const body = await response.json() as Array<Array<Array<string | null>>>;
+    const translated = body[0]?.map((part) => part[0] ?? "").join("").trim() || null;
+    translationCache.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
+    return translated;
+  } catch {
+    translationCache.set(key, { value: null, expiresAt: Date.now() + 2 * 60 * 1000 });
+    return null;
+  }
+}
 
 export class JapaneseDictionaryService {
   async search(query: string): Promise<DictionaryEntry[]> {
