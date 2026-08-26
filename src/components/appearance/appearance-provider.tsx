@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyAppearance, hydrateAppearanceImages, migrateAppearanceForCurrentDevice, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { applyAppearance, hasScopedAppearance, hydrateAppearanceImages, migrateAppearanceForCurrentDevice, nextBackground, readAppearance, readAppearanceBackup, saveAppearance } from "@/lib/appearance/preferences";
 
 /** Applies the saved device preference and loads background binaries from IndexedDB. */
 export function AppearanceProvider() {
@@ -9,6 +9,12 @@ export function AppearanceProvider() {
     let timer: number | undefined; let cancelled = false;
     const applySaved = async (rotateForLogin = false) => {
       window.clearInterval(timer); let appearance = readAppearance();
+      // On iOS PWA, localStorage may briefly be unavailable while the shell is
+      // restoring. Prefer the same device's IndexedDB backup in that case.
+      if (!hasScopedAppearance()) {
+        const backup = await readAppearanceBackup();
+        if (backup) appearance = backup;
+      }
       try { appearance = await hydrateAppearanceImages(appearance); } catch { /* Keep non-image preferences even when browser storage is unavailable. */ }
       if (cancelled) return;
       migrateAppearanceForCurrentDevice(appearance);

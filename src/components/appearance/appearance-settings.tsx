@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Accent, Appearance, Background, BackgroundRotation, BookmarkDisplay, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, getBackgroundImageUrl, hydrateAppearanceImages, normalizeHexColor, readAppearance, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
+import { Accent, Appearance, Background, BackgroundRotation, BookmarkDisplay, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, getBackgroundImageUrl, hasScopedAppearance, hydrateAppearanceImages, normalizeHexColor, readAppearance, readAppearanceBackup, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, readMobileNavigationPreferences, saveMobileNavigationPreferences, type MobileNavigationDestination, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
 
 const options = {
@@ -36,7 +36,27 @@ export function AppearanceSettings() {
   const [mobileNavigation, setMobileNavigation] = useState<MobileNavigationPreferences>(mobileNavigationDefaults);
   const rgb = useMemo(() => hexToRgb(appearance.customColor), [appearance.customColor]);
   const imageMode = appearance.background === "image";
-  useEffect(() => { let active = true; const stored = readAppearance(); applyAppearance(stored); setMobileNavigation(readMobileNavigationPreferences()); void hydrateAppearanceImages(stored).then((hydrated) => { if (!active) return; applyAppearance(hydrated); setAppearance(hydrated); setReady(true); }).catch(() => { if (active) { setAppearance(stored); setReady(true); } }); return () => { active = false; }; }, []);
+  useEffect(() => {
+    let active = true;
+    const restore = async () => {
+      let stored = readAppearance();
+      if (!hasScopedAppearance()) {
+        const backup = await readAppearanceBackup();
+        if (backup) stored = backup;
+      }
+      if (!active) return;
+      applyAppearance(stored); setMobileNavigation(readMobileNavigationPreferences());
+      try {
+        const hydrated = await hydrateAppearanceImages(stored);
+        if (!active) return;
+        applyAppearance(hydrated); setAppearance(hydrated); setReady(true);
+      } catch {
+        if (active) { setAppearance(stored); setReady(true); }
+      }
+    };
+    void restore();
+    return () => { active = false; };
+  }, []);
   function commit(next: Appearance) { setAppearance(next); saveAppearance(next); }
   function update<Key extends keyof Appearance>(key: Key, value: Appearance[Key]) { commit({ ...appearance, [key]: value } as Appearance); }
   function updateCustomColor(value: string) { commit({ ...appearance, accent: "custom" as Accent, customColor: normalizeHexColor(value, appearance.customColor) }); }

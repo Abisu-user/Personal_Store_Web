@@ -28,13 +28,16 @@ const bookmarkDisplays: BookmarkDisplay[] = ["list", "grid", "text"];
 const imageReferencePrefix = "workspace-image:";
 const imageCache = new Map<string, string>();
 let databasePromise: Promise<IDBDatabase> | undefined;
+const appearanceStoreName = "appearance-settings";
 
 /** Appearance is intentionally device-class specific: a phone can use a
  * different workspace image and layout from a desktop browser. */
+export type AppearanceDevice = "desktop" | "mobile";
 export function isMobileAppearanceDevice() { return typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches; }
-export function getAppearanceStorageKey() { return isMobileAppearanceDevice() ? mobileAppearanceStorageKey : desktopAppearanceStorageKey; }
+export function getAppearanceDevice(): AppearanceDevice { return isMobileAppearanceDevice() ? "mobile" : "desktop"; }
+export function getAppearanceStorageKey() { return getAppearanceDevice() === "mobile" ? mobileAppearanceStorageKey : desktopAppearanceStorageKey; }
 export function appearanceDeviceLabel() { return isMobileAppearanceDevice() ? "手機版" : "電腦版"; }
-function hasScopedAppearance() { return Boolean(window.localStorage.getItem(getAppearanceStorageKey())); }
+export function hasScopedAppearance() { return typeof window !== "undefined" && Boolean(window.localStorage.getItem(getAppearanceStorageKey())); }
 
 export function normalizeHexColor(value: unknown, fallback = appearanceDefaults.customColor) { return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback; }
 function clamp(value: unknown, min: number, max: number, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback; }
@@ -43,8 +46,11 @@ function isLegacyImage(value: string) { return value.startsWith("data:image/"); 
 function blobToDataUrl(blob: Blob) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.onerror = () => reject(reader.error ?? new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.readAsDataURL(blob); }); }
 function imageDb() {
   if (!databasePromise) databasePromise = new Promise((resolve, reject) => {
-    const request = window.indexedDB.open("personal-vault-backgrounds", 1);
-    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images"); };
+    const request = window.indexedDB.open("personal-vault-backgrounds", 2);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains("images")) request.result.createObjectStore("images");
+      if (!request.result.objectStoreNames.contains(appearanceStoreName)) request.result.createObjectStore(appearanceStoreName);
+    };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("BACKGROUND_STORAGE_UNAVAILABLE"));
     request.onblocked = () => reject(new Error("BACKGROUND_STORAGE_BLOCKED"));
@@ -52,6 +58,43 @@ function imageDb() {
   return databasePromise;
 }
 function requestResult<T>(request: IDBRequest<T>) { return new Promise<T>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error ?? new Error("BACKGROUND_STORAGE_ERROR")); }); }
+
+type AppearanceBackup = { appearance: Appearance; updatedAt: number };
+const appearanceBackupKey = (device: AppearanceDevice) => `appearance:${device}`;
+
+/**
+ * iOS PWA can occasionally restore a tab before localStorage is ready. Keep a
+ * second, device-scoped copy in IndexedDB so phone and desktop preferences stay
+ * independent while surviving PWA relaunches.
+ */
+export async function readAppearanceBackup(): Promise<Appearance | null> {
+  try {
+    const db = await imageDb();
+    const transaction = db.transaction(appearanceStoreName, "readonly");
+    const record = await requestResult(transaction.objectStore(appearanceStoreName).get(appearanceBackupKey(getAppearanceDevice()))) as AppearanceBackup | undefined;
+    return record?.appearance ? normalizeAppearance(record.appearance) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistAppearanceBackup(appearance: Appearance) {
+  void (async () => {
+    try {
+      await navigator.storage?.persist?.();
+      const db = await imageDb();
+      const transaction = db.transaction(appearanceStoreName, "readwrite");
+      transaction.objectStore(appearanceStoreName).put({ appearance, updatedAt: Date.now() } satisfies AppearanceBackup, appearanceBackupKey(getAppearanceDevice()));
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error("APPEARANCE_STORAGE_ERROR"));
+        transaction.onabort = () => reject(transaction.error ?? new Error("APPEARANCE_STORAGE_ERROR"));
+      });
+    } catch {
+      // localStorage remains the primary fast path when IndexedDB is unavailable.
+    }
+  })();
+}
 
 /** Stores image binaries outside localStorage so four high-quality backgrounds remain reliable. */
 export async function storeBackgroundImage(blob: Blob) {
@@ -119,6 +162,12 @@ export function applyAppearance(appearance: Appearance) {
   const font = normalized.fontFamily === "rounded" ? "ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif" : normalized.fontFamily === "serif" ? "Iowan Old Style, 'Noto Serif TC', Georgia, serif" : normalized.fontFamily === "mono" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "Inter, ui-sans-serif, system-ui, sans-serif";
   root.style.setProperty("--custom-brand", normalized.customColor); root.style.setProperty("--workspace-image", image ? `url("${image}")` : "none"); root.style.setProperty("--workspace-position", `${normalized.backgroundPositionX}% ${normalized.backgroundPositionY}%`); root.style.setProperty("--workspace-size", `${normalized.backgroundZoom}%`); root.style.setProperty("--workspace-tint", normalized.backgroundTint ?? "#FFFFFF"); root.style.setProperty("--workspace-canvas-color", normalized.canvasColor); root.style.setProperty("--workspace-font", font); root.style.setProperty("--user-font-scale", `${normalized.fontScale / 100}`); root.style.setProperty("--bookmark-grid-columns", String(normalized.bookmarkGridColumns)); root.style.setProperty("--user-text-color", normalized.textColor ?? ""); root.style.setProperty("--workspace-brightness", `${normalized.backgroundBrightness}%`); root.style.setProperty("--workspace-blur", `${normalized.backgroundBlur}px`); root.style.setProperty("--workspace-surface-opacity", `${normalized.surfaceOpacity}%`); root.dataset.hasWorkspaceImage = image && normalized.background === "image" ? "true" : "false"; root.dataset.hasCustomTextColor = normalized.textColor ? "true" : "false";
 }
-export function saveAppearance(appearance: Appearance) { const normalized = normalizeAppearance(appearance); applyAppearance(normalized); window.localStorage.setItem(getAppearanceStorageKey(), JSON.stringify(normalized)); window.dispatchEvent(new Event("personal-vault:appearance")); }
+export function saveAppearance(appearance: Appearance) {
+  const normalized = normalizeAppearance(appearance);
+  applyAppearance(normalized);
+  window.localStorage.setItem(getAppearanceStorageKey(), JSON.stringify(normalized));
+  persistAppearanceBackup(normalized);
+  window.dispatchEvent(new Event("personal-vault:appearance"));
+}
 export function migrateAppearanceForCurrentDevice(appearance: Appearance) { if (!hasScopedAppearance()) saveAppearance(appearance); }
 export function resetAppearanceForCurrentDevice() { window.localStorage.removeItem(getAppearanceStorageKey()); }
