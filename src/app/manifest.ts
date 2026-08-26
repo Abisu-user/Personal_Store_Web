@@ -5,7 +5,10 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Personal Vault",
     short_name: "Personal Vault",
     description: "Secure personal information storage.",
-    start_url: "/",
+    // Launch the installed PWA inside the protected app shell. A valid
+    // Supabase session then lands on the App PIN / Passkey lock overlay;
+    // signed-out visitors are redirected to the regular login page.
+    start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     background_color: "#6572df",

@@ -1,6 +1,18 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-export default function Home() {
+import { createClient } from "@/lib/supabase/server";
+
+export default async function Home() {
+  // iOS may reopen an installed PWA at `/` after its process was reclaimed.
+  // Do not show a logged-in user the public landing page in that case: send
+  // them through the protected app shell, which immediately presents App Lock.
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user?.email_confirmed_at) {
+    redirect("/dashboard");
+  }
+
   return (
     <main className="landing">
       <nav className="landing-nav" aria-label="主要導覽"><Link className="landing-logo" href="/"><span>V</span><strong>Personal Vault</strong></Link><div><Link className="nav-login" href="/login">登入</Link><Link className="nav-join" href="/sign-up">建立帳號</Link></div></nav>
