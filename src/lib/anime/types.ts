@@ -3,7 +3,8 @@ export type AnimePersonalRank = "normal" | "like" | "love" | "masterpiece";
 
 // The backing table keeps its original `anime_tags` name for backwards
 // compatibility.  In the product these are categories, not free-form tags.
-export type AnimeTag = { id: string; name: string; color: string | null };
+export type AnimeFolder = { id: string; name: string; scope: "standard" | "adult"; sortOrder: number; isVisible: boolean };
+export type AnimeTag = { id: string; name: string; color: string | null; folderId: string | null };
 export type AnimeRelation = { relation: string; malId: number; title: string; type: string | null };
 
 export type AnimeLibraryItem = {
@@ -14,13 +15,13 @@ export type AnimeLibraryItem = {
   watchStatus: AnimeWatchStatus; watchedEpisodes: number; rating: number | null; favorite: boolean; personalRank: AnimePersonalRank | null; notes: string | null;
   startedWatchingAt: string | null; completedAt: string | null; lastWatchedAt: string | null; createdAt: string; updatedAt: string; tags: AnimeTag[];
   sourceUrl: string | null;
-  isAdult: boolean; contentRating: string | null; adultSource: string | null; externalUrl: string | null;
+  isAdult: boolean; contentRating: string | null; adultSource: string | null; externalUrl: string | null; folderId: string | null;
 };
 
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };
 export type AdultAccessMode = "none" | "passkey" | "pin4" | "pin6";
 export type AnimePreferences = { adultModeEnabled: boolean; adultHiddenByDefault: boolean; adultAccessMode: AdultAccessMode; blurAdultCovers: boolean; };
-export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; };
+export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; folders: AnimeFolder[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; };
 
 export type ExternalAnime = {
   id: string; source: "jikan" | "anilist" | "bangumi"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;
