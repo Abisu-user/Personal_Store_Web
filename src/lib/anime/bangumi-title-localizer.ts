@@ -127,14 +127,15 @@ async function lookUpTraditionalTitle(anime: LocalizableAnime): Promise<string |
 }
 
 /**
- * Returns the same record shape, with `title` and `titleChinese` upgraded to
- * a Traditional Chinese title when a trusted source has one.  Existing
- * Chinese titles are converted too, covering titles saved before this change.
+ * Returns the same record shape with `titleChinese` upgraded to Traditional
+ * Chinese when a trusted source has one.  The user's `title` is deliberately
+ * preserved: it is the editable library title and must never be replaced by
+ * background metadata enrichment after an edit.
  */
 export async function localizeAnimeTitles<T extends LocalizableAnime>(items: T[]): Promise<T[]> {
   return Promise.all(items.map(async (anime) => {
     const knownChinese = clean(anime.titleChinese);
     const chinese = knownChinese ? toTraditional(knownChinese) : await lookUpTraditionalTitle(anime).then((value) => value ? toTraditional(value) : null);
-    return chinese ? { ...anime, title: chinese, titleChinese: chinese } : anime;
+    return chinese ? { ...anime, titleChinese: chinese } : anime;
   }));
 }
