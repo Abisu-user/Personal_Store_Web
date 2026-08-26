@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import type { ProfileAvatar } from "@/lib/profile/constants";
+import { clearClientResources } from "@/lib/pwa/client-resource-cache";
 import { createClient } from "@/lib/supabase/client";
 
 const primaryItems = [
@@ -18,7 +19,7 @@ export function AppSidebar({ email, displayName, avatar }: { email: string; disp
   const prefetchRoute = (href: string) => { const route = href.split("#", 1)[0]; if (!route || route === pathname) return; router.prefetch(route); };
   const prefetchHandlers = (href: string) => ({ onFocus: () => prefetchRoute(href), onMouseEnter: () => prefetchRoute(href) });
   const closeMenu = () => setMenuOpen(false);
-  async function signOut() { setSigningOut(true); await createClient().auth.signOut(); closeMenu(); router.replace("/login"); router.refresh(); }
+  async function signOut() { setSigningOut(true); clearClientResources(); await createClient().auth.signOut(); closeMenu(); router.replace("/login"); router.refresh(); }
   const navigationLink = (href: string, label: string, icon: string, active: boolean) => <Link className={active ? "nav-item active" : "nav-item"} href={href} key={label} onClick={closeMenu} prefetch {...prefetchHandlers(href)}><i aria-hidden="true">{icon}</i>{label}</Link>;
   const logoutIcon = <svg aria-hidden="true" className="sidebar-sign-out-icon" fill="none" viewBox="0 0 24 24"><path d="M4 3.75h11.5a1.5 1.5 0 0 1 1.5 1.5v13.5a1.5 1.5 0 0 1-1.5 1.5H4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" /><path d="m15.5 6.2-5.2 2.15a1 1 0 0 0-.62.92v8.1a1 1 0 0 0 1.38.92l4.44-1.84" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" /><path d="M20 12h-7m4-3 3 3-3 3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" /></svg>;
 

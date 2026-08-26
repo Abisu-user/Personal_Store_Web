@@ -45,6 +45,7 @@ html[data-network="offline"]::before { position: fixed; z-index: 200; top: max(6
 .skeleton-block { display: block; border-radius: 8px; background: linear-gradient(100deg, color-mix(in srgb, var(--line) 72%, transparent) 25%, color-mix(in srgb, var(--surface) 70%, #fff) 38%, color-mix(in srgb, var(--line) 72%, transparent) 63%); background-size: 200% 100%; animation: skeleton-shimmer 1.25s ease-in-out infinite; }
 .skeleton-cover { width: 100%; aspect-ratio: 2 / 3; }
 .skeleton-line { width: 100%; height: 13px; }.skeleton-line.short { width: 42%; }.skeleton-line.medium { width: 68%; }.skeleton-checkbox { width: 19px; height: 19px; align-self: center; }.skeleton-bookmark-cover { width: 132px; min-width: 132px; height: 92px; }
+@supports (content-visibility: auto) { .bookmark-card, .content-item-card, .photo-card-wrap, .anime-card, .anime-catalogue-card { content-visibility: auto; contain-intrinsic-size: auto 168px; }.photo-card-wrap { contain-intrinsic-size: auto 260px; } }
 @keyframes skeleton-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-block { animation: none; } }
 
