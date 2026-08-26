@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { PinPad } from "@/components/security/pin-pad";
 import { animeStatusLabels, type AnimeLibraryItem, type AnimePreferences, type AnimeTag, type AnimeWatchStatus, type AnimeWorkspaceData, type ExternalAnime } from "@/lib/anime/types";
+import { readClientResource, writeClientResource } from "@/lib/pwa/client-resource-cache";
 
 type Tab = "discover" | "library" | "stats" | "adult";
 type AdultView = "library" | "discover";
@@ -49,8 +50,9 @@ function StarRating({ value, onChange, readonly = false }: { value: number | nul
   </div>;
 }
 
-export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceData }) {
+export function AnimeWorkspace({ initialData }: { initialData?: AnimeWorkspaceData }) {
   const [data, setData] = useState(initialData ?? empty);
+  const [loaded, setLoaded] = useState(Boolean(initialData));
   const [tab, setTab] = useState<Tab>("library");
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
@@ -80,6 +82,25 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
   const libraryPageSize = 12;
 
   useEffect(() => {
+    let active = true;
+    const cached = readClientResource<AnimeWorkspaceData>("anime:standard");
+    if (cached) { setData(cached); setPreferences(cached.preferences); setLoaded(true); }
+    const load = async () => {
+      try {
+        const next = await api<AnimeWorkspaceData>("/api/anime/library");
+        if (!active) return;
+        setData(next); setPreferences(next.preferences); setLoaded(true); writeClientResource("anime:standard", next);
+      } catch (cause) {
+        if (active && !cached) setNotice(cause instanceof Error ? cause.message : "無法載入動漫資料，請稍後再試。");
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => { if (loaded) writeClientResource("anime:standard", data); }, [data, loaded]);
+
+  useEffect(() => {
     if (!notice) return;
     const timeoutId = window.setTimeout(() => setNotice(null), 3_000);
     return () => window.clearTimeout(timeoutId);
@@ -87,7 +108,7 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
 
   const refresh = async () => {
     const next = await api<AnimeWorkspaceData>("/api/anime/library");
-    setData(next);
+    setData(next); setPreferences(next.preferences); setLoaded(true); writeClientResource("anime:standard", next);
   };
   const refreshAdult = async () => {
     const next = await api<AnimeWorkspaceData>("/api/anime/library?scope=adult");
@@ -216,9 +237,9 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
       <section className="anime-category-bar" aria-label="動漫類別">
         <div className="anime-category-scroll"><button className={!categoryFilter ? "active" : ""} onClick={() => setCategoryFilter(null)} type="button">所有類別</button>{data.tags.map((category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter(category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>)}<button aria-label="查看更多類別" className="anime-category-utility" onClick={() => setCategoryMoreOpen(true)} type="button">更多</button><button aria-label="新增類別" className="anime-category-utility anime-category-add-button" onClick={() => setCategoryAddOpen(true)} type="button">＋</button></div>
       </section>
-      <div className="anime-grid">{pagedLibrary.map((anime) => <article className="anime-card" key={anime.id}>
+      {!loaded ? <AnimeGridSkeleton /> : <div className="anime-grid">{pagedLibrary.map((anime) => <article className="anime-card" key={anime.id}>
         <button className="anime-card-main" onClick={() => setSelected(anime)} type="button"><Cover anime={anime} /><div className="anime-card-copy"><div className="anime-card-line"><Status value={anime.watchStatus} />{anime.rating !== null && <span className="anime-rating-summary">★ {anime.rating}</span>}</div><h3>{displayTitle(anime)}</h3><p>{anime.tags.map((category) => category.name).join(" · ") || "未分類"}</p><div className="anime-card-link">{anime.sourceUrl ? "已設定觀看連結" : "尚未設定觀看連結"}</div></div></button>
-      </article>)}</div>
+      </article>)}</div>}
       {library.length > libraryPageSize && <nav aria-label="我的動漫分頁" className="anime-pagination"><button aria-label="上一頁" className="secondary-button compact" disabled={activeLibraryPage === 1} onClick={() => setLibraryPage((current) => Math.max(1, current - 1))} type="button">上一頁</button>{Array.from({ length: libraryPageCount }, (_, index) => index + 1).slice(Math.max(0, activeLibraryPage - 4), Math.min(libraryPageCount, activeLibraryPage + 3)).map((number) => <button aria-current={number === activeLibraryPage ? "page" : undefined} className={number === activeLibraryPage ? "active" : ""} key={number} onClick={() => setLibraryPage(number)} type="button">{number}</button>)}<button aria-label="下一頁" className="secondary-button compact" disabled={activeLibraryPage === libraryPageCount} onClick={() => setLibraryPage((current) => Math.min(libraryPageCount, current + 1))} type="button">下一頁</button></nav>}
       {!library.length && <div className="anime-empty"><h3>{data.library.length ? "找不到符合的動漫" : "還沒有加入動漫"}</h3><button className="button compact" onClick={() => setAdding(true)} type="button">＋ 新增動漫</button></div>}
       <ModalDialog className="mobile-sheet-dialog" onClose={() => setFilterOpen(false)} open={filterOpen} title="篩選我的動漫"><div className="anime-mobile-filter-panel"><p>觀看狀態</p><div>{visibleFilters.map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => { setFilter(value); setFilterOpen(false); }} type="button">{value === "all" ? "全部" : animeStatusLabels[value]}</button>)}</div></div></ModalDialog>
@@ -234,6 +255,10 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
     <ConfirmDialog confirmLabel="移至垃圾桶" description={removing ? `確定要將《${removing.title}》移至垃圾桶嗎？` : ""} onCancel={() => setRemoving(null)} onConfirm={() => void remove()} open={Boolean(removing)} pending={pending === "remove"} title="移除我的動漫" />
     <ModalDialog className="mobile-sheet-dialog" onClose={() => { if (!pending) setAdultPinPrompt(false); }} open={adultPinPrompt} pending={pending === "adult-access"} title="解鎖成人內容"><div className="anime-category-dialog"><p>請輸入獨立的 {preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。</p><PinPad disabled={pending === "adult-access"} label={preferences.adultAccessMode === "pin6" ? "輸入 6 位數成人區 PIN" : "輸入 4 位數成人區 PIN"} length={preferences.adultAccessMode === "pin6" ? 6 : 4} onChange={(value) => { setAdultPin(value); setAdultPinError(null); }} onComplete={(value) => void unlockAdultWithPin(value)} value={adultPin} />{adultPinError && <p className="notice error" role="alert">{adultPinError}</p>}<div className="dialog-actions"><button className="secondary-button" disabled={pending === "adult-access"} onClick={() => setAdultPinPrompt(false)} type="button">取消</button></div></div></ModalDialog>
   </section>;
+}
+
+function AnimeGridSkeleton() {
+  return <div aria-busy="true" aria-label="正在載入動漫" className="anime-grid anime-grid-skeleton">{Array.from({ length: 6 }, (_, index) => <div className="anime-card" key={index}><div className="anime-card-main"><span className="skeleton-block skeleton-cover" /><div className="anime-card-copy"><span className="skeleton-block skeleton-line short" /><span className="skeleton-block skeleton-line" /><span className="skeleton-block skeleton-line medium" /></div></div></div>)}</div>;
 }
 
 function AnimeStats({ data }: { data: AnimeWorkspaceData }) {

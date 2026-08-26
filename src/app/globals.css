@@ -41,6 +41,13 @@ html[data-network="offline"]::before { position: fixed; z-index: 200; top: max(6
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
+.anime-grid-skeleton { pointer-events: none; }
+.skeleton-block { display: block; border-radius: 8px; background: linear-gradient(100deg, color-mix(in srgb, var(--line) 72%, transparent) 25%, color-mix(in srgb, var(--surface) 70%, #fff) 38%, color-mix(in srgb, var(--line) 72%, transparent) 63%); background-size: 200% 100%; animation: skeleton-shimmer 1.25s ease-in-out infinite; }
+.skeleton-cover { width: 100%; aspect-ratio: 2 / 3; }
+.skeleton-line { width: 100%; height: 13px; }.skeleton-line.short { width: 42%; }.skeleton-line.medium { width: 68%; }.skeleton-checkbox { width: 19px; height: 19px; align-self: center; }.skeleton-bookmark-cover { width: 132px; min-width: 132px; height: 92px; }
+@keyframes skeleton-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-block { animation: none; } }
+
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); background: #f4f7fc; }
 .app-sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 24px 15px 16px; color: #e7efff; background: #101d34; }
 .vault-logo { display: flex; align-items: center; gap: 11px; padding: 3px 10px 28px; }.vault-logo > span { display: grid; width: 34px; height: 34px; place-items: center; overflow: hidden; border-radius: 10px; color: #132242; background: #a9c6ff; font-weight: 900; }.vault-logo > span img { display: block; width: 100%; height: 100%; }.vault-logo strong, .vault-logo small, .sidebar-profile strong, .sidebar-profile small { display: block; }.vault-logo strong { font-size: .92rem; letter-spacing: -.01em; }.vault-logo small { margin-top: 3px; color: #89a0c5; font-size: .58rem; letter-spacing: .12em; }
