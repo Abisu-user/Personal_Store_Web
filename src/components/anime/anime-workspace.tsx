@@ -79,6 +79,12 @@ export function AnimeWorkspace({ initialData }: { initialData: AnimeWorkspaceDat
   const [libraryPage, setLibraryPage] = useState(1);
   const libraryPageSize = 12;
 
+  useEffect(() => {
+    if (!notice) return;
+    const timeoutId = window.setTimeout(() => setNotice(null), 3_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [notice]);
+
   const refresh = async () => {
     const next = await api<AnimeWorkspaceData>("/api/anime/library");
     setData(next);
