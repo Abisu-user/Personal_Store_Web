@@ -24,6 +24,23 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Native-like mobile interaction without suppressing keyboard or accessibility focus. */
+button, a, [role="button"] { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button:active:not(:disabled), a:active, [role="button"]:active { transform: scale(.985); opacity: .9; }
+img[draggable="false"], .vault-logo img, .mobile-bottom-nav img { -webkit-user-drag: none; user-select: none; }
+html[data-network="offline"]::before { position: fixed; z-index: 200; top: max(6px, env(safe-area-inset-top)); right: 12px; padding: 6px 10px; border-radius: 999px; color: #fff; background: rgb(21 34 57 / 88%); content: "目前離線"; font-size: .75rem; font-weight: 800; pointer-events: none; }
+
+@media (max-width: 700px) {
+  button, input, textarea, select { font-size: max(16px, 1rem); }
+  .mobile-bottom-nav { backdrop-filter: none; }
+  .dashboard-card, .dashboard-overview article, .bookmark-card, .file-card, .vault-item { box-shadow: 0 5px 16px rgb(20 42 80 / 7%); }
+  .mobile-more-sheet, .modal-dialog-backdrop .modal-dialog { backdrop-filter: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 256px minmax(0, 1fr); background: #f4f7fc; }
 .app-sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100vh; padding: 24px 15px 16px; color: #e7efff; background: #101d34; }
 .vault-logo { display: flex; align-items: center; gap: 11px; padding: 3px 10px 28px; }.vault-logo > span { display: grid; width: 34px; height: 34px; place-items: center; overflow: hidden; border-radius: 10px; color: #132242; background: #a9c6ff; font-weight: 900; }.vault-logo > span img { display: block; width: 100%; height: 100%; }.vault-logo strong, .vault-logo small, .sidebar-profile strong, .sidebar-profile small { display: block; }.vault-logo strong { font-size: .92rem; letter-spacing: -.01em; }.vault-logo small { margin-top: 3px; color: #89a0c5; font-size: .58rem; letter-spacing: .12em; }
