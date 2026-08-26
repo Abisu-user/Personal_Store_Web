@@ -130,9 +130,8 @@ export function CategoryFolderManagement({ bookmarks, code, files, initialTab = 
   return <section className="management-workspace">
     <div className="management-tabs-row">
       <div className="management-tabs" role="tablist">{tabs.map((key) => <button aria-selected={tab === key} className={tab === key ? "active" : ""} key={key} onClick={() => setTab(key)} role="tab" type="button">{tabLabels[key]}</button>)}</div>
-      <FolderLockSettings folders={selected.folders} kind={tab} onChange={selected.setFolders} />
     </div>
-    <div className="management-intro"><p className="eyebrow">{tabLabels[tab].toUpperCase()} FOLDERS</p><h2>管理 {tabLabels[tab]} 的資料夾</h2><p>類別請直接在各資料頁的「＋」新增與整理；此處專門管理資料夾、鎖定與常駐清單。</p></div>
-    <div className="management-sections"><details className="management-section" open><summary>資料夾 <span>管理資料夾與鎖定設定</span></summary><ItemManager api={selected.folderApi} count={folderCount} description="資料夾只屬於目前選擇的資料類型；數字不包含封存或垃圾桶中的資料。" items={selected.folders} kind={selected.folderKind} onChange={selected.setFolders} title={selected.folderTitle} /></details><details className="management-section"><summary>常駐清單 <span>我的最愛、置頂、封存與垃圾桶</span></summary><SmartFolderManager items={selected.items} tab={tab} /></details></div>
+    <div className="management-intro"><p className="eyebrow">{tabLabels[tab].toUpperCase()} FOLDERS</p><h2>管理 {tabLabels[tab]} 的資料夾</h2><p>類別、資料夾與資料夾 PIN 都已移到各資料頁的就近操作與安全中心，這個舊頁面不再提供常駐清單管理。</p></div>
+    <div className="management-sections"><details className="management-section" open><summary>資料夾 <span>資料夾會在各資料頁即時管理</span></summary><ItemManager api={selected.folderApi} count={folderCount} description="資料夾只屬於目前選擇的資料類型；數字不包含封存或垃圾桶中的資料。" items={selected.folders} kind={selected.folderKind} onChange={selected.setFolders} title={selected.folderTitle} /></details></div>
   </section>;
 }

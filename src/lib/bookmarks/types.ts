@@ -1,4 +1,4 @@
-export type BookmarkCategory = { id: string; name: string; sort_order: number };
+export type BookmarkCategory = { id: string; name: string; sort_order: number; folder_id: string | null };
 import type { FolderLockStatus } from "@/lib/folder-locks/types";
 export type BookmarkFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;
 export type BookmarkTag = { id: string; name: string; color: string | null };

@@ -15,7 +15,8 @@ type AdultView = "library" | "discover";
 type CategoryScope = "standard" | "adult";
 type Filter = "all" | AnimeWatchStatus;
 const statuses: AnimeWatchStatus[] = ["planning", "watching", "completed", "paused", "dropped"];
-const visibleFilters: Filter[] = ["all", ...statuses];
+// 「暫停」仍保留在既有資料的狀態中，但不再作為主要清單的常駐篩選。
+const visibleFilters: Filter[] = ["all", "planning", "watching", "completed", "dropped"];
 const defaultPreferences: AnimePreferences = { adultModeEnabled: false, adultHiddenByDefault: true, adultAccessMode: "none", blurAdultCovers: true };
 const empty: AnimeWorkspaceData = { library: [], tags: [], logs: [], preferences: defaultPreferences };
 // `title` is the user's editable display name.  Provider names remain in the

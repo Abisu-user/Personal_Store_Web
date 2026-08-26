@@ -10,7 +10,7 @@ export async function getPhotosWorkspaceData(ownerId: string): Promise<PhotosWor
   await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "photo").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
   const [entriesResult, categoriesResult, foldersResult] = await Promise.all([
     admin.from("entries").select("id, title, description, updated_at, is_favorite, is_pinned, is_archived, deleted_at, categories(id, name), content_folders(id, name, is_visible), file_details(original_filename, mime_type, byte_size)").eq("owner_id", ownerId).eq("kind", "photo").order("updated_at", { ascending: false }).limit(200),
-    admin.from("categories").select("id, name, sort_order").eq("owner_id", ownerId).eq("content_kind", "photo").order("sort_order").order("name").limit(100),
+    admin.from("categories").select("id, name, sort_order, folder_id").eq("owner_id", ownerId).eq("content_kind", "photo").order("sort_order").order("name").limit(100),
     admin.from("content_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).eq("content_kind", "photo").order("sort_order").order("name").limit(100),
   ]);
   if (entriesResult.error || categoriesResult.error || foldersResult.error) throw new Error("Unable to load photos.");

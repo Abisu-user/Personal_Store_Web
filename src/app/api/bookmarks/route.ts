@@ -25,7 +25,9 @@ const entryActionSchema = z.object({
 });
 const bulkActionSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(100),
-  action: z.enum(["trash", "permanent"]),
+  action: z.enum(["trash", "permanent", "organize"]),
+  bookmarkFolderId: z.string().uuid().nullable().optional(),
+  categoryId: z.string().uuid().nullable().optional(),
 });
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
@@ -49,6 +51,12 @@ async function validateBookmarkFolder(ownerId: string, bookmarkFolderId: string 
   if (error) throw error;
   if (!data) throw new Error("BOOKMARK_FOLDER_NOT_FOUND");
 }
+async function validateBookmarkCategory(ownerId: string, categoryId: string | null | undefined, folderId: string | null | undefined) {
+  if (!categoryId) return true;
+  const { data, error } = await createAdminClient().from("categories").select("id, folder_id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "bookmark").maybeSingle();
+  if (error) throw error;
+  return Boolean(data) && (data?.folder_id ?? null) === (folderId ?? null);
+}
 
 export const dynamic = "force-dynamic";
 
@@ -70,10 +78,7 @@ export async function POST(request: NextRequest) {
   try {
     const admin = createAdminClient();
     const previewPromise = getLinkPreview(normalizedUrl);
-    if (parsed.data.categoryId) {
-      const { data: category } = await admin.from("categories").select("id").eq("id", parsed.data.categoryId).eq("owner_id", context.userId).eq("content_kind", "bookmark").maybeSingle();
-      if (!category) return jsonError("找不到指定分類。", 400);
-    }
+    if (!(await validateBookmarkCategory(context.userId, parsed.data.categoryId, parsed.data.bookmarkFolderId))) return jsonError("找不到指定分類。", 400);
     try { await validateBookmarkFolder(context.userId, parsed.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
     const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
     if (coverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
@@ -103,6 +108,13 @@ export async function PATCH(request: NextRequest) {
   try {
     const admin = createAdminClient();
     if (bulk.success) {
+      if (bulk.data.action === "organize") {
+        if (!(await validateBookmarkCategory(context.userId, bulk.data.categoryId, bulk.data.bookmarkFolderId))) return jsonError("找不到指定分類。", 400);
+        try { await validateBookmarkFolder(context.userId, bulk.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
+        const { error } = await admin.from("entries").update({ bookmark_folder_id: bulk.data.bookmarkFolderId ?? null, category_id: bulk.data.categoryId ?? null }).in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null);
+        if (error) throw error;
+        return NextResponse.json({ count: bulk.data.ids.length }, { headers: { "Cache-Control": "private, no-store" } });
+      }
       const query = bulk.data.action === "trash"
         ? admin.from("entries").update({ deleted_at: new Date().toISOString(), is_pinned: false }).in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null).select("id")
         : admin.from("entries").delete().in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id");
@@ -113,10 +125,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ count: data.length }, { headers: { "Cache-Control": "private, no-store" } });
     }
     if (update.success) {
-      if (update.data.categoryId) {
-        const { data: category } = await admin.from("categories").select("id").eq("id", update.data.categoryId).eq("owner_id", context.userId).eq("content_kind", "bookmark").maybeSingle();
-        if (!category) return jsonError("找不到指定分類。", 400);
-      }
+      if (!(await validateBookmarkCategory(context.userId, update.data.categoryId, update.data.bookmarkFolderId))) return jsonError("找不到指定分類。", 400);
       try { await validateBookmarkFolder(context.userId, update.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
       const newCoverPath = verifiedCoverPath(context.userId, update.data.coverTicket);
       if (newCoverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);

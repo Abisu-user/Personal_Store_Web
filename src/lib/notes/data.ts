@@ -11,7 +11,7 @@ export async function getNotesWorkspaceData(ownerId: string): Promise<NotesWorks
   await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "note").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
   const [entriesResult, categoriesResult, foldersResult, tagsResult] = await Promise.all([
     admin.from("entries").select("id, title, description, updated_at, is_favorite, is_pinned, is_archived, deleted_at, cover_image_path, categories(id, name), content_folders(id, name, is_visible), note_details(content_markdown, current_version), entry_tags(tags(id, name, color))").eq("owner_id", ownerId).eq("kind", "note").order("updated_at", { ascending: false }).limit(100),
-    admin.from("categories").select("id, name, sort_order").eq("owner_id", ownerId).eq("content_kind", "note").order("sort_order").order("name").limit(100),
+    admin.from("categories").select("id, name, sort_order, folder_id").eq("owner_id", ownerId).eq("content_kind", "note").order("sort_order").order("name").limit(100),
     admin.from("content_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).eq("content_kind", "note").order("sort_order").order("name").limit(100),
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
   ]);

@@ -1,4 +1,4 @@
-export type CodeCategory = { id: string; name: string; sort_order: number };
+export type CodeCategory = { id: string; name: string; sort_order: number; folder_id: string | null };
 export type CodeTag = { id: string; name: string; color: string | null };
 import type { FolderLockStatus } from "@/lib/folder-locks/types";
 export type CodeFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;

@@ -391,6 +391,8 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .background-image-controls > label:first-child::before { content: "上傳圖片（最多 10 張）"; font-size: .88rem; }
 .background-image-controls > label:first-child input { font-size: .82rem; }
 
+.folder-lock-security { display: grid; gap: 12px; max-width: 620px; margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 16px; background: color-mix(in srgb, var(--surface) 88%, var(--brand-soft)); }.folder-lock-security h2,.folder-lock-security p { margin: 0; }.folder-lock-security > p:not(.eyebrow) { color: var(--muted); line-height: 1.55; }.folder-lock-security label,.folder-lock-security form { display: grid; gap: 7px; color: var(--ink); font-weight: 800; }.folder-lock-security form { margin-top: 3px; }.folder-lock-security select,.folder-lock-security input { width: 100%; min-height: 42px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--surface); font: inherit; }
+
 /* Native-app mobile navigation, safe areas and privacy lock. Desktop retains the Sidebar. */
 .mobile-bottom-nav, .mobile-more-layer { display: none; }
 .app-lock-overlay { position: fixed; z-index: 200; inset: 0; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); background: linear-gradient(150deg, #102040, #162c56); color: #edf4ff; }

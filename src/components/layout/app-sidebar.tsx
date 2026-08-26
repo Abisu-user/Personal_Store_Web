@@ -8,7 +8,7 @@ import { clearClientResources } from "@/lib/pwa/client-resource-cache";
 import { createClient } from "@/lib/supabase/client";
 
 const primaryItems = [
-  { href: "/dashboard", label: "首頁", icon: "⌂" }, { href: "/bookmarks", label: "收藏與整理", icon: "◇" }, { href: "/notes", label: "筆記", icon: "□" }, { href: "/code", label: "程式碼", icon: "⌘" }, { href: "/files", label: "檔案", icon: "▣" }, { href: "/photos", label: "照片", icon: "▧" }, { href: "/vocabulary", label: "單字學習", icon: "文" }, { href: "/anime", label: "動漫收藏", icon: "◉" }, { href: "/vault", label: "保管庫", icon: "◈" }, { href: "/calendar", label: "日曆", icon: "◌" }, { href: "/organize", label: "管理資料夾", icon: "☷" },
+  { href: "/dashboard", label: "首頁", icon: "⌂" }, { href: "/bookmarks", label: "收藏與整理", icon: "◇" }, { href: "/notes", label: "筆記", icon: "□" }, { href: "/code", label: "程式碼", icon: "⌘" }, { href: "/files", label: "檔案", icon: "▣" }, { href: "/photos", label: "照片", icon: "▧" }, { href: "/vocabulary", label: "單字學習", icon: "文" }, { href: "/anime", label: "動漫收藏", icon: "◉" }, { href: "/vault", label: "保管庫", icon: "◈" }, { href: "/calendar", label: "日曆", icon: "◌" },
 ];
 
 export function AppSidebar({ email, displayName, avatar }: { email: string; displayName: string | null; avatar: ProfileAvatar }) {

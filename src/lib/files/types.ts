@@ -1,4 +1,4 @@
-export type FileCategory = { id: string; name: string; sort_order: number };
+export type FileCategory = { id: string; name: string; sort_order: number; folder_id: string | null };
 export type FileTag = { id: string; name: string; color: string | null };
 import type { FolderLockStatus } from "@/lib/folder-locks/types";
 export type FileFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;

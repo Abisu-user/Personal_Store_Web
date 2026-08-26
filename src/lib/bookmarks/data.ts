@@ -19,7 +19,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
       .eq("kind", "bookmark")
       .order("updated_at", { ascending: false })
       .limit(100),
-    admin.from("categories").select("id, name, sort_order").eq("owner_id", ownerId).eq("content_kind", "bookmark").order("sort_order").order("name").limit(100),
+    admin.from("categories").select("id, name, sort_order, folder_id").eq("owner_id", ownerId).eq("content_kind", "bookmark").order("sort_order").order("name").limit(100),
     admin.from("bookmark_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).order("sort_order").order("name").limit(100),
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
   ]);

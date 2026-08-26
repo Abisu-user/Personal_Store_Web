@@ -21,14 +21,15 @@ const snippetSchema = z.object({
 const updateSchema = snippetSchema.extend({ id: z.string().uuid() });
 const deleteSchema = z.object({ id: z.string().uuid() });
 const actionSchema = z.object({ id: z.string().uuid(), action: z.enum(["trash", "restore"]) });
+const bulkOrganizeSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(100), action: z.literal("organize"), contentFolderId: z.string().uuid().nullable().optional(), categoryId: z.string().uuid().nullable().optional() });
 export const dynamic = "force-dynamic";
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
 
-async function validateCategory(ownerId: string, categoryId: string | null | undefined) {
+async function validateCategory(ownerId: string, categoryId: string | null | undefined, folderId: string | null | undefined) {
   if (!categoryId) return true;
-  const { data } = await createAdminClient().from("categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "code").maybeSingle();
-  return Boolean(data);
+  const { data } = await createAdminClient().from("categories").select("id, folder_id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "code").maybeSingle();
+  return Boolean(data) && (data?.folder_id ?? null) === (folderId ?? null);
 }
 
 async function resolveTags(ownerId: string, tags: string[]) {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
   if (!context) return jsonError("Unauthorized", 401);
   const parsed = snippetSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("請檢查程式碼片段欄位。", 400);
-  if (!(await validateCategory(context.userId, parsed.data.categoryId))) return jsonError("找不到指定分類。", 400);
+  if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "code", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
   if (coverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
@@ -85,6 +86,11 @@ export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return jsonError("Unauthorized", 401);
   const requestBody = await request.json().catch(() => null);
+  const organize = bulkOrganizeSchema.safeParse(requestBody);
+  if (organize.success) {
+    if (!(await validateContentFolder(context.userId, "code", organize.data.contentFolderId)) || !(await validateCategory(context.userId, organize.data.categoryId, organize.data.contentFolderId))) return jsonError("找不到指定分類或資料夾。", 400);
+    try { const { error } = await createAdminClient().from("entries").update({ content_folder_id: organize.data.contentFolderId ?? null, category_id: organize.data.categoryId ?? null }).in("id", organize.data.ids).eq("owner_id", context.userId).eq("kind", "code").is("deleted_at", null); if (error) throw error; return NextResponse.json({ ok: true }); } catch { return jsonError("無法移動選取的程式碼。", 503); }
+  }
   const action = actionSchema.safeParse(requestBody);
   if (action.success) {
     try {
@@ -98,7 +104,7 @@ export async function PATCH(request: NextRequest) {
   }
   const parsed = updateSchema.safeParse(requestBody);
   if (!parsed.success) return jsonError("請檢查程式碼片段欄位。", 400);
-  if (!(await validateCategory(context.userId, parsed.data.categoryId))) return jsonError("找不到指定分類。", 400);
+  if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "code", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
   const newCoverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
   if (newCoverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
