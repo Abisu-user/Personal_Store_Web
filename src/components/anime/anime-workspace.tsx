@@ -202,6 +202,9 @@ function AnimeFolderNavigation({
         body: JSON.stringify({ name: name.trim(), scope }),
       });
       onFoldersChange(sortedFolders([...folders, result.folder]));
+      // A new folder becomes the current context straight away. This also
+      // ensures the one selected chip is the folder, not the prior status.
+      onChange(result.folder.id);
       setName("");
       setAdding(false);
     } catch (cause) {
@@ -867,10 +870,8 @@ export function AnimeWorkspace({
     else setTrashData(next);
   };
   const openTrash = async (scope: CategoryScope) => {
-    setPending("trash");
-    // Clear stale client state first.  This makes the trash view an explicit
-    // read-only view rather than reusing the active library list while a
-    // request is in flight.
+    // Switch views synchronously. Loading the data is deliberately separate
+    // from mutations, so this never presents the "saving anime" overlay.
     if (scope === "adult") {
       setAdultTrashData(null);
       setAdultLibraryView("trash");
@@ -882,8 +883,6 @@ export function AnimeWorkspace({
       await refreshTrash(scope);
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : "無法讀取垃圾桶。");
-    } finally {
-      setPending(null);
     }
   };
   const updateAdultPreferences = async (changes: Partial<AnimePreferences>) => {
@@ -1505,9 +1504,20 @@ export function AnimeWorkspace({
             <div className="anime-filter-scroll">
               {visibleFilters.map((value) => (
                 <button
-                  className={filter === value ? "active" : ""}
+                  className={
+                    libraryView === "library" &&
+                    !folderFilter &&
+                    filter === value
+                      ? "active"
+                      : ""
+                  }
                   key={value}
-                  onClick={() => setFilter(value)}
+                  onClick={() => {
+                    setLibraryView("library");
+                    setFolderFilter(null);
+                    setCategoryFilter(null);
+                    setFilter(value);
+                  }}
                   type="button"
                 >
                   {value === "all" ? "全部" : animeStatusLabels[value]}
@@ -1518,13 +1528,19 @@ export function AnimeWorkspace({
                 inline
                 onChange={(folderId) => {
                   setLibraryView("library");
+                  setFilter("all");
                   setFolderFilter(folderId);
                   setCategoryFilter(null);
                 }}
                 onFoldersChange={(folders) =>
                   setData((current) => ({ ...current, folders }))
                 }
-                onTrash={() => void openTrash("standard")}
+                onTrash={() => {
+                  setFilter("all");
+                  setFolderFilter(null);
+                  setCategoryFilter(null);
+                  void openTrash("standard");
+                }}
                 scope="standard"
                 selectedId={folderFilter}
                 trashCount={trashData?.library.length ?? 0}
@@ -1730,9 +1746,18 @@ export function AnimeWorkspace({
               <div>
                 {visibleFilters.map((value) => (
                   <button
-                    className={filter === value ? "active" : ""}
+                    className={
+                      libraryView === "library" &&
+                      !folderFilter &&
+                      filter === value
+                        ? "active"
+                        : ""
+                    }
                     key={value}
                     onClick={() => {
+                      setLibraryView("library");
+                      setFolderFilter(null);
+                      setCategoryFilter(null);
                       setFilter(value);
                       setFilterOpen(false);
                     }}

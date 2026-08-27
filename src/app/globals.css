@@ -577,14 +577,15 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .auth-card .split-links { flex-wrap: wrap; }
 }
 
-/* Keep the Anime trash control visually consistent with other collection rails. */
-.anime-category-utility.trash-tab { border-style: solid; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
-.anime-category-utility.trash-tab.active { border-color: var(--danger); color: #fff; background: var(--danger); }
+/* Every Anime library rail control uses the same chip treatment as its
+   status choices. Selection alone decides which chip is blue. */
+.anime-category-utility.trash-tab { border-style: solid; color: var(--muted); background: var(--surface); }
+.anime-category-utility.trash-tab.active { border-color: var(--brand); color: #fff; background: var(--brand); }
 .bulk-mode-label { color: var(--brand); font-size: .82rem; }
 .anime-filter-scroll .anime-folder-bar-inline,
 .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll { display: contents; }
 .anime-filter-scroll .anime-category-utility { border-style: solid; color: var(--muted); background: var(--surface); }
-.anime-filter-scroll .anime-category-add-button { color: #fff; background: var(--brand); }
+.anime-filter-scroll .anime-category-add-button { min-width: auto; padding: 0 11px; color: var(--muted); background: var(--surface); font-size: .9rem; }
 @media (max-width: 700px) {
   .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: initial; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
   .anime-filter-scroll::-webkit-scrollbar { display: none; }
