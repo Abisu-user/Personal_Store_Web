@@ -27,17 +27,20 @@ export async function getAnimePreferences(userId: string): Promise<AnimePreferen
   return toPreferences(data);
 }
 
-export async function getAnimeWorkspaceData(userId: string, scope: "standard" | "adult" = "standard"): Promise<AnimeWorkspaceData> {
+export async function getAnimeWorkspaceData(userId: string, scope: "standard" | "adult" = "standard", options: { trashed?: boolean } = {}): Promise<AnimeWorkspaceData> {
   const admin = createAdminClient();
   const preferences = await getAnimePreferences(userId);
-  let libraryQuery = admin.from("anime_library").select("*").eq("user_id", userId).is("deleted_at", null).order("updated_at", { ascending: false }).limit(400);
+  let libraryQuery = admin.from("anime_library").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(400);
+  libraryQuery = options.trashed ? libraryQuery.not("deleted_at", "is", null) : libraryQuery.is("deleted_at", null);
   libraryQuery = scope === "adult" ? libraryQuery.eq("is_adult", true) : libraryQuery.or("is_adult.is.null,is_adult.eq.false");
   let { data: rows, error: libraryError } = await libraryQuery;
   // Deploying the UI ahead of the additive migration must not take the
   // existing library offline. Before the column exists, every legacy row is
   // treated as ordinary content and adult mode remains unavailable.
   if (libraryError && scope === "standard") {
-    const legacy = await admin.from("anime_library").select("*").eq("user_id", userId).is("deleted_at", null).order("updated_at", { ascending: false }).limit(400);
+    const legacy = await (options.trashed
+      ? admin.from("anime_library").select("*").eq("user_id", userId).not("deleted_at", "is", null).order("updated_at", { ascending: false }).limit(400)
+      : admin.from("anime_library").select("*").eq("user_id", userId).is("deleted_at", null).order("updated_at", { ascending: false }).limit(400));
     rows = legacy.data; libraryError = legacy.error;
   }
   let [{ data: tagRows, error: tagError }, { data: folderRows, error: folderError }] = await Promise.all([

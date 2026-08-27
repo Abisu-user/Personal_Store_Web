@@ -545,6 +545,12 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .auth-shell-simple .compact-logo { margin-bottom: 28px; }
 }
 
+.anime-bulk-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 38px; }
+.anime-bulk-toolbar strong { color: var(--muted); font-size: .82rem; }
+.anime-card { position: relative; }
+.anime-card-select { position: absolute; z-index: 2; top: 10px; left: 10px; display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--surface) 92%, transparent); box-shadow: 0 3px 10px rgb(23 48 91 / 12%); }
+.anime-card-select input { width: 18px; height: 18px; accent-color: var(--brand); }
+
 @media (max-width: 380px) {
   .auth-shell:not(.auth-shell-simple) .auth-brand { padding-bottom: 19px; }
   .auth-brand > div:nth-child(2) { margin-top: 18px; }

@@ -33,6 +33,13 @@ const commonFields = z.object({
 const createSchema = commonFields;
 const updateSchema = commonFields.partial().extend({ id });
 const deleteSchema = z.object({ id });
+const batchSchema = z.object({
+  action: z.enum(["trash", "restore", "permanent", "organize"]),
+  ids: z.array(id).min(1).max(100),
+  scope: z.enum(["standard", "adult"]).default("standard"),
+  folderId: id.nullable().optional(),
+  categoryIds: z.array(id).max(30).optional(),
+});
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });
 
 async function replaceCategories(userId: string, animeId: string, categoryIds: string[], scope: "standard" | "adult", folderId: string | null) {
@@ -60,7 +67,8 @@ export async function GET(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const adultScope = request.nextUrl.searchParams.get("scope") === "adult";
   if (adultScope && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
-  try { return NextResponse.json(await getAnimeWorkspaceData(context.userId, adultScope ? "adult" : "standard"), { headers: { "Cache-Control": "private, no-store" } }); }
+  const trashed = request.nextUrl.searchParams.get("view") === "trash";
+  try { return NextResponse.json(await getAnimeWorkspaceData(context.userId, adultScope ? "adult" : "standard", { trashed }), { headers: { "Cache-Control": "private, no-store" } }); }
   catch { return error("動漫收藏資料尚未啟用或暫時無法讀取。", 503); }
 }
 
@@ -80,7 +88,37 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查動漫資料。", 400);
+  const input = await request.json().catch(() => null);
+  const batch = batchSchema.safeParse(input);
+  if (batch.success) {
+    const { action, ids, scope, folderId, categoryIds = [] } = batch.data;
+    if (scope === "adult" && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
+    const admin = createAdminClient();
+    let target = admin.from("anime_library").select("id,cover_url").eq("user_id", context.userId).in("id", ids);
+    target = scope === "adult" ? target.eq("is_adult", true) : target.or("is_adult.is.null,is_adult.eq.false");
+    target = action === "restore" || action === "permanent" ? target.not("deleted_at", "is", null) : target.is("deleted_at", null);
+    const { data: matches, error: matchError } = await target;
+    if (matchError) return error("無法取得選取的動漫。", 503);
+    const targetIds = (matches ?? []).map((item) => item.id);
+    if (!targetIds.length) return error("找不到可處理的動漫。", 404);
+    try {
+      if (action === "organize") {
+        if (folderId) { const { data: folder } = await admin.from("anime_folders").select("id").eq("id", folderId).eq("user_id", context.userId).eq("scope", scope).maybeSingle(); if (!folder) return error("請選擇目前清單內的資料夾。", 400); }
+        const { error: folderError } = await admin.from("anime_library").update({ folder_id: folderId ?? null }).eq("user_id", context.userId).in("id", targetIds);
+        if (folderError) throw folderError;
+        await Promise.all(targetIds.map((animeId) => replaceCategories(context.userId, animeId, categoryIds, scope, folderId ?? null)));
+      } else if (action === "permanent") {
+        const { error: removeError } = await admin.from("anime_library").delete().eq("user_id", context.userId).in("id", targetIds);
+        if (removeError) throw removeError;
+        await Promise.all((matches ?? []).flatMap((item) => item.cover_url?.startsWith(`${context.userId}/covers/`) ? [deleteCover(item.cover_url)] : []));
+      } else {
+        const { error: updateError } = await admin.from("anime_library").update({ deleted_at: action === "trash" ? new Date().toISOString() : null }).eq("user_id", context.userId).in("id", targetIds);
+        if (updateError) throw updateError;
+      }
+      return NextResponse.json({ ok: true, count: targetIds.length }, { headers: { "Cache-Control": "private, no-store" } });
+    } catch { return error(action === "permanent" ? "無法永久刪除動漫。" : action === "restore" ? "無法還原動漫。" : action === "organize" ? "無法整理動漫。" : "無法移除動漫。", 503); }
+  }
+  const parsed = updateSchema.safeParse(input); if (!parsed.success) return error("請檢查動漫資料。", 400);
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     const admin = createAdminClient(); const { id: animeId, categoryIds } = parsed.data; const changes = parsed.data;
