@@ -572,6 +572,14 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .anime-category-utility.trash-tab { border-style: solid; color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 .anime-category-utility.trash-tab.active { border-color: var(--danger); color: #fff; background: var(--danger); }
 .bulk-mode-label { color: var(--brand); font-size: .82rem; }
+.anime-filter-scroll .anime-folder-bar-inline,
+.anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll { display: contents; }
+.anime-filter-scroll .anime-category-utility { border-style: solid; color: var(--muted); background: var(--surface); }
+.anime-filter-scroll .anime-category-add-button { color: #fff; background: var(--brand); }
+@media (max-width: 700px) {
+  .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: initial; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
+  .anime-filter-scroll::-webkit-scrollbar { display: none; }
+}
 
 /* The public landing page is also outside the fixed-height workspace. */
 @media (max-width: 700px) {
