@@ -584,8 +584,19 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .bulk-mode-label { color: var(--brand); font-size: .82rem; }
 .anime-filter-scroll .anime-folder-bar-inline,
 .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll { display: contents; }
-.anime-filter-scroll .anime-category-utility { border-style: solid; color: var(--muted); background: var(--surface); }
-.anime-filter-scroll .anime-category-add-button { min-width: auto; padding: 0 11px; color: var(--muted); background: var(--surface); font-size: .9rem; }
+.anime-filter-scroll .anime-category-utility {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: .86rem;
+  white-space: nowrap;
+}
+.anime-filter-scroll .anime-category-utility span { display: inline; min-width: 0; margin-left: 4px; }
+.anime-filter-scroll .anime-category-add-button { min-width: 0; padding: 0 13px; color: var(--muted); background: var(--surface); font-size: .9rem; }
 @media (max-width: 700px) {
   .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: initial; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
   .anime-filter-scroll::-webkit-scrollbar { display: none; }
