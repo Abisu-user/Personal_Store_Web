@@ -269,8 +269,15 @@ function AnimeFolderNavigation({
         {onTrash && (
           <button
             aria-label="動漫垃圾桶"
+            aria-pressed={trashSelected}
             className={trashSelected ? "anime-category-utility active" : "anime-category-utility"}
-            onClick={onTrash}
+            onClick={(event) => {
+              // This control only changes the active collection view.  Keep
+              // its click isolated from any nearby editor/form controls.
+              event.preventDefault();
+              event.stopPropagation();
+              onTrash();
+            }}
             type="button"
           >
             垃圾桶 <span>{trashCount}</span>
@@ -698,6 +705,15 @@ export function AnimeWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
+  const [categoryManageScope, setCategoryManageScope] =
+    useState<CategoryScope | null>(null);
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
+    null,
+  );
+  const [categoryDraft, setCategoryDraft] = useState("");
+  const [removingCategory, setRemovingCategory] = useState<AnimeTag | null>(
+    null,
+  );
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
@@ -777,17 +793,26 @@ export function AnimeWorkspace({
   };
   const refreshTrash = async (scope: CategoryScope) => {
     const next = await api<AnimeWorkspaceData>(
-      `/api/anime/library?view=trash${scope === "adult" ? "&scope=adult" : ""}`,
+      `/api/anime/library?scope=${scope}&view=trash`,
+      { cache: "no-store" },
     );
     if (scope === "adult") setAdultTrashData(next);
     else setTrashData(next);
   };
   const openTrash = async (scope: CategoryScope) => {
     setPending("trash");
+    // Clear stale client state first.  This makes the trash view an explicit
+    // read-only view rather than reusing the active library list while a
+    // request is in flight.
+    if (scope === "adult") {
+      setAdultTrashData(null);
+      setAdultLibraryView("trash");
+    } else {
+      setTrashData(null);
+      setLibraryView("trash");
+    }
     try {
       await refreshTrash(scope);
-      if (scope === "adult") setAdultLibraryView("trash");
-      else setLibraryView("trash");
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : "無法讀取垃圾桶。");
     } finally {
@@ -970,6 +995,65 @@ export function AnimeWorkspace({
       setPending(null);
     }
   };
+  const replaceScopeTags = (
+    scope: CategoryScope,
+    transform: (tags: AnimeTag[]) => AnimeTag[],
+  ) => {
+    if (scope === "adult") {
+      setAdultData((current) =>
+        current ? { ...current, tags: transform(current.tags) } : current,
+      );
+    } else {
+      setData((current) => ({ ...current, tags: transform(current.tags) }));
+    }
+  };
+  const saveCategoryName = async () => {
+    if (!categoryManageScope || !editingCategoryId || !categoryDraft.trim())
+      return;
+    setPending("category-manage");
+    try {
+      const result = await api<{ tag: AnimeTag }>("/api/anime/tags", {
+        method: "PATCH",
+        body: JSON.stringify({
+          id: editingCategoryId,
+          name: categoryDraft.trim(),
+        }),
+      });
+      replaceScopeTags(categoryManageScope, (tags) =>
+        tags.map((tag) => (tag.id === result.tag.id ? result.tag : tag)),
+      );
+      setEditingCategoryId(null);
+      setCategoryDraft("");
+      setNotice("已修改類別。");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "無法修改類別。");
+    } finally {
+      setPending(null);
+    }
+  };
+  const deleteCategory = async () => {
+    if (!categoryManageScope || !removingCategory) return;
+    setPending("category-manage");
+    try {
+      await api("/api/anime/tags", {
+        method: "DELETE",
+        body: JSON.stringify({ id: removingCategory.id }),
+      });
+      const removedId = removingCategory.id;
+      replaceScopeTags(categoryManageScope, (tags) =>
+        tags.filter((tag) => tag.id !== removedId),
+      );
+      if (categoryManageScope === "adult") {
+        if (adultCategoryFilter === removedId) setAdultCategoryFilter(null);
+      } else if (categoryFilter === removedId) setCategoryFilter(null);
+      setRemovingCategory(null);
+      setNotice("已移除類別。該類別的動漫會改為未分類。");
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "無法移除類別。");
+    } finally {
+      setPending(null);
+    }
+  };
   const remove = async () => {
     if (!removing) return;
     setPending("remove");
@@ -994,6 +1078,7 @@ export function AnimeWorkspace({
           ...current,
           library: current.library.filter((anime) => anime.id !== removing.id),
         }));
+      await refreshTrash(removing.isAdult ? "adult" : "standard");
       setSelected(null);
       setRemoving(null);
       setNotice("已移至垃圾桶。");
@@ -1203,6 +1288,14 @@ export function AnimeWorkspace({
                         type="button"
                       >
                         更多
+                      </button>
+                      <button
+                        aria-label="修改成人動漫類別"
+                        className="anime-category-utility"
+                        onClick={() => setCategoryManageScope("adult")}
+                        type="button"
+                      >
+                        🔧
                       </button>
                       <button
                         aria-label="新增成人動漫類別"
@@ -1486,6 +1579,14 @@ export function AnimeWorkspace({
                     type="button"
                   >
                     更多
+                  </button>
+                  <button
+                    aria-label="修改動漫類別"
+                    className="anime-category-utility"
+                    onClick={() => setCategoryManageScope("standard")}
+                    type="button"
+                  >
+                    🔧
                   </button>
                   <button
                     aria-label="新增類別"
@@ -1822,6 +1923,72 @@ export function AnimeWorkspace({
           }}
         />
       )}
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => {
+          if (!pending) {
+            setCategoryManageScope(null);
+            setEditingCategoryId(null);
+            setCategoryDraft("");
+          }
+        }}
+        open={Boolean(categoryManageScope)}
+        pending={pending === "category-manage"}
+        title={categoryManageScope === "adult" ? "修改成人動漫類別" : "修改動漫類別"}
+      >
+        <div className="anime-category-dialog">
+          <p>類別只會影響目前資料夾與目前動漫清單；移除後，原有作品會保留並顯示為未分類。</p>
+          <div className="anime-category-manager-list anime-category-edit-list">
+            {(categoryManageScope === "adult" ? (adultData?.tags ?? []) : data.tags)
+              .filter((tag) =>
+                categoryManageScope === "adult"
+                  ? !adultFolderFilter || tag.folderId === adultFolderFilter
+                  : !folderFilter || tag.folderId === folderFilter,
+              )
+              .map((tag) => (
+                <div className="anime-category-edit-row" key={tag.id}>
+                  {editingCategoryId === tag.id ? (
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void saveCategoryName();
+                      }}
+                    >
+                      <label className="sr-only" htmlFor={`anime-category-${tag.id}`}>類別名稱</label>
+                      <input
+                        autoFocus
+                        id={`anime-category-${tag.id}`}
+                        maxLength={50}
+                        onChange={(event) => setCategoryDraft(event.target.value)}
+                        value={categoryDraft}
+                      />
+                      <button className="button compact" disabled={!categoryDraft.trim() || Boolean(pending)} type="submit">儲存</button>
+                      <button className="secondary-button compact" disabled={Boolean(pending)} onClick={() => { setEditingCategoryId(null); setCategoryDraft(""); }} type="button">取消</button>
+                    </form>
+                  ) : (
+                    <>
+                      <strong>{tag.name}</strong>
+                      <div>
+                        <button className="secondary-button compact" disabled={Boolean(pending)} onClick={() => { setEditingCategoryId(tag.id); setCategoryDraft(tag.name); }} type="button">修改</button>
+                        <button aria-label={`移除類別 ${tag.name}`} className="anime-category-remove" disabled={Boolean(pending)} onClick={() => setRemovingCategory(tag)} type="button">×</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+          </div>
+          {!(categoryManageScope === "adult" ? (adultData?.tags ?? []) : data.tags).filter((tag) => categoryManageScope === "adult" ? !adultFolderFilter || tag.folderId === adultFolderFilter : !folderFilter || tag.folderId === folderFilter).length && <p className="anime-field-hint">目前資料夾尚未建立類別。</p>}
+        </div>
+      </ModalDialog>
+      <ConfirmDialog
+        confirmLabel="移除類別"
+        description={removingCategory ? `確定要移除「${removingCategory.name}」嗎？已套用此類別的動漫會改為未分類。` : ""}
+        onCancel={() => setRemovingCategory(null)}
+        onConfirm={() => void deleteCategory()}
+        open={Boolean(removingCategory)}
+        pending={pending === "category-manage"}
+        title="移除動漫類別？"
+      />
       <ConfirmDialog
         confirmLabel="移至垃圾桶"
         description={
