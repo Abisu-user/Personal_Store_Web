@@ -178,9 +178,29 @@ function AnimeFolderNavigation({
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [rename, setRename] = useState<{ id: string; value: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [inlineFolderLimit, setInlineFolderLimit] = useState(2);
   const longPressTimer = useRef<number | null>(null);
   const sortedFolders = (values: AnimeWorkspaceData["folders"]) => [...values].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-TW"));
   const visible = sortedFolders(folders).filter((folder) => folder.isVisible);
+  useEffect(() => {
+    if (!inline) return;
+    const updateLimit = () => {
+      const width = window.innerWidth;
+      setInlineFolderLimit(width >= 1440 ? 5 : width >= 1150 ? 4 : width >= 940 ? 3 : width >= 820 ? 2 : 1);
+    };
+    updateLimit();
+    window.addEventListener("resize", updateLimit);
+    return () => window.removeEventListener("resize", updateLimit);
+  }, [inline]);
+  const inlineFolders = !inline
+    ? visible
+    : (() => {
+        const first = visible.slice(0, inlineFolderLimit);
+        const selected = visible.find((folder) => folder.id === selectedId);
+        if (!selected || first.some((folder) => folder.id === selected.id)) return first;
+        return [...first.slice(0, Math.max(0, inlineFolderLimit - 1)), selected];
+      })();
+  const hasFolderOverflow = inline && inlineFolders.length < visible.length;
   const openManager = () => {
     setDraftFolders(sortedFolders(folders));
     setRemovedIds([]);
@@ -269,7 +289,7 @@ function AnimeFolderNavigation({
       aria-label="動漫資料夾"
     >
       <div className="anime-category-scroll">
-        {visible.map((folder) => (
+        {inlineFolders.map((folder) => (
           <button
             className={selectedId === folder.id ? "active" : ""}
             key={folder.id}
@@ -279,14 +299,14 @@ function AnimeFolderNavigation({
             {folder.name}
           </button>
         ))}
-        <button
+        {hasFolderOverflow && <button
           aria-label="管理資料夾"
           className="anime-category-utility"
           onClick={() => { setError(null); setMoreOpen(true); }}
           type="button"
         >
           更多
-        </button>
+        </button>}
         <button
           aria-label="修改資料夾"
           className="anime-category-utility"

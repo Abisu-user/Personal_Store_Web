@@ -597,8 +597,19 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 }
 .anime-filter-scroll .anime-category-utility span { display: inline; min-width: 0; margin-left: 4px; }
 .anime-filter-scroll .anime-category-add-button { min-width: 0; padding: 0 13px; color: var(--muted); background: var(--surface); font-size: .9rem; }
+.anime-filter-scroll,
+.anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll {
+  flex-wrap: wrap;
+  overflow-x: hidden;
+}
+.anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button:not(.anime-category-utility) {
+  min-height: 38px;
+  padding: 0 13px;
+  border-radius: 10px;
+  font-size: .86rem;
+}
 @media (max-width: 700px) {
-  .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: initial; overflow-x: auto; padding-bottom: 3px; scrollbar-width: none; }
+  .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: initial; flex-wrap: wrap; overflow-x: hidden; padding-bottom: 3px; scrollbar-width: none; }
   .anime-filter-scroll::-webkit-scrollbar { display: none; }
 }
 
