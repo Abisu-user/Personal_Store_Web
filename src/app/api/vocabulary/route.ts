@@ -12,7 +12,12 @@ const payloadSchema = z.object({
   language: z.string().trim().regex(/^[a-z]{2,12}(-[A-Z]{2})?$/).default("ja"), word: z.string().trim().min(1).max(300), reading: z.string().trim().max(300).optional().nullable(), kana: z.string().trim().max(300).optional().nullable(), romaji: z.string().trim().max(300).optional().nullable(), pronunciation: z.string().trim().max(300).optional().nullable(), ipa: z.string().trim().max(300).optional().nullable(), primaryTranslation: z.string().trim().max(1000).optional().nullable(), englishDefinition: z.string().trim().max(3000).optional().nullable(), partOfSpeech: z.string().trim().max(80).optional().nullable(), jlptLevel: z.enum(["N5", "N4", "N3", "N2", "N1"]).optional().nullable(), cefrLevel: z.enum(["A1", "A2", "B1", "B2", "C1", "C2"]).optional().nullable(), frequency: z.number().int().min(1).max(5).optional().nullable(), languageDetails: z.record(z.string(), z.unknown()).default({}), notes: z.string().trim().max(10000).optional().nullable(), isFavorite: z.boolean().default(false), masteryLevel: z.number().int().min(0).max(5).default(0), learningStatus: z.enum(["new", "learning", "reviewing", "mastered", "paused"]).default("new"), tagIds: z.array(id).max(30).default([]), deckIds: z.array(id).max(30).default([]), meanings: z.array(meaningSchema).max(30).default([]), examples: z.array(exampleSchema).max(50).default([]),
 });
 const updateSchema = payloadSchema.extend({ id });
-const actionSchema = z.object({ ids: z.array(id).min(1).max(200), action: z.enum(["trash", "restore", "permanent"]) });
+const actionSchema = z.discriminatedUnion("action", [
+  z.object({ ids: z.array(id).min(1).max(200), action: z.literal("trash") }),
+  z.object({ ids: z.array(id).min(1).max(200), action: z.literal("restore") }),
+  z.object({ ids: z.array(id).min(1).max(200), action: z.literal("permanent") }),
+  z.object({ ids: z.array(id).min(1).max(200), action: z.literal("organize"), deckId: id.nullable().optional(), tagIds: z.array(id).max(30).default([]) }),
+]);
 const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });
 const emptyToNull = (value?: string | null) => value?.trim() || null;
 
@@ -52,5 +57,29 @@ export async function PUT(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return jsonError("Unauthorized", 401); const parsed = actionSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return jsonError("請選取要處理的單字。", 400);
-  try { const admin = createAdminClient(); if (parsed.data.action === "permanent") { const { error } = await admin.from("vocabulary_cards").delete().eq("user_id", context.userId).in("id", parsed.data.ids).not("deleted_at", "is", null); if (error) throw error; } else { const updates = parsed.data.action === "trash" ? { deleted_at: new Date().toISOString() } : { deleted_at: null }; const { error } = await admin.from("vocabulary_cards").update(updates).eq("user_id", context.userId).in("id", parsed.data.ids); if (error) throw error; } return NextResponse.json({ ok: true }); } catch { return jsonError("無法更新單字狀態。", 503); }
+  try {
+    const admin = createAdminClient();
+    const organization = parsed.data.action === "organize" ? parsed.data as { ids: string[]; action: "organize"; deckId?: string | null; tagIds: string[] } : null;
+    if (organization) {
+      const { data: ownedCards, error: ownedError } = await admin.from("vocabulary_cards").select("id").eq("user_id", context.userId).is("deleted_at", null).in("id", parsed.data.ids);
+      if (ownedError) throw ownedError;
+      if ((ownedCards?.length ?? 0) !== parsed.data.ids.length) return jsonError("找不到可整理的單字。", 404);
+      if (!(await validateRelated(context.userId, organization.tagIds, organization.deckId ? [organization.deckId] : []))) return jsonError("標籤或單字本不存在。", 400);
+      if (organization.deckId !== undefined) {
+        const { error: removeDeckError } = await admin.from("vocabulary_deck_cards").delete().in("card_id", parsed.data.ids);
+        if (removeDeckError) throw removeDeckError;
+        if (organization.deckId) {
+          const { error: addDeckError } = await admin.from("vocabulary_deck_cards").upsert(parsed.data.ids.map((cardId) => ({ deck_id: organization.deckId, card_id: cardId })), { onConflict: "deck_id,card_id", ignoreDuplicates: true });
+          if (addDeckError) throw addDeckError;
+        }
+      }
+      if (organization.tagIds.length) {
+        const { error: tagError } = await admin.from("vocabulary_card_tags").upsert(parsed.data.ids.flatMap((cardId) => organization.tagIds.map((tagId) => ({ card_id: cardId, tag_id: tagId }))), { onConflict: "card_id,tag_id", ignoreDuplicates: true });
+        if (tagError) throw tagError;
+      }
+      return NextResponse.json({ ok: true });
+    }
+    if (parsed.data.action === "permanent") { const { error } = await admin.from("vocabulary_cards").delete().eq("user_id", context.userId).in("id", parsed.data.ids).not("deleted_at", "is", null); if (error) throw error; } else { const updates = parsed.data.action === "trash" ? { deleted_at: new Date().toISOString() } : { deleted_at: null }; const { error } = await admin.from("vocabulary_cards").update(updates).eq("user_id", context.userId).in("id", parsed.data.ids); if (error) throw error; }
+    return NextResponse.json({ ok: true });
+  } catch { return jsonError("無法更新單字狀態。", 503); }
 }

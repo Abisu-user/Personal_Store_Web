@@ -641,3 +641,15 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .landing-hero { padding-top: 32px; }
   .landing-copy h1 { font-size: 2.2rem; }
 }
+
+/* Vocabulary uses its own reading-width workspace instead of the generic dashboard card. */
+.vocabulary-page {
+  min-width: 0;
+  min-height: 100%;
+}
+
+@media (max-width: 700px) {
+  .vocabulary-page {
+    min-height: 100dvh;
+  }
+}
