@@ -1,29 +1,663 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import { CollectionCategory, CollectionNavigation, CollectionView } from "@/components/content/collection-navigation";
-import { CoverImageField, type CoverSelection, uploadCover } from "@/components/content/cover-image-field";
+import {
+  CollectionCategory,
+  CollectionNavigation,
+  CollectionView,
+} from "@/components/content/collection-navigation";
+import {
+  CoverImageField,
+  type CoverSelection,
+  uploadCover,
+} from "@/components/content/cover-image-field";
+import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 
-function lineNumbers(value: string) { return Array.from({ length: Math.max(1, value.split("\n").length) }, (_, index) => index + 1).join("\n"); }
-function SourceEditor({ initialValue }: { initialValue: string }) { const numbers = useRef<HTMLPreElement>(null); const [value, setValue] = useState(initialValue); return <div className="source-code-shell"><pre aria-hidden="true" className="source-line-numbers" ref={numbers}>{lineNumbers(value)}</pre><textarea className="source-code" name="sourceCode" onChange={(event) => setValue(event.target.value)} onScroll={(event) => { if (numbers.current) numbers.current.scrollTop = event.currentTarget.scrollTop; }} placeholder="貼上程式碼…" required value={value} /></div>; }
-function CodeBlock({ sourceCode }: { sourceCode: string }) { return <div className="detail-code-shell"><pre aria-hidden="true" className="source-line-numbers">{lineNumbers(sourceCode)}</pre><pre className="detail-code">{sourceCode}</pre></div>; }
+function lineNumbers(value: string) {
+  return Array.from(
+    { length: Math.max(1, value.split("\n").length) },
+    (_, index) => index + 1,
+  ).join("\n");
+}
+function SourceEditor({ initialValue }: { initialValue: string }) {
+  const numbers = useRef<HTMLPreElement>(null);
+  const [value, setValue] = useState(initialValue);
+  return (
+    <div className="source-code-shell">
+      <pre aria-hidden="true" className="source-line-numbers" ref={numbers}>
+        {lineNumbers(value)}
+      </pre>
+      <textarea
+        className="source-code"
+        name="sourceCode"
+        onChange={(event) => setValue(event.target.value)}
+        onScroll={(event) => {
+          if (numbers.current)
+            numbers.current.scrollTop = event.currentTarget.scrollTop;
+        }}
+        placeholder="貼上程式碼…"
+        required
+        value={value}
+      />
+    </div>
+  );
+}
+function CodeBlock({ sourceCode }: { sourceCode: string }) {
+  return (
+    <div className="detail-code-shell">
+      <pre aria-hidden="true" className="source-line-numbers">
+        {lineNumbers(sourceCode)}
+      </pre>
+      <pre className="detail-code">{sourceCode}</pre>
+    </div>
+  );
+}
 
-export function CodeWorkspace({ initialData, createMode = false }: { initialData: CodeWorkspaceData; createMode?: boolean }) {
+export function CodeWorkspace({
+  initialData,
+  createMode = false,
+}: {
+  initialData: CodeWorkspaceData;
+  createMode?: boolean;
+}) {
   const router = useRouter();
-  const [data, setData] = useState(initialData); const [query, setQuery] = useState(""); const [error, setError] = useState<string | null>(null); const [pending, setPending] = useState(false); const [selected, setSelected] = useState<CodeSnippet | null>(null); const [editing, setEditing] = useState<CodeSnippet | null>(null); const [deleting, setDeleting] = useState<CodeSnippet | null>(null); const [cover, setCover] = useState<CoverSelection>(null); const [view, setView] = useState<CollectionView>("all"); const [category, setCategory] = useState<CollectionCategory>("all"); const [bulkConfirm, setBulkConfirm] = useState<"trash" | "restore" | "permanent" | null>(null); const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const load = useCallback(async () => { const response = await fetch("/api/code", { cache: "no-store" }); if (!response.ok) { setError("目前無法讀取程式碼。"); return; } setData(await response.json() as CodeWorkspaceData); }, []);
-  useEffect(() => { if (createMode) void load(); }, [createMode, load]);
-  const list = useMemo(() => data.snippets.filter((item) => { if (view === "trash" ? !item.deletedAt : Boolean(item.deletedAt)) return false; if (view === "all" && (item.archived || item.folder)) return false; if (view === "favorite" && (!item.favorite || item.archived)) return false; if (view === "pinned" && (!item.pinned || item.archived)) return false; if (view === "archived" && !item.archived) return false; if (view.startsWith("folder:") && (item.archived || item.folder?.id !== view.slice(7))) return false; if (category === "unclassified" && item.category) return false; if (category !== "all" && category !== "unclassified" && item.category?.id !== category) return false; return `${item.title} ${item.language} ${item.description ?? ""} ${item.sourceCode}`.toLowerCase().includes(query.toLowerCase()); }), [category, data.snippets, query, view]);
-  async function save(event: FormEvent<HTMLFormElement>, snippet?: CodeSnippet) { event.preventDefault(); setPending(true); setError(null); try { const form = new FormData(event.currentTarget); const coverTicket = await uploadCover(cover); const response = await fetch("/api/code", { method: snippet ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...(snippet ? { id: snippet.id } : {}), title: form.get("title"), description: form.get("description"), language: form.get("language"), sourceCode: form.get("sourceCode"), categoryId: form.get("categoryId") || null, contentFolderId: form.get("contentFolderId") || null, favorite: form.get("favorite") === "on", pinned: form.get("pinned") === "on", archived: form.get("archived") === "on", coverTicket, tags: [] }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法儲存程式碼。"); if (!snippet && createMode) { router.replace("/code"); router.refresh(); return; } setEditing(null); setSelected(null); setCover(null); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存程式碼。"); } finally { setPending(false); } }
-  async function remove() { if (!deleting) return; setPending(true); setError(null); try { const response = await fetch("/api/code", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleting.id }) }); if (!response.ok) throw new Error(); setSelected(null); setDeleting(null); await load(); } catch { setError("無法永久刪除程式碼。"); } finally { setPending(false); } }
-  async function itemAction(item: CodeSnippet, action: "trash" | "restore") { setPending(true); setError(null); try { const response = await fetch("/api/code", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: item.id, action }) }); if (!response.ok) throw new Error(); setSelected(null); await load(); } catch { setError("無法更新程式碼狀態。"); } finally { setPending(false); } }
+  const [data, setData] = useState(initialData);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [selected, setSelected] = useState<CodeSnippet | null>(null);
+  const [editing, setEditing] = useState<CodeSnippet | null>(null);
+  const [deleting, setDeleting] = useState<CodeSnippet | null>(null);
+  const [cover, setCover] = useState<CoverSelection>(null);
+  const [view, setView] = useState<CollectionView>("all");
+  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [bulkConfirm, setBulkConfirm] = useState<
+    "trash" | "restore" | "permanent" | null
+  >(null);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const load = useCallback(async () => {
+    const response = await fetch("/api/code", { cache: "no-store" });
+    if (!response.ok) {
+      setError("目前無法讀取程式碼。");
+      return;
+    }
+    setData((await response.json()) as CodeWorkspaceData);
+  }, []);
+  useEffect(() => {
+    if (createMode) void load();
+  }, [createMode, load]);
+  const list = useMemo(
+    () =>
+      data.snippets.filter((item) => {
+        if (view === "trash" ? !item.deletedAt : Boolean(item.deletedAt))
+          return false;
+        if (view === "all" && (item.archived || item.folder)) return false;
+        if (view === "favorite" && (!item.favorite || item.archived))
+          return false;
+        if (view === "pinned" && (!item.pinned || item.archived)) return false;
+        if (view === "archived" && !item.archived) return false;
+        if (
+          view.startsWith("folder:") &&
+          (item.archived || item.folder?.id !== view.slice(7))
+        )
+          return false;
+        if (category === "unclassified" && item.category) return false;
+        if (
+          category !== "all" &&
+          category !== "unclassified" &&
+          item.category?.id !== category
+        )
+          return false;
+        return `${item.title} ${item.language} ${item.description ?? ""} ${item.sourceCode}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+      }),
+    [category, data.snippets, query, view],
+  );
+  async function save(
+    event: FormEvent<HTMLFormElement>,
+    snippet?: CodeSnippet,
+  ) {
+    event.preventDefault();
+    setPending(true);
+    setError(null);
+    try {
+      const form = new FormData(event.currentTarget);
+      const coverTicket = await uploadCover(cover);
+      const response = await fetch("/api/code", {
+        method: snippet ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(snippet ? { id: snippet.id } : {}),
+          title: form.get("title"),
+          description: form.get("description"),
+          language: form.get("language"),
+          sourceCode: form.get("sourceCode"),
+          categoryId: form.get("categoryId") || null,
+          contentFolderId: form.get("contentFolderId") || null,
+          favorite: form.get("favorite") === "on",
+          pinned: form.get("pinned") === "on",
+          archived: form.get("archived") === "on",
+          coverTicket,
+          tags: [],
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "無法儲存程式碼。");
+      if (!snippet && createMode) {
+        router.replace("/code");
+        router.refresh();
+        return;
+      }
+      setEditing(null);
+      setSelected(null);
+      setCover(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法儲存程式碼。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function remove() {
+    if (!deleting) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/code", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleting.id }),
+      });
+      if (!response.ok) throw new Error();
+      setSelected(null);
+      setDeleting(null);
+      await load();
+    } catch {
+      setError("無法永久刪除程式碼。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function itemAction(item: CodeSnippet, action: "trash" | "restore") {
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/code", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id, action }),
+      });
+      if (!response.ok) throw new Error();
+      setSelected(null);
+      await load();
+    } catch {
+      setError("無法更新程式碼狀態。");
+    } finally {
+      setPending(false);
+    }
+  }
   const chosenItems = list.filter((item) => chosen.has(item.id));
-  const toggleAll = () => setChosen(chosenItems.length === list.length && list.length > 0 ? new Set() : new Set(list.map((item) => item.id)));
-  async function runBulk() { if (!bulkConfirm || !chosenItems.length) return; const ids = chosenItems.map((item) => item.id); setPending(true); setError(null); try { const responses = await Promise.all(ids.map((id) => bulkConfirm === "permanent" ? fetch("/api/code", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }) : fetch("/api/code", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: bulkConfirm }) }))); if (responses.some((response) => !response.ok)) throw new Error(); setChosen(new Set()); setBulkConfirm(null); await load(); } catch { setError("無法完成批量操作。請稍後再試。"); } finally { setPending(false); } }  const editor = (snippet?: CodeSnippet) => <form className="code-editor" onSubmit={(event) => void save(event, snippet)}><label>標題<input defaultValue={snippet?.title ?? ""} name="title" required /></label><label>說明<textarea defaultValue={snippet?.description ?? ""} name="description" placeholder="說明（選填）" rows={2} /></label><div className="code-editor-meta"><label>語言<input defaultValue={snippet?.language ?? "text"} name="language" required /></label><label>類別<select defaultValue={snippet?.category?.id ?? ""} name="categoryId"><option value="">未分類</option>{data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><details className="collection-settings"><summary>收藏設定 <small>可複選</small></summary><div className="collection-settings-menu"><label><input defaultChecked={snippet?.favorite} name="favorite" type="checkbox" /> 我的最愛</label><label><input defaultChecked={snippet?.pinned} name="pinned" type="checkbox" /> 置頂</label><label><input defaultChecked={snippet?.archived} name="archived" type="checkbox" /> 封存</label><div className="collection-settings-divider" /><span>資料夾（選擇一個）</span><label><input defaultChecked={!snippet?.folder} name="contentFolderId" type="radio" value="" /> 不放入資料夾</label>{data.folders.filter((folder) => folder.is_visible || folder.id === snippet?.folder?.id).map((folder) => <label key={folder.id}><input defaultChecked={folder.id === snippet?.folder?.id} name="contentFolderId" type="radio" value={folder.id} /> {folder.name}</label>)}</div></details><SourceEditor initialValue={snippet?.sourceCode ?? ""} key={snippet?.id ?? "new"} /><CoverImageField initialUrl={snippet?.coverImageUrl} onChange={setCover} /><div className="dialog-actions"><button className="button" disabled={pending} type="submit">{pending ? "儲存中…" : snippet ? "儲存修改" : "儲存程式碼"}</button>{snippet && <button className="secondary-button" onClick={() => setEditing(null)} type="button">取消</button>}</div></form>;
-  if (createMode) return <section className="code-workspace create-only">{pending && <OperationStatus label="正在儲存程式碼…" />}{error && <p className="notice error" role="alert">{error}</p>}{editor()}</section>;
-  return <section className="library-workspace">{pending && <OperationStatus label="正在處理程式碼…" />}{error && <p className="notice error" role="alert">{error}</p>}<div className="library-heading"><div><p className="eyebrow">CODE SNIPPETS</p><h2>程式碼片段</h2></div></div><CollectionNavigation categories={data.categories} category={category} folders={data.folders} items={data.snippets} setCategory={setCategory} setView={setView} storageKey="personal-vault:code-system-folders:v1" view={view} /><input aria-label="搜尋程式碼" className="note-search" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋程式碼標題或語言" value={query} /><div className="bulk-toolbar"><label><input checked={list.length > 0 && chosenItems.length === list.length} onChange={toggleAll} type="checkbox" /> 全選目前清單</label>{chosenItems.length > 0 && <><span>已選取 {chosenItems.length} 筆</span><button className="secondary-button compact" disabled={pending} onClick={() => setChosen(new Set())} type="button">取消選取</button>{view === "trash" ? <><button className="button compact" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">批量還原</button><button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button></> : <button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">移至垃圾桶</button>}</>}</div><div className="content-item-list">{list.map((item) => <article className="content-item-card" key={item.id}><label className="item-select"><input aria-label="選擇程式碼" checked={chosen.has(item.id)} onChange={() => setChosen((current) => { const next = new Set(current); next.has(item.id) ? next.delete(item.id) : next.add(item.id); return next; })} type="checkbox" /></label><button className="content-item-open" onClick={() => setSelected(item)} type="button">{item.coverImageUrl ? <img alt="" src={item.coverImageUrl} /> : <span className="content-cover-placeholder">{item.language}</span>}<div><p className="bookmark-meta">{item.category?.name ?? "未分類"}{item.folder && ` · ${item.folder.name}`}</p><h3>{item.title}</h3><p>{item.description || item.sourceCode.slice(0, 90)}</p></div></button></article>)}{list.length === 0 && <p className="lead">此清單尚無程式碼片段。</p>}</div><ModalDialog onClose={() => setSelected(null)} open={Boolean(selected)} pending={pending} title={selected?.title ?? "程式碼內容"}>{selected && <><CodeBlock sourceCode={selected.sourceCode} /><div className="dialog-actions">{selected.deletedAt ? <><button className="button" onClick={() => void itemAction(selected, "restore")} type="button">還原</button><button className="delete-button" onClick={() => setDeleting(selected)} type="button">永久刪除</button></> : <><button className="secondary-button" onClick={() => { setEditing(selected); setSelected(null); }} type="button">修改</button><button className="delete-button" onClick={() => void itemAction(selected, "trash")} type="button">刪除</button></>}</div></>}</ModalDialog><ModalDialog onClose={() => setEditing(null)} open={Boolean(editing)} pending={pending} title="修改程式碼">{editing && editor(editing)}</ModalDialog><ConfirmDialog description={`「${deleting?.title ?? ""}」將永久刪除，無法還原。`} error={error} onCancel={() => setDeleting(null)} onConfirm={() => { void remove(); }} open={Boolean(deleting)} pending={pending} title="永久刪除程式碼？" /><ConfirmDialog confirmLabel={bulkConfirm === "permanent" ? "永久刪除" : bulkConfirm === "restore" ? "還原" : "移至垃圾桶"} description={bulkConfirm === "permanent" ? `確定要永久刪除選取的 ${chosenItems.length} 筆程式碼嗎？此操作無法復原。` : bulkConfirm === "restore" ? `確定要還原選取的 ${chosenItems.length} 筆程式碼嗎？` : `確定要將選取的 ${chosenItems.length} 筆程式碼移至垃圾桶嗎？`} error={error} onCancel={() => setBulkConfirm(null)} onConfirm={() => void runBulk()} open={Boolean(bulkConfirm)} pending={pending} title={bulkConfirm === "permanent" ? "永久刪除程式碼？" : bulkConfirm === "restore" ? "批量還原程式碼？" : "批量移至垃圾桶？"} /></section>;
+  const toggleAll = () =>
+    setChosen(
+      chosenItems.length === list.length && list.length > 0
+        ? new Set()
+        : new Set(list.map((item) => item.id)),
+    );
+  async function organizeSelection(
+    folderId: string | null,
+    categoryId: string | null,
+  ) {
+    if (!chosenItems.length) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/code", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: chosenItems.map((item) => item.id),
+          action: "organize",
+          contentFolderId: folderId,
+          categoryId,
+        }),
+      });
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.error ??
+            "無法整理程式碼。",
+        );
+      setChosen(new Set());
+      setOrganizeOpen(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法整理程式碼。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function runBulk() {
+    if (!bulkConfirm || !chosenItems.length) return;
+    const ids = chosenItems.map((item) => item.id);
+    setPending(true);
+    setError(null);
+    try {
+      const responses = await Promise.all(
+        ids.map((id) =>
+          bulkConfirm === "permanent"
+            ? fetch("/api/code", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id }),
+              })
+            : fetch("/api/code", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, action: bulkConfirm }),
+              }),
+        ),
+      );
+      if (responses.some((response) => !response.ok)) throw new Error();
+      setChosen(new Set());
+      setBulkConfirm(null);
+      await load();
+    } catch {
+      setError("無法完成批量操作。請稍後再試。");
+    } finally {
+      setPending(false);
+    }
+  }
+  const editor = (snippet?: CodeSnippet) => (
+    <form
+      className="code-editor"
+      onSubmit={(event) => void save(event, snippet)}
+    >
+      <label>
+        標題
+        <input defaultValue={snippet?.title ?? ""} name="title" required />
+      </label>
+      <label>
+        說明
+        <textarea
+          defaultValue={snippet?.description ?? ""}
+          name="description"
+          placeholder="說明（選填）"
+          rows={2}
+        />
+      </label>
+      <div className="code-editor-meta">
+        <label>
+          語言
+          <input
+            defaultValue={snippet?.language ?? "text"}
+            name="language"
+            required
+          />
+        </label>
+        <label>
+          類別
+          <select defaultValue={snippet?.category?.id ?? ""} name="categoryId">
+            <option value="">未分類</option>
+            {data.categories.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <details className="collection-settings">
+        <summary>
+          收藏設定 <small>可複選</small>
+        </summary>
+        <div className="collection-settings-menu">
+          <label>
+            <input
+              defaultChecked={snippet?.favorite}
+              name="favorite"
+              type="checkbox"
+            />{" "}
+            我的最愛
+          </label>
+          <label>
+            <input
+              defaultChecked={snippet?.pinned}
+              name="pinned"
+              type="checkbox"
+            />{" "}
+            置頂
+          </label>
+          <label>
+            <input
+              defaultChecked={snippet?.archived}
+              name="archived"
+              type="checkbox"
+            />{" "}
+            封存
+          </label>
+          <div className="collection-settings-divider" />
+          <span>資料夾（選擇一個）</span>
+          <label>
+            <input
+              defaultChecked={!snippet?.folder}
+              name="contentFolderId"
+              type="radio"
+              value=""
+            />{" "}
+            不放入資料夾
+          </label>
+          {data.folders
+            .filter(
+              (folder) =>
+                folder.is_visible || folder.id === snippet?.folder?.id,
+            )
+            .map((folder) => (
+              <label key={folder.id}>
+                <input
+                  defaultChecked={folder.id === snippet?.folder?.id}
+                  name="contentFolderId"
+                  type="radio"
+                  value={folder.id}
+                />{" "}
+                {folder.name}
+              </label>
+            ))}
+        </div>
+      </details>
+      <SourceEditor
+        initialValue={snippet?.sourceCode ?? ""}
+        key={snippet?.id ?? "new"}
+      />
+      <CoverImageField
+        initialUrl={snippet?.coverImageUrl}
+        onChange={setCover}
+      />
+      <div className="dialog-actions">
+        <button className="button" disabled={pending} type="submit">
+          {pending ? "儲存中…" : snippet ? "儲存修改" : "儲存程式碼"}
+        </button>
+        {snippet && (
+          <button
+            className="secondary-button"
+            onClick={() => setEditing(null)}
+            type="button"
+          >
+            取消
+          </button>
+        )}
+      </div>
+    </form>
+  );
+  if (createMode)
+    return (
+      <section className="code-workspace create-only">
+        {pending && <OperationStatus label="正在儲存程式碼…" />}
+        {error && (
+          <p className="notice error" role="alert">
+            {error}
+          </p>
+        )}
+        {editor()}
+      </section>
+    );
+  return (
+    <section className="library-workspace">
+      {pending && <OperationStatus label="正在處理程式碼…" />}
+      {error && (
+        <p className="notice error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="library-heading">
+        <div>
+          <p className="eyebrow">CODE SNIPPETS</p>
+          <h2>程式碼片段</h2>
+        </div>
+      </div>
+      <CollectionNavigation
+        categories={data.categories}
+        category={category}
+        folders={data.folders}
+        items={data.snippets}
+        setCategory={setCategory}
+        setView={setView}
+        storageKey="personal-vault:code-system-folders:v1"
+        view={view}
+      />
+      <input
+        aria-label="搜尋程式碼"
+        className="note-search"
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="搜尋程式碼標題或語言"
+        value={query}
+      />
+      <div className="bulk-toolbar">
+        <strong className="bulk-mode-label">批量選取</strong>
+        <label>
+          <input
+            checked={list.length > 0 && chosenItems.length === list.length}
+            onChange={toggleAll}
+            type="checkbox"
+          />{" "}
+          全選目前清單
+        </label>
+        {chosenItems.length > 0 && (
+          <>
+            <span>已選取 {chosenItems.length} 筆</span>
+            <button
+              className="secondary-button compact"
+              disabled={pending}
+              onClick={() => setChosen(new Set())}
+              type="button"
+            >
+              取消選取
+            </button>
+            {view === "trash" ? (
+              <>
+                <button
+                  className="button compact"
+                  disabled={pending}
+                  onClick={() => setBulkConfirm("restore")}
+                  type="button"
+                >
+                  批量還原
+                </button>
+                <button
+                  className="delete-button compact"
+                  disabled={pending}
+                  onClick={() => setBulkConfirm("permanent")}
+                  type="button"
+                >
+                  永久刪除
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="secondary-button compact"
+                  disabled={pending}
+                  onClick={() => setOrganizeOpen(true)}
+                  type="button"
+                >
+                  整理
+                </button>
+                <button
+                  className="delete-button compact"
+                  disabled={pending}
+                  onClick={() => setBulkConfirm("trash")}
+                  type="button"
+                >
+                  移至垃圾桶
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+      <div className="content-item-list">
+        {list.map((item) => (
+          <article className="content-item-card" key={item.id}>
+            <label className="item-select">
+              <input
+                aria-label="選擇程式碼"
+                checked={chosen.has(item.id)}
+                onChange={() =>
+                  setChosen((current) => {
+                    const next = new Set(current);
+                    next.has(item.id)
+                      ? next.delete(item.id)
+                      : next.add(item.id);
+                    return next;
+                  })
+                }
+                type="checkbox"
+              />
+            </label>
+            <button
+              className="content-item-open"
+              onClick={() => setSelected(item)}
+              type="button"
+            >
+              {item.coverImageUrl ? (
+                <img alt="" src={item.coverImageUrl} />
+              ) : (
+                <span className="content-cover-placeholder">
+                  {item.language}
+                </span>
+              )}
+              <div>
+                <p className="bookmark-meta">
+                  {item.category?.name ?? "未分類"}
+                  {item.folder && ` · ${item.folder.name}`}
+                </p>
+                <h3>{item.title}</h3>
+                <p>{item.description || item.sourceCode.slice(0, 90)}</p>
+              </div>
+            </button>
+          </article>
+        ))}
+        {list.length === 0 && <p className="lead">此清單尚無程式碼片段。</p>}
+      </div>
+      <BulkOrganizeDialog
+        categories={data.categories}
+        count={chosenItems.length}
+        folders={data.folders}
+        onClose={() => setOrganizeOpen(false)}
+        onSave={organizeSelection}
+        open={organizeOpen}
+        pending={pending}
+      />
+      <ModalDialog
+        onClose={() => setSelected(null)}
+        open={Boolean(selected)}
+        pending={pending}
+        title={selected?.title ?? "程式碼內容"}
+      >
+        {selected && (
+          <>
+            <CodeBlock sourceCode={selected.sourceCode} />
+            <div className="dialog-actions">
+              {selected.deletedAt ? (
+                <>
+                  <button
+                    className="button"
+                    onClick={() => void itemAction(selected, "restore")}
+                    type="button"
+                  >
+                    還原
+                  </button>
+                  <button
+                    className="delete-button"
+                    onClick={() => setDeleting(selected)}
+                    type="button"
+                  >
+                    永久刪除
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      setEditing(selected);
+                      setSelected(null);
+                    }}
+                    type="button"
+                  >
+                    修改
+                  </button>
+                  <button
+                    className="delete-button"
+                    onClick={() => void itemAction(selected, "trash")}
+                    type="button"
+                  >
+                    刪除
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </ModalDialog>
+      <ModalDialog
+        onClose={() => setEditing(null)}
+        open={Boolean(editing)}
+        pending={pending}
+        title="修改程式碼"
+      >
+        {editing && editor(editing)}
+      </ModalDialog>
+      <ConfirmDialog
+        description={`「${deleting?.title ?? ""}」將永久刪除，無法還原。`}
+        error={error}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          void remove();
+        }}
+        open={Boolean(deleting)}
+        pending={pending}
+        title="永久刪除程式碼？"
+      />
+      <ConfirmDialog
+        confirmLabel={
+          bulkConfirm === "permanent"
+            ? "永久刪除"
+            : bulkConfirm === "restore"
+              ? "還原"
+              : "移至垃圾桶"
+        }
+        description={
+          bulkConfirm === "permanent"
+            ? `確定要永久刪除選取的 ${chosenItems.length} 筆程式碼嗎？此操作無法復原。`
+            : bulkConfirm === "restore"
+              ? `確定要還原選取的 ${chosenItems.length} 筆程式碼嗎？`
+              : `確定要將選取的 ${chosenItems.length} 筆程式碼移至垃圾桶嗎？`
+        }
+        error={error}
+        onCancel={() => setBulkConfirm(null)}
+        onConfirm={() => void runBulk()}
+        open={Boolean(bulkConfirm)}
+        pending={pending}
+        title={
+          bulkConfirm === "permanent"
+            ? "永久刪除程式碼？"
+            : bulkConfirm === "restore"
+              ? "批量還原程式碼？"
+              : "批量移至垃圾桶？"
+        }
+      />
+    </section>
+  );
 }

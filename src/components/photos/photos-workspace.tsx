@@ -3,34 +3,702 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { CollectionCategory, CollectionNavigation, CollectionView } from "@/components/content/collection-navigation";
+import {
+  CollectionCategory,
+  CollectionNavigation,
+  CollectionView,
+} from "@/components/content/collection-navigation";
+import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
 
 const maxPhotoBytes = 52_428_800;
-const formatBytes = (value: number) => value < 1024 * 1024 ? `${Math.ceil(value / 1024)} KB` : `${(value / (1024 * 1024)).toFixed(1)} MB`;
-async function sha256(file: File) { const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer()); return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
-
-function CollectionSettings({ folders, photo }: { folders: PhotosWorkspaceData["folders"]; photo?: StoredPhoto }) {
-  return <details className="collection-settings"><summary>收藏設定 <small>可複選</small></summary><div className="collection-settings-menu"><label><input defaultChecked={photo?.favorite} name="favorite" type="checkbox" /> 我的最愛</label><label><input defaultChecked={photo?.pinned} name="pinned" type="checkbox" /> 置頂</label><label><input defaultChecked={photo?.archived} name="archived" type="checkbox" /> 封存</label><div className="collection-settings-divider" /><span>資料夾（選擇一個）</span><label><input defaultChecked={!photo?.folder} name="contentFolderId" type="radio" value="" /> 不放入資料夾</label>{folders.filter((folder) => folder.is_visible || folder.id === photo?.folder?.id).map((folder) => <label key={folder.id}><input defaultChecked={folder.id === photo?.folder?.id} name="contentFolderId" type="radio" value={folder.id} /> {folder.name}{folder.is_visible ? "" : "（已隱藏）"}</label>)}</div></details>;
+const formatBytes = (value: number) =>
+  value < 1024 * 1024
+    ? `${Math.ceil(value / 1024)} KB`
+    : `${(value / (1024 * 1024)).toFixed(1)} MB`;
+async function sha256(file: File) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await file.arrayBuffer(),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export function PhotosWorkspace({ initialData, createMode = false }: { initialData: PhotosWorkspaceData; createMode?: boolean }) {
+function CollectionSettings({
+  folders,
+  photo,
+}: {
+  folders: PhotosWorkspaceData["folders"];
+  photo?: StoredPhoto;
+}) {
+  return (
+    <details className="collection-settings">
+      <summary>
+        收藏設定 <small>可複選</small>
+      </summary>
+      <div className="collection-settings-menu">
+        <label>
+          <input
+            defaultChecked={photo?.favorite}
+            name="favorite"
+            type="checkbox"
+          />{" "}
+          我的最愛
+        </label>
+        <label>
+          <input defaultChecked={photo?.pinned} name="pinned" type="checkbox" />{" "}
+          置頂
+        </label>
+        <label>
+          <input
+            defaultChecked={photo?.archived}
+            name="archived"
+            type="checkbox"
+          />{" "}
+          封存
+        </label>
+        <div className="collection-settings-divider" />
+        <span>資料夾（選擇一個）</span>
+        <label>
+          <input
+            defaultChecked={!photo?.folder}
+            name="contentFolderId"
+            type="radio"
+            value=""
+          />{" "}
+          不放入資料夾
+        </label>
+        {folders
+          .filter(
+            (folder) => folder.is_visible || folder.id === photo?.folder?.id,
+          )
+          .map((folder) => (
+            <label key={folder.id}>
+              <input
+                defaultChecked={folder.id === photo?.folder?.id}
+                name="contentFolderId"
+                type="radio"
+                value={folder.id}
+              />{" "}
+              {folder.name}
+              {folder.is_visible ? "" : "（已隱藏）"}
+            </label>
+          ))}
+      </div>
+    </details>
+  );
+}
+
+export function PhotosWorkspace({
+  initialData,
+  createMode = false,
+}: {
+  initialData: PhotosWorkspaceData;
+  createMode?: boolean;
+}) {
   const router = useRouter();
-  const [data, setData] = useState(initialData); const [query, setQuery] = useState(""); const [pending, setPending] = useState(false); const [error, setError] = useState<string | null>(null); const [view, setView] = useState<CollectionView>("all"); const [category, setCategory] = useState<CollectionCategory>("all"); const [selected, setSelected] = useState<StoredPhoto | null>(null); const [editing, setEditing] = useState<StoredPhoto | null>(null); const [deleting, setDeleting] = useState<StoredPhoto | null>(null); const [previewUrl, setPreviewUrl] = useState(""); const [bulkConfirm, setBulkConfirm] = useState<"trash" | "restore" | "permanent" | null>(null); const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const load = useCallback(async () => { const response = await fetch("/api/photos", { cache: "no-store" }); if (!response.ok) { setError("目前無法讀取照片。 "); return; } setData(await response.json() as PhotosWorkspaceData); }, []);
-  useEffect(() => { if (createMode) void load(); }, [createMode, load]);
-  useEffect(() => () => { if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
-  const photos = useMemo(() => data.photos.filter((photo) => { if (view === "trash" ? !photo.deletedAt : Boolean(photo.deletedAt)) return false; if (view === "all" && (photo.archived || photo.folder)) return false; if (view === "favorite" && (!photo.favorite || photo.archived)) return false; if (view === "pinned" && (!photo.pinned || photo.archived)) return false; if (view === "archived" && !photo.archived) return false; if (view.startsWith("folder:") && (photo.archived || photo.folder?.id !== view.slice(7))) return false; if (category === "unclassified" && photo.category) return false; if (category !== "all" && category !== "unclassified" && photo.category?.id !== category) return false; return `${photo.title} ${photo.description ?? ""} ${photo.originalFilename}`.toLowerCase().includes(query.toLowerCase()); }), [category, data.photos, query, view]);
-  function pickPreview(file: File | null) { if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl); setPreviewUrl(file ? URL.createObjectURL(file) : ""); }
-  async function upload(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const formElement = event.currentTarget; const form = new FormData(formElement); const file = form.get("photo"); if (!(file instanceof File) || !file.size) { setError("請選擇照片。 "); return; } if (!file.type.startsWith("image/") || file.size > maxPhotoBytes) { setError("請選擇 50 MB 以下的 JPG、PNG、WebP、GIF 或 AVIF 圖片。 "); return; } setPending(true); setError(null); try { const hash = await sha256(file); const ticketResponse = await fetch("/api/photos/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ originalFilename: file.name, mimeType: file.type, byteSize: file.size, sha256: hash }) }); const ticket = await ticketResponse.json(); if (!ticketResponse.ok) throw new Error(ticket.error ?? "無法準備照片上傳。"); const { error: uploadError } = await createClient().storage.from("vault-files").uploadToSignedUrl(ticket.storagePath, ticket.token, file, { contentType: file.type }); if (uploadError) throw uploadError; const response = await fetch("/api/photos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket, title: String(form.get("title") || file.name), description: String(form.get("description") || ""), categoryId: String(form.get("categoryId") || "") || null, contentFolderId: String(form.get("contentFolderId") || "") || null, favorite: form.get("favorite") === "on", pinned: form.get("pinned") === "on", archived: form.get("archived") === "on" }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法儲存照片。"); if (createMode) { router.replace("/photos"); router.refresh(); } else { formElement.reset(); pickPreview(null); await load(); } } catch (cause) { setError(cause instanceof Error ? cause.message : "無法上傳照片。"); } finally { setPending(false); } }
-  async function saveEdit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!editing) return; const form = new FormData(event.currentTarget); setPending(true); setError(null); try { const response = await fetch("/api/photos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editing.id, title: form.get("title"), description: form.get("description"), categoryId: form.get("categoryId") || null, contentFolderId: form.get("contentFolderId") || null, favorite: form.get("favorite") === "on", pinned: form.get("pinned") === "on", archived: form.get("archived") === "on" }) }); const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error ?? "無法儲存照片資訊。"); setEditing(null); await load(); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存照片資訊。"); } finally { setPending(false); } }
-  async function action(photo: StoredPhoto, actionName: "trash" | "restore") { setPending(true); setError(null); try { const response = await fetch("/api/photos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: photo.id, action: actionName }) }); if (!response.ok) throw new Error(); setSelected(null); await load(); } catch { setError("無法更新照片狀態。 "); } finally { setPending(false); } }
-  async function remove() { if (!deleting) return; setPending(true); setError(null); try { const response = await fetch("/api/photos", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleting.id }) }); if (!response.ok) throw new Error(); setDeleting(null); setSelected(null); await load(); } catch { setError("無法永久刪除照片。 "); } finally { setPending(false); } }
+  const [data, setData] = useState(initialData);
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<CollectionView>("all");
+  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [selected, setSelected] = useState<StoredPhoto | null>(null);
+  const [editing, setEditing] = useState<StoredPhoto | null>(null);
+  const [deleting, setDeleting] = useState<StoredPhoto | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [bulkConfirm, setBulkConfirm] = useState<
+    "trash" | "restore" | "permanent" | null
+  >(null);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const load = useCallback(async () => {
+    const response = await fetch("/api/photos", { cache: "no-store" });
+    if (!response.ok) {
+      setError("目前無法讀取照片。 ");
+      return;
+    }
+    setData((await response.json()) as PhotosWorkspaceData);
+  }, []);
+  useEffect(() => {
+    if (createMode) void load();
+  }, [createMode, load]);
+  useEffect(
+    () => () => {
+      if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
+  const photos = useMemo(
+    () =>
+      data.photos.filter((photo) => {
+        if (view === "trash" ? !photo.deletedAt : Boolean(photo.deletedAt))
+          return false;
+        if (view === "all" && (photo.archived || photo.folder)) return false;
+        if (view === "favorite" && (!photo.favorite || photo.archived))
+          return false;
+        if (view === "pinned" && (!photo.pinned || photo.archived))
+          return false;
+        if (view === "archived" && !photo.archived) return false;
+        if (
+          view.startsWith("folder:") &&
+          (photo.archived || photo.folder?.id !== view.slice(7))
+        )
+          return false;
+        if (category === "unclassified" && photo.category) return false;
+        if (
+          category !== "all" &&
+          category !== "unclassified" &&
+          photo.category?.id !== category
+        )
+          return false;
+        return `${photo.title} ${photo.description ?? ""} ${photo.originalFilename}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+      }),
+    [category, data.photos, query, view],
+  );
+  function pickPreview(file: File | null) {
+    if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(file ? URL.createObjectURL(file) : "");
+  }
+  async function upload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const file = form.get("photo");
+    if (!(file instanceof File) || !file.size) {
+      setError("請選擇照片。 ");
+      return;
+    }
+    if (!file.type.startsWith("image/") || file.size > maxPhotoBytes) {
+      setError("請選擇 50 MB 以下的 JPG、PNG、WebP、GIF 或 AVIF 圖片。 ");
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      const hash = await sha256(file);
+      const ticketResponse = await fetch("/api/photos/upload-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          originalFilename: file.name,
+          mimeType: file.type,
+          byteSize: file.size,
+          sha256: hash,
+        }),
+      });
+      const ticket = await ticketResponse.json();
+      if (!ticketResponse.ok)
+        throw new Error(ticket.error ?? "無法準備照片上傳。");
+      const { error: uploadError } = await createClient()
+        .storage.from("vault-files")
+        .uploadToSignedUrl(ticket.storagePath, ticket.token, file, {
+          contentType: file.type,
+        });
+      if (uploadError) throw uploadError;
+      const response = await fetch("/api/photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticket: ticket.ticket,
+          title: String(form.get("title") || file.name),
+          description: String(form.get("description") || ""),
+          categoryId: String(form.get("categoryId") || "") || null,
+          contentFolderId: String(form.get("contentFolderId") || "") || null,
+          favorite: form.get("favorite") === "on",
+          pinned: form.get("pinned") === "on",
+          archived: form.get("archived") === "on",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "無法儲存照片。");
+      if (createMode) {
+        router.replace("/photos");
+        router.refresh();
+      } else {
+        formElement.reset();
+        pickPreview(null);
+        await load();
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法上傳照片。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+    const form = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/photos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editing.id,
+          title: form.get("title"),
+          description: form.get("description"),
+          categoryId: form.get("categoryId") || null,
+          contentFolderId: form.get("contentFolderId") || null,
+          favorite: form.get("favorite") === "on",
+          pinned: form.get("pinned") === "on",
+          archived: form.get("archived") === "on",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "無法儲存照片資訊。");
+      setEditing(null);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法儲存照片資訊。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function action(photo: StoredPhoto, actionName: "trash" | "restore") {
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/photos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: photo.id, action: actionName }),
+      });
+      if (!response.ok) throw new Error();
+      setSelected(null);
+      await load();
+    } catch {
+      setError("無法更新照片狀態。 ");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function remove() {
+    if (!deleting) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/photos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: deleting.id }),
+      });
+      if (!response.ok) throw new Error();
+      setDeleting(null);
+      setSelected(null);
+      await load();
+    } catch {
+      setError("無法永久刪除照片。 ");
+    } finally {
+      setPending(false);
+    }
+  }
   const chosenPhotos = photos.filter((photo) => chosen.has(photo.id));
-  const toggleAll = () => setChosen(chosenPhotos.length === photos.length && photos.length > 0 ? new Set() : new Set(photos.map((photo) => photo.id)));
-  async function runBulk() { if (!bulkConfirm || !chosenPhotos.length) return; const ids = chosenPhotos.map((photo) => photo.id); setPending(true); setError(null); try { const responses = await Promise.all(ids.map((id) => bulkConfirm === "permanent" ? fetch("/api/photos", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }) : fetch("/api/photos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action: bulkConfirm }) }))); if (responses.some((response) => !response.ok)) throw new Error(); setChosen(new Set()); setBulkConfirm(null); await load(); } catch { setError("無法完成批量操作。請稍後再試。"); } finally { setPending(false); } }  const form = <form className="file-upload-form photo-upload-form" onSubmit={upload}><div><p className="eyebrow">PRIVATE PHOTO STORAGE</p><h2>上傳照片</h2><p>照片存放於私有空間，只有你登入後才能查看，單張最大 50 MB。</p></div><input accept="image/jpeg,image/png,image/webp,image/gif,image/avif" aria-label="選擇照片" name="photo" onChange={(event) => pickPreview(event.target.files?.[0] ?? null)} required type="file" />{previewUrl && <img alt="待上傳照片預覽" className="photo-upload-preview" src={previewUrl} />}<input aria-label="照片標題" name="title" placeholder="照片標題（未填則使用檔名）" /><textarea aria-label="照片說明" name="description" placeholder="說明（選填）" rows={2} /><div className="file-upload-meta"><select aria-label="分類" defaultValue="" name="categoryId"><option value="">未分類</option>{data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div><CollectionSettings folders={data.folders} /><button className="button" disabled={pending} type="submit">{pending ? "上傳中…" : "儲存照片"}</button></form>;
-  if (createMode) return <section className="files-workspace create-only">{pending && <OperationStatus label="正在上傳照片…" />}{error && <p className="notice error" role="alert">{error}</p>}{form}</section>;
-  return <section className="library-workspace">{pending && <OperationStatus label="正在處理照片…" />}{error && <p className="notice error" role="alert">{error}</p>}<div className="library-heading"><div><p className="eyebrow">PRIVATE PHOTOS</p><h2>照片</h2></div></div><CollectionNavigation categories={data.categories} category={category} folders={data.folders} items={data.photos} setCategory={setCategory} setView={setView} storageKey="personal-vault:photo-system-folders:v1" view={view} /><input aria-label="搜尋照片" className="note-search" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋照片標題或說明" value={query} /><div className="bulk-toolbar"><label><input checked={photos.length > 0 && chosenPhotos.length === photos.length} onChange={toggleAll} type="checkbox" /> 全選目前清單</label>{chosenPhotos.length > 0 && <><span>已選取 {chosenPhotos.length} 筆</span><button className="secondary-button compact" disabled={pending} onClick={() => setChosen(new Set())} type="button">取消選取</button>{view === "trash" ? <><button className="button compact" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">批量還原</button><button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button></> : <button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">移至垃圾桶</button>}</>}</div><div className="photo-grid">{photos.map((photo) => <div className="photo-card-wrap" key={photo.id}><label className="item-select"><input aria-label="選擇照片" checked={chosen.has(photo.id)} onChange={() => setChosen((current) => { const next = new Set(current); next.has(photo.id) ? next.delete(photo.id) : next.add(photo.id); return next; })} type="checkbox" /></label><button className="photo-card" onClick={() => setSelected(photo)} type="button"><img alt={photo.title} src={photo.imageUrl} /><span><small>{photo.category?.name ?? "未分類"}{photo.folder && ` · ${photo.folder.name}`}</small><strong>{photo.title}</strong>{photo.description && <em>{photo.description}</em>}</span></button></div>)}{photos.length === 0 && <p className="lead">此清單尚無照片。</p>}</div><ModalDialog onClose={() => setSelected(null)} open={Boolean(selected)} pending={pending} title={selected?.title ?? "照片資訊"}>{selected && <><img alt={selected.title} className="photo-detail-image" src={selected.imageUrl} /><p className="detail-content">{selected.description || "沒有說明。"}</p><p className="bookmark-meta">{selected.originalFilename} · {formatBytes(selected.byteSize)}</p><div className="dialog-actions">{selected.deletedAt ? <><button className="button" onClick={() => void action(selected, "restore")} type="button">還原</button><button className="delete-button" onClick={() => setDeleting(selected)} type="button">永久刪除</button></> : <><button className="secondary-button" onClick={() => { setEditing(selected); setSelected(null); }} type="button">修改</button><button className="delete-button" onClick={() => void action(selected, "trash")} type="button">刪除</button></>}</div></>}</ModalDialog><ModalDialog onClose={() => setEditing(null)} open={Boolean(editing)} pending={pending} title="修改照片資訊">{editing && <form className="note-editor" onSubmit={saveEdit}><label>標題<input defaultValue={editing.title} name="title" required /></label><label>說明<textarea defaultValue={editing.description ?? ""} name="description" rows={3} /></label><label>類別<select defaultValue={editing.category?.id ?? ""} name="categoryId"><option value="">未分類</option>{data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><CollectionSettings folders={data.folders} photo={editing} /><div className="dialog-actions"><button className="button" disabled={pending} type="submit">{pending ? "儲存中…" : "儲存修改"}</button><button className="secondary-button" onClick={() => setEditing(null)} type="button">取消</button></div></form>}</ModalDialog><ConfirmDialog description={`「${deleting?.title ?? ""}」將永久刪除，無法還原。`} error={error} onCancel={() => setDeleting(null)} onConfirm={() => void remove()} open={Boolean(deleting)} pending={pending} title="永久刪除照片？" /><ConfirmDialog confirmLabel={bulkConfirm === "permanent" ? "永久刪除" : bulkConfirm === "restore" ? "還原" : "移至垃圾桶"} description={bulkConfirm === "permanent" ? `確定要永久刪除選取的 ${chosenPhotos.length} 張照片嗎？此操作無法復原。` : bulkConfirm === "restore" ? `確定要還原選取的 ${chosenPhotos.length} 張照片嗎？` : `確定要將選取的 ${chosenPhotos.length} 張照片移至垃圾桶嗎？`} error={error} onCancel={() => setBulkConfirm(null)} onConfirm={() => void runBulk()} open={Boolean(bulkConfirm)} pending={pending} title={bulkConfirm === "permanent" ? "永久刪除照片？" : bulkConfirm === "restore" ? "批量還原照片？" : "批量移至垃圾桶？"} /></section>;
+  const toggleAll = () =>
+    setChosen(
+      chosenPhotos.length === photos.length && photos.length > 0
+        ? new Set()
+        : new Set(photos.map((photo) => photo.id)),
+    );
+  async function organizeSelection(
+    folderId: string | null,
+    categoryId: string | null,
+  ) {
+    if (!chosenPhotos.length) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/photos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: chosenPhotos.map((photo) => photo.id),
+          action: "organize",
+          contentFolderId: folderId,
+          categoryId,
+        }),
+      });
+      if (!response.ok)
+        throw new Error(
+          (await response.json().catch(() => null))?.error ?? "無法整理照片。",
+        );
+      setChosen(new Set());
+      setOrganizeOpen(false);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法整理照片。");
+    } finally {
+      setPending(false);
+    }
+  }
+  async function runBulk() {
+    if (!bulkConfirm || !chosenPhotos.length) return;
+    const ids = chosenPhotos.map((photo) => photo.id);
+    setPending(true);
+    setError(null);
+    try {
+      const responses = await Promise.all(
+        ids.map((id) =>
+          bulkConfirm === "permanent"
+            ? fetch("/api/photos", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id }),
+              })
+            : fetch("/api/photos", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id, action: bulkConfirm }),
+              }),
+        ),
+      );
+      if (responses.some((response) => !response.ok)) throw new Error();
+      setChosen(new Set());
+      setBulkConfirm(null);
+      await load();
+    } catch {
+      setError("無法完成批量操作。請稍後再試。");
+    } finally {
+      setPending(false);
+    }
+  }
+  const form = (
+    <form className="file-upload-form photo-upload-form" onSubmit={upload}>
+      <div>
+        <p className="eyebrow">PRIVATE PHOTO STORAGE</p>
+        <h2>上傳照片</h2>
+        <p>照片存放於私有空間，只有你登入後才能查看，單張最大 50 MB。</p>
+      </div>
+      <input
+        accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+        aria-label="選擇照片"
+        name="photo"
+        onChange={(event) => pickPreview(event.target.files?.[0] ?? null)}
+        required
+        type="file"
+      />
+      {previewUrl && (
+        <img
+          alt="待上傳照片預覽"
+          className="photo-upload-preview"
+          src={previewUrl}
+        />
+      )}
+      <input
+        aria-label="照片標題"
+        name="title"
+        placeholder="照片標題（未填則使用檔名）"
+      />
+      <textarea
+        aria-label="照片說明"
+        name="description"
+        placeholder="說明（選填）"
+        rows={2}
+      />
+      <div className="file-upload-meta">
+        <select aria-label="分類" defaultValue="" name="categoryId">
+          <option value="">未分類</option>
+          {data.categories.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      <CollectionSettings folders={data.folders} />
+      <button className="button" disabled={pending} type="submit">
+        {pending ? "上傳中…" : "儲存照片"}
+      </button>
+    </form>
+  );
+  if (createMode)
+    return (
+      <section className="files-workspace create-only">
+        {pending && <OperationStatus label="正在上傳照片…" />}
+        {error && (
+          <p className="notice error" role="alert">
+            {error}
+          </p>
+        )}
+        {form}
+      </section>
+    );
+  return (
+    <section className="library-workspace">
+      {pending && <OperationStatus label="正在處理照片…" />}
+      {error && (
+        <p className="notice error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="library-heading">
+        <div>
+          <p className="eyebrow">PRIVATE PHOTOS</p>
+          <h2>照片</h2>
+        </div>
+      </div>
+      <CollectionNavigation
+        categories={data.categories}
+        category={category}
+        folders={data.folders}
+        items={data.photos}
+        setCategory={setCategory}
+        setView={setView}
+        storageKey="personal-vault:photo-system-folders:v1"
+        view={view}
+      />
+      <input
+        aria-label="搜尋照片"
+        className="note-search"
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="搜尋照片標題或說明"
+        value={query}
+      />
+      <div className="bulk-toolbar">
+        <strong className="bulk-mode-label">批量選取</strong>
+        <label>
+          <input
+            checked={photos.length > 0 && chosenPhotos.length === photos.length}
+            onChange={toggleAll}
+            type="checkbox"
+          />{" "}
+          全選目前清單
+        </label>
+        {chosenPhotos.length > 0 && (
+          <>
+            <span>已選取 {chosenPhotos.length} 筆</span>
+            <button
+              className="secondary-button compact"
+              disabled={pending}
+              onClick={() => setChosen(new Set())}
+              type="button"
+            >
+              取消選取
+            </button>
+            {view === "trash" ? (
+              <>
+                <button
+                  className="button compact"
+                  disabled={pending}
+                  onClick={() => setBulkConfirm("restore")}
+                  type="button"
+                >
+                  批量還原
+                </button>
+                <button
+                  className="delete-button compact"
+                  disabled={pending}
+                  onClick={() => setBulkConfirm("permanent")}
+                  type="button"
+                >
+                  永久刪除
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="secondary-button compact" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
+                <button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">移至垃圾桶</button>
+              </>
+            )}
+          </>
+        )}
+      </div>
+      <div className="photo-grid">
+        {photos.map((photo) => (
+          <div className="photo-card-wrap" key={photo.id}>
+            <label className="item-select">
+              <input
+                aria-label="選擇照片"
+                checked={chosen.has(photo.id)}
+                onChange={() =>
+                  setChosen((current) => {
+                    const next = new Set(current);
+                    next.has(photo.id)
+                      ? next.delete(photo.id)
+                      : next.add(photo.id);
+                    return next;
+                  })
+                }
+                type="checkbox"
+              />
+            </label>
+            <button
+              className="photo-card"
+              onClick={() => setSelected(photo)}
+              type="button"
+            >
+              <img alt={photo.title} src={photo.imageUrl} />
+              <span>
+                <small>
+                  {photo.category?.name ?? "未分類"}
+                  {photo.folder && ` · ${photo.folder.name}`}
+                </small>
+                <strong>{photo.title}</strong>
+                {photo.description && <em>{photo.description}</em>}
+              </span>
+            </button>
+          </div>
+        ))}
+        {photos.length === 0 && <p className="lead">此清單尚無照片。</p>}
+      </div>
+      <BulkOrganizeDialog categories={data.categories} count={chosenPhotos.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
+      <ModalDialog
+        onClose={() => setSelected(null)}
+        open={Boolean(selected)}
+        pending={pending}
+        title={selected?.title ?? "照片資訊"}
+      >
+        {selected && (
+          <>
+            <img
+              alt={selected.title}
+              className="photo-detail-image"
+              src={selected.imageUrl}
+            />
+            <p className="detail-content">
+              {selected.description || "沒有說明。"}
+            </p>
+            <p className="bookmark-meta">
+              {selected.originalFilename} · {formatBytes(selected.byteSize)}
+            </p>
+            <div className="dialog-actions">
+              {selected.deletedAt ? (
+                <>
+                  <button
+                    className="button"
+                    onClick={() => void action(selected, "restore")}
+                    type="button"
+                  >
+                    還原
+                  </button>
+                  <button
+                    className="delete-button"
+                    onClick={() => setDeleting(selected)}
+                    type="button"
+                  >
+                    永久刪除
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="secondary-button"
+                    onClick={() => {
+                      setEditing(selected);
+                      setSelected(null);
+                    }}
+                    type="button"
+                  >
+                    修改
+                  </button>
+                  <button
+                    className="delete-button"
+                    onClick={() => void action(selected, "trash")}
+                    type="button"
+                  >
+                    刪除
+                  </button>
+                </>
+              )}
+            </div>
+          </>
+        )}
+      </ModalDialog>
+      <ModalDialog
+        onClose={() => setEditing(null)}
+        open={Boolean(editing)}
+        pending={pending}
+        title="修改照片資訊"
+      >
+        {editing && (
+          <form className="note-editor" onSubmit={saveEdit}>
+            <label>
+              標題
+              <input defaultValue={editing.title} name="title" required />
+            </label>
+            <label>
+              說明
+              <textarea
+                defaultValue={editing.description ?? ""}
+                name="description"
+                rows={3}
+              />
+            </label>
+            <label>
+              類別
+              <select
+                defaultValue={editing.category?.id ?? ""}
+                name="categoryId"
+              >
+                <option value="">未分類</option>
+                {data.categories.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <CollectionSettings folders={data.folders} photo={editing} />
+            <div className="dialog-actions">
+              <button className="button" disabled={pending} type="submit">
+                {pending ? "儲存中…" : "儲存修改"}
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setEditing(null)}
+                type="button"
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        )}
+      </ModalDialog>
+      <ConfirmDialog
+        description={`「${deleting?.title ?? ""}」將永久刪除，無法還原。`}
+        error={error}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => void remove()}
+        open={Boolean(deleting)}
+        pending={pending}
+        title="永久刪除照片？"
+      />
+      <ConfirmDialog
+        confirmLabel={
+          bulkConfirm === "permanent"
+            ? "永久刪除"
+            : bulkConfirm === "restore"
+              ? "還原"
+              : "移至垃圾桶"
+        }
+        description={
+          bulkConfirm === "permanent"
+            ? `確定要永久刪除選取的 ${chosenPhotos.length} 張照片嗎？此操作無法復原。`
+            : bulkConfirm === "restore"
+              ? `確定要還原選取的 ${chosenPhotos.length} 張照片嗎？`
+              : `確定要將選取的 ${chosenPhotos.length} 張照片移至垃圾桶嗎？`
+        }
+        error={error}
+        onCancel={() => setBulkConfirm(null)}
+        onConfirm={() => void runBulk()}
+        open={Boolean(bulkConfirm)}
+        pending={pending}
+        title={
+          bulkConfirm === "permanent"
+            ? "永久刪除照片？"
+            : bulkConfirm === "restore"
+              ? "批量還原照片？"
+              : "批量移至垃圾桶？"
+        }
+      />
+    </section>
+  );
 }
