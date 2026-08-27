@@ -79,7 +79,20 @@ export async function PATCH(request: NextRequest) {
       }
       return NextResponse.json({ ok: true });
     }
-    if (parsed.data.action === "permanent") { const { error } = await admin.from("vocabulary_cards").delete().eq("user_id", context.userId).in("id", parsed.data.ids).not("deleted_at", "is", null); if (error) throw error; } else { const updates = parsed.data.action === "trash" ? { deleted_at: new Date().toISOString() } : { deleted_at: null }; const { error } = await admin.from("vocabulary_cards").update(updates).eq("user_id", context.userId).in("id", parsed.data.ids); if (error) throw error; }
-    return NextResponse.json({ ok: true });
+    const expectedCount = parsed.data.ids.length;
+    if (parsed.data.action === "permanent") {
+      const { data, error } = await admin.from("vocabulary_cards").delete().eq("user_id", context.userId).in("id", parsed.data.ids).not("deleted_at", "is", null).select("id");
+      if (error) throw error;
+      if ((data?.length ?? 0) !== expectedCount) return jsonError("部分單字不在垃圾桶中，尚未永久刪除。請重新整理垃圾桶後再試。", 409);
+    } else {
+      const isTrash = parsed.data.action === "trash";
+      const updates = isTrash ? { deleted_at: new Date().toISOString() } : { deleted_at: null };
+      let update = admin.from("vocabulary_cards").update(updates).eq("user_id", context.userId).in("id", parsed.data.ids);
+      update = isTrash ? update.is("deleted_at", null) : update.not("deleted_at", "is", null);
+      const { data, error } = await update.select("id");
+      if (error) throw error;
+      if ((data?.length ?? 0) !== expectedCount) return jsonError(isTrash ? "部分單字已不在目前清單中，尚未移至垃圾桶。請重新整理後再試。" : "部分單字已不在垃圾桶中，尚未還原。請重新整理垃圾桶後再試。", 409);
+    }
+    return NextResponse.json({ ok: true, affected: expectedCount, action: parsed.data.action });
   } catch { return jsonError("無法更新單字狀態。", 503); }
 }

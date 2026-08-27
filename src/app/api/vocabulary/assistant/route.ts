@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "AI_UNKNOWN";
     console.error("[vocabulary.assistant] failed", { action: parsed.data.action, language: parsed.data.language, promptLength: parsed.data.prompt.length, message });
     if (message === "AI_NOT_CONFIGURED") return NextResponse.json({ error: "AI 單字助手尚未設定，仍可使用字典查詢。" }, { status: 503 });
-    if (message === "AI_UPSTREAM_429") return NextResponse.json({ error: "AI 查詢太頻繁，請稍後再試。" }, { status: 429 });
+    if (message === "AI_UPSTREAM_429") return NextResponse.json({ error: "AI 查詢太頻繁，請稍後再試。", retryAfterSeconds: 60 }, { status: 429, headers: { "Retry-After": "60" } });
     if (message === "AI_UPSTREAM_401" || message === "AI_UPSTREAM_403") return NextResponse.json({ error: "AI 單字助手設定無法驗證，請稍後再試。" }, { status: 503 });
     return NextResponse.json({ error: "AI 單字助手目前無法使用，仍可以使用字典查詢。" }, { status: 503 });
   }

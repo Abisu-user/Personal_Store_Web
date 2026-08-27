@@ -24,6 +24,13 @@ export function VocabularyLookupPanel({ cards, mode = "lookup", onAdd }: { cards
   const [assistantAction, setAssistantAction] = useState<"explain" | "compare" | "translate">("explain");
   const [assistantResult, setAssistantResult] = useState<AssistantResult | null>(null);
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantRetryAfter, setAssistantRetryAfter] = useState(0);
+
+  useEffect(() => {
+    if (!assistantRetryAfter) return;
+    const timer = window.setInterval(() => setAssistantRetryAfter((current) => Math.max(0, current - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [assistantRetryAfter]);
 
   async function loadHistory(scope = language) {
     const response = await fetch(`/api/vocabulary/lookup?language=${scope}&history=1`, { cache: "no-store" });
@@ -50,11 +57,20 @@ export function VocabularyLookupPanel({ cards, mode = "lookup", onAdd }: { cards
   async function askAi(prompt = assistantPrompt, action = assistantAction) {
     const value = prompt.trim();
     if (!value) return;
+    if (assistantRetryAfter) return;
     setAssistantLoading(true); setError(null); setAssistantResult(null);
     try {
       const response = await fetch("/api/vocabulary/assistant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, language, prompt: value }) });
       const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "AI 單字助手暫時無法使用。");
+      if (!response.ok) {
+        if (response.status === 429) {
+          const seconds = Number(response.headers.get("Retry-After") || body.retryAfterSeconds || 60);
+          setAssistantRetryAfter(seconds);
+          setError(`AI 查詢太頻繁，${seconds} 秒後可再試。`);
+          return;
+        }
+        throw new Error(body.error || "AI 單字助手暫時無法使用。");
+      }
       setAssistantResult(body);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "AI 單字助手暫時無法使用。"); }
     finally { setAssistantLoading(false); }
@@ -67,8 +83,8 @@ export function VocabularyLookupPanel({ cards, mode = "lookup", onAdd }: { cards
   function displayRows(entry: LookupEntry) {
     const katakana = (entry.reading || entry.kana || "").replace(/[\u3041-\u3096]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 0x60));
     return entry.language === "ja"
-      ? [["日文漢字", entry.translations?.japanese || entry.word], ["中文意思", entry.translations?.chinese || "翻譯未提供"], ["片假名", katakana || "讀音未提供"]]
-      : [["英文", entry.translations?.english || entry.word], ["中文意思", entry.translations?.chinese || "翻譯未提供"]];
+      ? [["日文漢字", entry.translations?.japanese || entry.word], ["中文意思", entry.translations?.chinese || "暫無可用中文翻譯（翻譯服務未回應）"], ["片假名", katakana || "讀音未提供"]]
+      : [["英文", entry.translations?.english || entry.word], ["中文意思", entry.translations?.chinese || "暫無可用中文翻譯（翻譯服務未回應）"]];
   }
 
   return <><style>{`${lookupCss}${lookupSurfaceCss}`}</style><section className="vocabulary-lookup">

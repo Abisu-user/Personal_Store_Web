@@ -21,12 +21,12 @@ export async function GET(request: NextRequest) {
     let dictionaryQuery = query;
     if (inputLanguage !== dictionaryLanguage) {
       const source = inputLanguage === "zh" ? "zh-TW" : inputLanguage;
-      dictionaryQuery = dictionaryLanguage === "ja" && inputLanguage === "zh" ? commonChineseJapanese[query] ?? await translateDictionaryText(query, source, "ja") ?? "" : await translateDictionaryText(query, source, dictionaryLanguage) ?? "";
+      dictionaryQuery = dictionaryLanguage === "ja" && inputLanguage === "zh" ? commonChineseJapanese[query] ?? await translateDictionaryText(query, source, "ja") ?? query : await translateDictionaryText(query, source, dictionaryLanguage) ?? "";
       if (!dictionaryQuery) return NextResponse.json({ error: `目前無法將輸入內容轉為${dictionaryLanguage === "ja" ? "日文" : "英文"}查詢，請稍後再試。` }, { status: 503 });
     }
     const items = await searchDictionary(dictionaryLanguage, dictionaryQuery);
     const localizedItems = await Promise.all(items.map(async (item) => {
-      const chinese = inputLanguage === "zh" ? query : await translateDictionaryText(item.word, item.language, "zh-TW");
+      const chinese = inputLanguage === "zh" ? query : await translateDictionaryText(item.word, item.language, "zh-TW") ?? (item.meanings.length ? await translateDictionaryText(item.meanings.join("；"), "en", "zh-TW") : null);
       return { ...item, translations: { chinese, japanese: item.language === "ja" ? item.word : null, english: item.language === "en" ? item.word : null } };
     }));
     await recordVocabularySearch(context.userId, language.data, query);

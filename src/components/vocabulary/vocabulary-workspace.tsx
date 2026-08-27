@@ -45,7 +45,7 @@ const primaryTabs: { id: Tab; label: string; mobileLabel?: string }[] = [
   { id: "decks", label: "單字本" },
 ];
 const moreTabs: { id: Tab; label: string; note?: string }[] = [
-  { id: "assistant", label: "AI 學習" }, { id: "favorites", label: "收藏" }, { id: "quiz", label: "測驗" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" },
+  { id: "decks", label: "單字本" }, { id: "assistant", label: "AI 學習" }, { id: "favorites", label: "收藏" }, { id: "quiz", label: "測驗" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" },
 ];
 
 export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyWorkspaceData }) {
@@ -53,12 +53,15 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
   const router = useRouter();
   const [data, setData] = useState(initialData ?? emptyVocabulary);
   const [loaded, setLoaded] = useState(Boolean(initialData));
+  const [dataMode, setDataMode] = useState<"active" | "trash">("active");
+  const [listLoading, setListLoading] = useState(false);
   const [tab, setTab] = useState<Tab>("overview");
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("all");
   const [deckFilter, setDeckFilter] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [selected, setSelected] = useState<VocabularyCard | null>(null);
   const [deleting, setDeleting] = useState<VocabularyCard | null>(null);
@@ -86,8 +89,19 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     }).then((next) => { if (active) { setData(next); setLoaded(true); writeClientResource("vocabulary:standard", next); } }).catch((cause) => { if (active && !cached) setError(cause instanceof Error ? cause.message : "單字資料暫時無法讀取。"); });
     return () => { active = false; };
   }, []);
-  useEffect(() => { if (loaded && !trash) writeClientResource("vocabulary:standard", data); }, [data, loaded, trash]);
+  useEffect(() => { if (loaded && dataMode === "active") writeClientResource("vocabulary:standard", data); }, [data, loaded, dataMode]);
   useEffect(() => { if (searchParams.get("new") === "1") { setDraft((current) => current ?? blankDraft()); router.replace("/vocabulary", { scroll: false }); } }, [router, searchParams]);
+  useEffect(() => {
+    const openDraft = () => setDraft((current) => current ?? blankDraft());
+    const openFromMobileCreate = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest('a[href="/vocabulary?new=1"]') : null;
+      if (target) openDraft();
+    };
+    window.addEventListener("personal-vault:new-vocabulary", openDraft);
+    document.addEventListener("click", openFromMobileCreate, true);
+    return () => { window.removeEventListener("personal-vault:new-vocabulary", openDraft); document.removeEventListener("click", openFromMobileCreate, true); };
+  }, []);
+  useEffect(() => { if (!notice) return; const timeout = window.setTimeout(() => setNotice(null), 3200); return () => window.clearTimeout(timeout); }, [notice]);
 
   const cards = useMemo(() => data.cards.filter((card) => {
     const text = `${card.word} ${card.reading || ""} ${card.primaryTranslation || ""} ${card.notes || ""} ${card.tags.map((tag) => tag.name).join(" ")}`.toLowerCase();
@@ -100,10 +114,14 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
   const allChosen = cards.length > 0 && cards.every((card) => chosen.has(card.id));
 
   async function load(withTrash = trash) {
-    const response = await fetch(`/api/vocabulary${withTrash ? "?trash=1" : ""}`, { cache: "no-store" });
-    if (!response.ok) throw new Error("單字資料暫時無法讀取。");
-    const next = await response.json() as VocabularyWorkspaceData;
-    setData(next); setLoaded(true); if (!withTrash) writeClientResource("vocabulary:standard", next);
+    setListLoading(true);
+    setLoaded(false);
+    try {
+      const response = await fetch(`/api/vocabulary${withTrash ? "?trash=1" : ""}`, { cache: "no-store" });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "單字資料暫時無法讀取。"); }
+      const next = await response.json() as VocabularyWorkspaceData;
+      setData(next); setLoaded(true); setDataMode(withTrash ? "trash" : "active"); if (!withTrash) writeClientResource("vocabulary:standard", next);
+    } finally { setListLoading(false); }
   }
   async function request(url: string, init: RequestInit) {
     setPending(true); setError(null);
@@ -120,23 +138,25 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     const result = await request("/api/vocabulary", { method: draft.id ? "PUT" : "POST", body: JSON.stringify({ ...draft, jlptLevel: draft.jlptLevel || null, cefrLevel: draft.cefrLevel || null, languageDetails, meanings, examples }) });
     if (result) { setDraft(null); await load(false); }
   }
-  async function mutate(ids: string[], action: "trash" | "restore" | "permanent") { const result = await request("/api/vocabulary", { method: "PATCH", body: JSON.stringify({ ids, action }) }); if (result) { setSelected(null); setDeleting(null); setChosen(new Set()); setSelectionMode(false); await load(action === "restore" ? false : trash); } }
+  async function mutate(ids: string[], action: "trash" | "restore" | "permanent") { const result = await request("/api/vocabulary", { method: "PATCH", body: JSON.stringify({ ids, action }) }); if (result) { setSelected(null); setDeleting(null); setChosen(new Set()); setSelectionMode(false); await load(action === "restore" ? false : trash); setNotice(action === "trash" ? "已移至垃圾桶。" : action === "restore" ? "已還原單字。" : "已永久刪除單字。"); } }
   async function organizeSelected() { if (!chosen.size) return; const result = await request("/api/vocabulary", { method: "PATCH", body: JSON.stringify({ ids: [...chosen], action: "organize", deckId: batchDeckId, tagIds: [...batchTagIds] }) }); if (result) { setOrganizeOpen(false); setBatchDeckId(undefined); setBatchTagIds(new Set()); setChosen(new Set()); setSelectionMode(false); await load(false); } }
   async function review(card: VocabularyCard, rating: ReviewRating) { const result = await request("/api/vocabulary/review", { method: "POST", body: JSON.stringify({ cardId: card.id, rating }) }); if (result) await load(false); }
   async function createTaxonomy(type: "tag" | "deck") { const name = type === "tag" ? tagName : deckName; if (!name.trim()) return; const result = await request("/api/vocabulary/taxonomy", { method: "POST", body: JSON.stringify(type === "tag" ? { type, name, color: "#2f67c7" } : { type, name }) }); if (result) { type === "tag" ? setTagName("") : setDeckName(""); await load(false); } }
   async function saveSettings(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const result = await request("/api/vocabulary/taxonomy", { method: "POST", body: JSON.stringify({ type: "settings", dailyNewGoal: Number(form.get("dailyNewGoal")), dailyReviewGoal: Number(form.get("dailyReviewGoal")), flashcardPreferences: data.settings.flashcardPreferences }) }); if (result) await load(false); }
   function setField(key: keyof Draft, value: Draft[keyof Draft]) { setDraft((current) => current ? { ...current, [key]: value } : current); }
-  function activateTab(next: Tab, preserveFilters = false) { setTab(next); setChosen(new Set()); setSelectionMode(false); if (!preserveFilters) { setQuery(""); setDeckFilter(null); } setMoreOpen(false); if (next === "trash") void load(true); else if (trash) void load(false); }
+  function activateTab(next: Tab, preserveFilters = false) { setTab(next); setChosen(new Set()); setSelectionMode(false); if (!preserveFilters) { setQuery(""); setDeckFilter(null); } setMoreOpen(false); if (next === "trash") void load(true).catch((cause) => setError(cause instanceof Error ? cause.message : "垃圾桶資料暫時無法讀取。")); else if (dataMode === "trash") void load(false).catch((cause) => setError(cause instanceof Error ? cause.message : "單字資料暫時無法讀取。")); }
   function toggleChoice(id: string) { setChosen((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
   function toggleBatchTag(id: string) { setBatchTagIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
   async function toggleFavorite(card: VocabularyCard) { const result = await request("/api/vocabulary", { method: "PUT", body: JSON.stringify({ ...fromCard(card), isFavorite: !card.isFavorite, meanings: card.meanings, examples: card.examples, languageDetails: card.languageDetails }) }); if (result) await load(false); }
   const isListTab = ["overview", "favorites", "trash"].includes(tab);
   const selectedCount = chosen.size;
   const actionWord = trash ? "永久刪除" : "移至垃圾桶";
+  const viewReady = loaded && !listLoading && (trash ? dataMode === "trash" : dataMode === "active");
 
   return <section className="vocabulary-workspace">
     {pending && <OperationStatus label="正在更新單字資料…" />}
     {error && <p className="notice error" role="alert">{error}</p>}
+    {notice && <p className="notice success" role="status">{notice}</p>}
     <header className="vocabulary-header"><div><p className="eyebrow">VOCABULARY LEARNING</p><h1>單字學習</h1><p>記錄、整理與間隔複習你的日文、英文及更多語言。</p></div><button className="button vocabulary-primary-action" onClick={() => setDraft(blankDraft())} type="button">＋ 新增單字</button></header>
     <nav aria-label="單字學習功能" className="vocabulary-tabs">{primaryTabs.map((item) => <button className={`${tab === item.id ? "active" : ""} ${item.id === "decks" ? "vocabulary-decks-tab" : ""}`} key={item.id} onClick={() => activateTab(item.id)} type="button"><span className="vocabulary-tab-wide">{item.label}</span><span className="vocabulary-mobile-only">{item.mobileLabel || item.label}</span>{item.id === "review" && dueCards.length > 0 ? <b>{dueCards.length}</b> : null}</button>)}<button aria-expanded={moreOpen} className={`vocabulary-tab-more ${moreTabs.some((item) => item.id === tab) ? "active" : ""}`} onClick={() => setMoreOpen(true)} type="button">更多</button></nav>
 
