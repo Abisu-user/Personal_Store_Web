@@ -4,7 +4,7 @@ export type AnimePersonalRank = "normal" | "like" | "love" | "masterpiece";
 // The backing table keeps its original `anime_tags` name for backwards
 // compatibility.  In the product these are categories, not free-form tags.
 export type AnimeFolder = { id: string; name: string; scope: "standard" | "adult"; sortOrder: number; isVisible: boolean };
-export type AnimeTag = { id: string; name: string; color: string | null; folderId: string | null };
+export type AnimeTag = { id: string; name: string; color: string | null; folderId: string | null; sortOrder: number };
 export type AnimeRelation = { relation: string; malId: number; title: string; type: string | null };
 
 export type AnimeLibraryItem = {

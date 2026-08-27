@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CoverImageField,
@@ -168,11 +168,27 @@ function AnimeFolderNavigation({
   trashSelected?: boolean;
 }) {
   const [adding, setAdding] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const visible = folders.filter((folder) => folder.isVisible);
+  const [draftFolders, setDraftFolders] = useState<AnimeWorkspaceData["folders"]>([]);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [rename, setRename] = useState<{ id: string; value: string } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const sortedFolders = (values: AnimeWorkspaceData["folders"]) => [...values].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-TW"));
+  const visible = sortedFolders(folders).filter((folder) => folder.isVisible);
+  const openManager = () => {
+    setDraftFolders(sortedFolders(folders));
+    setRemovedIds([]);
+    setRename(null);
+    setDraggingId(null);
+    setError(null);
+    setManaging(true);
+  };
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!name.trim()) return;
@@ -185,9 +201,7 @@ function AnimeFolderNavigation({
         method: "POST",
         body: JSON.stringify({ name: name.trim(), scope }),
       });
-      onFoldersChange(
-        [...folders, result.folder].sort((a, b) => a.sortOrder - b.sortOrder),
-      );
+      onFoldersChange(sortedFolders([...folders, result.folder]));
       setName("");
       setAdding(false);
     } catch (cause) {
@@ -196,42 +210,52 @@ function AnimeFolderNavigation({
       setPending(false);
     }
   };
-  const update = async (
-    folder: AnimeWorkspaceData["folders"][number],
-    changes: Record<string, unknown>,
-  ) => {
-    setPending(true);
-    setError(null);
-    try {
-      const result = await api<{
-        folder: AnimeWorkspaceData["folders"][number];
-      }>("/api/anime/folders", {
-        method: "PATCH",
-        body: JSON.stringify({ id: folder.id, ...changes }),
-      });
-      onFoldersChange(
-        folders.map((item) => (item.id === folder.id ? result.folder : item)),
-      );
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法修改資料夾。");
-    } finally {
-      setPending(false);
-    }
+  const updateDraftName = () => {
+    if (!rename?.value.trim()) return;
+    setDraftFolders((current) => current.map((folder) => folder.id === rename.id ? { ...folder, name: rename.value.trim().slice(0, 80) } : folder));
+    setRename(null);
   };
-  const remove = async (folder: AnimeWorkspaceData["folders"][number]) => {
-    if (!window.confirm(`移除「${folder.name}」？其中的動漫會取消資料夾指定。`))
-      return;
+  const moveDraft = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setDraftFolders((current) => {
+      const from = current.findIndex((folder) => folder.id === fromId);
+      const to = current.findIndex((folder) => folder.id === toId);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      const [moving] = next.splice(from, 1);
+      next.splice(to, 0, moving);
+      return next;
+    });
+  };
+  const beginLongPress = (id: string, pointerType: string) => {
+    if (pointerType === "mouse") return;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => setDraggingId(id), 420);
+  };
+  const endDrag = () => {
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+    setDraggingId(null);
+  };
+  const commitManager = async () => {
+    const original = sortedFolders(folders);
+    const changed = original.length !== draftFolders.length || original.some((folder, index) => folder.id !== draftFolders[index]?.id || folder.name !== draftFolders[index]?.name) || removedIds.length > 0;
+    if (!changed) { setManaging(false); return; }
     setPending(true);
     setError(null);
     try {
-      await api("/api/anime/folders", {
-        method: "DELETE",
-        body: JSON.stringify({ id: folder.id }),
-      });
-      onFoldersChange(folders.filter((item) => item.id !== folder.id));
-      if (selectedId === folder.id) onChange(null);
+      for (const [sortOrder, folder] of draftFolders.entries()) {
+        const previous = original.find((item) => item.id === folder.id);
+        if (!previous || previous.name !== folder.name || previous.sortOrder !== sortOrder) {
+          await api("/api/anime/folders", { method: "PATCH", body: JSON.stringify({ id: folder.id, name: folder.name, sortOrder }) });
+        }
+      }
+      for (const id of removedIds) await api("/api/anime/folders", { method: "DELETE", body: JSON.stringify({ id }) });
+      if (selectedId && removedIds.includes(selectedId)) onChange(null);
+      onFoldersChange(draftFolders.map((folder, sortOrder) => ({ ...folder, sortOrder })));
+      setManaging(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法移除資料夾。");
+      setError(cause instanceof Error ? cause.message : "無法儲存資料夾整理結果。");
     } finally {
       setPending(false);
     }
@@ -242,10 +266,28 @@ function AnimeFolderNavigation({
       aria-label="動漫資料夾"
     >
       <div className="anime-category-scroll">
+        {visible.map((folder) => (
+          <button
+            className={selectedId === folder.id ? "active" : ""}
+            key={folder.id}
+            onClick={() => onChange(folder.id)}
+            type="button"
+          >
+            {folder.name}
+          </button>
+        ))}
+        <button
+          aria-label="管理資料夾"
+          className="anime-category-utility"
+          onClick={() => { setError(null); setMoreOpen(true); }}
+          type="button"
+        >
+          更多
+        </button>
         <button
           aria-label="修改資料夾"
           className="anime-category-utility"
-          onClick={() => setManaging(true)}
+          onClick={openManager}
           type="button"
         >
           🔧
@@ -253,18 +295,10 @@ function AnimeFolderNavigation({
         <button
           aria-label="新增資料夾"
           className="anime-category-utility anime-category-add-button"
-          onClick={() => setAdding(true)}
+          onClick={() => { setError(null); setAdding(true); }}
           type="button"
         >
           ＋
-        </button>
-        <button
-          aria-label="管理資料夾"
-          className="anime-category-utility"
-          onClick={() => setManaging(true)}
-          type="button"
-        >
-          更多
         </button>
         {onTrash && (
           <button
@@ -283,16 +317,6 @@ function AnimeFolderNavigation({
             垃圾桶 <span>{trashCount}</span>
           </button>
         )}
-        {visible.map((folder) => (
-          <button
-            className={selectedId === folder.id ? "active" : ""}
-            key={folder.id}
-            onClick={() => onChange(folder.id)}
-            type="button"
-          >
-            {folder.name}
-          </button>
-        ))}
       </div>
       <ModalDialog
         className="mobile-sheet-dialog"
@@ -334,69 +358,119 @@ function AnimeFolderNavigation({
       </ModalDialog>
       <ModalDialog
         className="mobile-sheet-dialog"
-        onClose={() => setManaging(false)}
-        open={managing}
-        pending={pending}
-        title="管理動漫資料夾"
+        onClose={() => setMoreOpen(false)}
+        open={moreOpen}
+        title="動漫資料夾"
       >
-        <div className="anime-category-manager-list">
-          {folders.length ? (
-            folders.map((folder) => (
-              <div className="anime-folder-manager-row" key={folder.id}>
-                <button
-                  onClick={() => {
-                    onChange(folder.id);
-                    setManaging(false);
-                  }}
-                  type="button"
-                >
-                  {folder.name}
-                  {folder.isVisible ? "" : "（已隱藏）"}
-                </button>
-                <div>
-                  <button
-                    className="secondary-button compact"
-                    disabled={pending}
-                    onClick={() => {
-                      const next = window
-                        .prompt("資料夾名稱", folder.name)
-                        ?.trim();
-                      if (next && next !== folder.name)
-                        void update(folder, { name: next });
-                    }}
-                    type="button"
-                  >
-                    修改
-                  </button>
-                  <button
-                    className="secondary-button compact"
-                    disabled={pending}
-                    onClick={() =>
-                      void update(folder, { isVisible: !folder.isVisible })
-                    }
-                    type="button"
-                  >
-                    {folder.isVisible ? "隱藏" : "顯示"}
-                  </button>
-                  <button
-                    className="delete-button compact"
-                    disabled={pending}
-                    onClick={() => void remove(folder)}
-                    type="button"
-                  >
-                    移除
-                  </button>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="anime-field-hint">尚未建立資料夾。</p>
-          )}
+        <div className="collection-category-dialog collection-category-manager">
+          <input aria-label="搜尋動漫資料夾" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋資料夾" value={query} />
+          <div className="collection-category-manager-list">
+            {sortedFolders(folders).filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(folder.id); setMoreOpen(false); }} type="button">{folder.name}{folder.isVisible ? "" : "（已隱藏）"}</button>)}
+            {!folders.length && <p className="manager-empty">尚未建立資料夾。</p>}
+          </div>
         </div>
-        {error && <p className="notice error">{error}</p>}
       </ModalDialog>
+      <ModalDialog className="mobile-sheet-dialog" onClose={() => void commitManager()} open={managing} pending={pending} title="修改動漫資料夾">
+        <div className="collection-category-dialog collection-category-manager">
+          <p>電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整位置；刪除會先在此視覺化隱藏，關閉後才一次儲存。</p>
+          {error && <p className="notice error">{error}</p>}
+          <div className="taxonomy-manager-list">
+            {draftFolders.map((folder) => <article aria-grabbed={draggingId === folder.id} className={draggingId === folder.id ? "taxonomy-manager-item dragging" : "taxonomy-manager-item"} data-taxonomy-entity="folder" data-taxonomy-id={folder.id} draggable key={folder.id} onDragEnd={endDrag} onDragOver={(event) => { event.preventDefault(); if (draggingId) moveDraft(draggingId, folder.id); }} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", folder.id); setDraggingId(folder.id); }} onPointerDown={(event: PointerEvent<HTMLElement>) => beginLongPress(folder.id, event.pointerType)} onPointerMove={(event: PointerEvent<HTMLElement>) => { if (!draggingId) return; const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-taxonomy-entity='folder']"); if (target?.dataset.taxonomyId) moveDraft(draggingId, target.dataset.taxonomyId); }} onPointerUp={endDrag}><button className="taxonomy-item-name" onClick={() => setRename({ id: folder.id, value: folder.name })} type="button">{folder.name}</button><button aria-label={`移除 ${folder.name}`} className="taxonomy-delete" onClick={() => { setDraftFolders((current) => current.filter((item) => item.id !== folder.id)); setRemovedIds((current) => [...current, folder.id]); }} type="button">×</button></article>)}
+            {!draftFolders.length && <p className="manager-empty">尚未建立資料夾。</p>}
+          </div>
+        </div>
+      </ModalDialog>
+      {rename && <ModalDialog className="mobile-sheet-dialog" onClose={() => setRename(null)} open title="修改資料夾"><form className="collection-category-dialog" onSubmit={(event) => { event.preventDefault(); updateDraftName(); }}><label>資料夾名稱<input autoFocus maxLength={80} onChange={(event) => setRename((current) => current ? { ...current, value: event.target.value } : current)} value={rename.value} /></label><div className="dialog-actions"><button className="secondary-button" onClick={() => setRename(null)} type="button">取消</button><button className="button" type="submit">套用</button></div></form></ModalDialog>}
     </section>
   );
+}
+
+function AnimeCategoryManager({
+  folderId,
+  onChange,
+  onClose,
+  open,
+  scope,
+  tags,
+}: {
+  folderId: string | null;
+  onChange: (nextTags: AnimeTag[], removedIds: string[]) => void;
+  onClose: () => void;
+  open: boolean;
+  scope: CategoryScope;
+  tags: AnimeTag[];
+}) {
+  const initialTags = tags.filter((tag) => tag.folderId === folderId).sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-TW"));
+  const [draftTags, setDraftTags] = useState<AnimeTag[]>(initialTags);
+  const [removedIds, setRemovedIds] = useState<string[]>([]);
+  const [rename, setRename] = useState<{ id: string; value: string } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const longPressTimer = useRef<number | null>(null);
+  const inFolder = initialTags;
+
+  const moveDraft = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setDraftTags((current) => {
+      const from = current.findIndex((tag) => tag.id === fromId);
+      const to = current.findIndex((tag) => tag.id === toId);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      const [moving] = next.splice(from, 1);
+      next.splice(to, 0, moving);
+      return next;
+    });
+  };
+  const finishDrag = () => {
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+    setDraggingId(null);
+  };
+  const startLongPress = (id: string, pointerType: string) => {
+    if (pointerType === "mouse") return;
+    if (longPressTimer.current) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => setDraggingId(id), 420);
+  };
+  const applyName = () => {
+    if (!rename?.value.trim()) return;
+    setDraftTags((current) => current.map((tag) => tag.id === rename.id ? { ...tag, name: rename.value.trim().slice(0, 50) } : tag));
+    setRename(null);
+  };
+  const commit = async () => {
+    const changed = inFolder.length !== draftTags.length || inFolder.some((tag, index) => tag.id !== draftTags[index]?.id || tag.name !== draftTags[index]?.name) || removedIds.length > 0;
+    if (!changed) { onClose(); return; }
+    setPending(true);
+    setError(null);
+    try {
+      for (const [sortOrder, tag] of draftTags.entries()) {
+        const previous = inFolder.find((item) => item.id === tag.id);
+        if (!previous || previous.name !== tag.name || previous.sortOrder !== sortOrder) {
+          await api("/api/anime/tags", { method: "PATCH", body: JSON.stringify({ id: tag.id, name: tag.name, sortOrder }) });
+        }
+      }
+      for (const id of removedIds) await api("/api/anime/tags", { method: "DELETE", body: JSON.stringify({ id }) });
+      onChange([...tags.filter((tag) => tag.folderId !== folderId), ...draftTags.map((tag, sortOrder) => ({ ...tag, sortOrder }))], removedIds);
+      onClose();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法儲存類別整理結果。");
+    } finally {
+      setPending(false);
+    }
+  };
+  return <>
+    <ModalDialog className="mobile-sheet-dialog" onClose={() => void commit()} open={open} pending={pending} title={scope === "adult" ? "修改成人動漫類別" : "修改動漫類別"}>
+      <div className="collection-category-dialog collection-category-manager">
+        <p>電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整位置；刪除會先在此視覺化隱藏，關閉後才一次儲存。</p>
+        {error && <p className="notice error">{error}</p>}
+        <div className="taxonomy-manager-list">
+          {draftTags.map((tag) => <article aria-grabbed={draggingId === tag.id} className={draggingId === tag.id ? "taxonomy-manager-item dragging" : "taxonomy-manager-item"} data-taxonomy-entity="anime-category" data-taxonomy-id={tag.id} draggable key={tag.id} onDragEnd={finishDrag} onDragOver={(event) => { event.preventDefault(); if (draggingId) moveDraft(draggingId, tag.id); }} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tag.id); setDraggingId(tag.id); }} onPointerDown={(event: PointerEvent<HTMLElement>) => startLongPress(tag.id, event.pointerType)} onPointerMove={(event: PointerEvent<HTMLElement>) => { if (!draggingId) return; const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-taxonomy-entity='anime-category']"); if (target?.dataset.taxonomyId) moveDraft(draggingId, target.dataset.taxonomyId); }} onPointerUp={finishDrag}><button className="taxonomy-item-name" onClick={() => setRename({ id: tag.id, value: tag.name })} type="button">{tag.name}</button><button aria-label={`移除類別 ${tag.name}`} className="taxonomy-delete" onClick={() => { setDraftTags((current) => current.filter((item) => item.id !== tag.id)); setRemovedIds((current) => [...current, tag.id]); }} type="button">×</button></article>)}
+          {!draftTags.length && <p className="manager-empty">目前資料夾尚未建立類別。</p>}
+        </div>
+      </div>
+    </ModalDialog>
+    {rename && <ModalDialog className="mobile-sheet-dialog" onClose={() => setRename(null)} open title="修改動漫類別"><form className="collection-category-dialog" onSubmit={(event) => { event.preventDefault(); applyName(); }}><label>類別名稱<input autoFocus maxLength={50} onChange={(event) => setRename((current) => current ? { ...current, value: event.target.value } : current)} value={rename.value} /></label><div className="dialog-actions"><button className="secondary-button" onClick={() => setRename(null)} type="button">取消</button><button className="button" type="submit">套用</button></div></form></ModalDialog>}
+  </>;
 }
 
 function AnimeCollectionList({
@@ -707,13 +781,6 @@ export function AnimeWorkspace({
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
   const [categoryManageScope, setCategoryManageScope] =
     useState<CategoryScope | null>(null);
-  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(
-    null,
-  );
-  const [categoryDraft, setCategoryDraft] = useState("");
-  const [removingCategory, setRemovingCategory] = useState<AnimeTag | null>(
-    null,
-  );
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
@@ -980,7 +1047,9 @@ export function AnimeWorkspace({
           : {
               ...current,
               tags: [...current.tags, answer.tag].sort((a, b) =>
-                a.name.localeCompare(b.name, "zh-TW"),
+                a.folderId === b.folderId
+                  ? a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-TW")
+                  : (a.folderId ?? "").localeCompare(b.folderId ?? ""),
               ),
             };
       if (scope === "adult")
@@ -1005,53 +1074,6 @@ export function AnimeWorkspace({
       );
     } else {
       setData((current) => ({ ...current, tags: transform(current.tags) }));
-    }
-  };
-  const saveCategoryName = async () => {
-    if (!categoryManageScope || !editingCategoryId || !categoryDraft.trim())
-      return;
-    setPending("category-manage");
-    try {
-      const result = await api<{ tag: AnimeTag }>("/api/anime/tags", {
-        method: "PATCH",
-        body: JSON.stringify({
-          id: editingCategoryId,
-          name: categoryDraft.trim(),
-        }),
-      });
-      replaceScopeTags(categoryManageScope, (tags) =>
-        tags.map((tag) => (tag.id === result.tag.id ? result.tag : tag)),
-      );
-      setEditingCategoryId(null);
-      setCategoryDraft("");
-      setNotice("已修改類別。");
-    } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "無法修改類別。");
-    } finally {
-      setPending(null);
-    }
-  };
-  const deleteCategory = async () => {
-    if (!categoryManageScope || !removingCategory) return;
-    setPending("category-manage");
-    try {
-      await api("/api/anime/tags", {
-        method: "DELETE",
-        body: JSON.stringify({ id: removingCategory.id }),
-      });
-      const removedId = removingCategory.id;
-      replaceScopeTags(categoryManageScope, (tags) =>
-        tags.filter((tag) => tag.id !== removedId),
-      );
-      if (categoryManageScope === "adult") {
-        if (adultCategoryFilter === removedId) setAdultCategoryFilter(null);
-      } else if (categoryFilter === removedId) setCategoryFilter(null);
-      setRemovingCategory(null);
-      setNotice("已移除類別。該類別的動漫會改為未分類。");
-    } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "無法移除類別。");
-    } finally {
-      setPending(null);
     }
   };
   const remove = async () => {
@@ -1923,72 +1945,24 @@ export function AnimeWorkspace({
           }}
         />
       )}
-      <ModalDialog
-        className="mobile-sheet-dialog"
-        onClose={() => {
-          if (!pending) {
-            setCategoryManageScope(null);
-            setEditingCategoryId(null);
-            setCategoryDraft("");
+      {categoryManageScope && <AnimeCategoryManager
+        key={`${categoryManageScope}:${categoryManageScope === "adult" ? adultFolderFilter ?? "unorganized" : folderFilter ?? "unorganized"}`}
+        folderId={categoryManageScope === "adult" ? adultFolderFilter : folderFilter}
+        onChange={(tags, removedIds) => {
+          if (categoryManageScope === "adult") {
+            setAdultData((current) => current ? { ...current, tags, library: current.library.map((anime) => ({ ...anime, tags: anime.tags.filter((tag) => !removedIds.includes(tag.id)) })) } : current);
+            if (adultCategoryFilter && removedIds.includes(adultCategoryFilter)) setAdultCategoryFilter(null);
+          } else {
+            setData((current) => ({ ...current, tags, library: current.library.map((anime) => ({ ...anime, tags: anime.tags.filter((tag) => !removedIds.includes(tag.id)) })) }));
+            if (categoryFilter && removedIds.includes(categoryFilter)) setCategoryFilter(null);
           }
+          setNotice("已儲存類別整理結果。");
         }}
-        open={Boolean(categoryManageScope)}
-        pending={pending === "category-manage"}
-        title={categoryManageScope === "adult" ? "修改成人動漫類別" : "修改動漫類別"}
-      >
-        <div className="anime-category-dialog">
-          <p>類別只會影響目前資料夾與目前動漫清單；移除後，原有作品會保留並顯示為未分類。</p>
-          <div className="anime-category-manager-list anime-category-edit-list">
-            {(categoryManageScope === "adult" ? (adultData?.tags ?? []) : data.tags)
-              .filter((tag) =>
-                categoryManageScope === "adult"
-                  ? !adultFolderFilter || tag.folderId === adultFolderFilter
-                  : !folderFilter || tag.folderId === folderFilter,
-              )
-              .map((tag) => (
-                <div className="anime-category-edit-row" key={tag.id}>
-                  {editingCategoryId === tag.id ? (
-                    <form
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void saveCategoryName();
-                      }}
-                    >
-                      <label className="sr-only" htmlFor={`anime-category-${tag.id}`}>類別名稱</label>
-                      <input
-                        autoFocus
-                        id={`anime-category-${tag.id}`}
-                        maxLength={50}
-                        onChange={(event) => setCategoryDraft(event.target.value)}
-                        value={categoryDraft}
-                      />
-                      <button className="button compact" disabled={!categoryDraft.trim() || Boolean(pending)} type="submit">儲存</button>
-                      <button className="secondary-button compact" disabled={Boolean(pending)} onClick={() => { setEditingCategoryId(null); setCategoryDraft(""); }} type="button">取消</button>
-                    </form>
-                  ) : (
-                    <>
-                      <strong>{tag.name}</strong>
-                      <div>
-                        <button className="secondary-button compact" disabled={Boolean(pending)} onClick={() => { setEditingCategoryId(tag.id); setCategoryDraft(tag.name); }} type="button">修改</button>
-                        <button aria-label={`移除類別 ${tag.name}`} className="anime-category-remove" disabled={Boolean(pending)} onClick={() => setRemovingCategory(tag)} type="button">×</button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-          </div>
-          {!(categoryManageScope === "adult" ? (adultData?.tags ?? []) : data.tags).filter((tag) => categoryManageScope === "adult" ? !adultFolderFilter || tag.folderId === adultFolderFilter : !folderFilter || tag.folderId === folderFilter).length && <p className="anime-field-hint">目前資料夾尚未建立類別。</p>}
-        </div>
-      </ModalDialog>
-      <ConfirmDialog
-        confirmLabel="移除類別"
-        description={removingCategory ? `確定要移除「${removingCategory.name}」嗎？已套用此類別的動漫會改為未分類。` : ""}
-        onCancel={() => setRemovingCategory(null)}
-        onConfirm={() => void deleteCategory()}
-        open={Boolean(removingCategory)}
-        pending={pending === "category-manage"}
-        title="移除動漫類別？"
-      />
+        onClose={() => setCategoryManageScope(null)}
+        open
+        scope={categoryManageScope}
+        tags={categoryManageScope === "adult" ? (adultData?.tags ?? []) : data.tags}
+      />}
       <ConfirmDialog
         confirmLabel="移至垃圾桶"
         description={

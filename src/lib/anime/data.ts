@@ -44,14 +44,14 @@ export async function getAnimeWorkspaceData(userId: string, scope: "standard" | 
     rows = legacy.data; libraryError = legacy.error;
   }
   let [{ data: tagRows, error: tagError }, { data: folderRows, error: folderError }] = await Promise.all([
-    admin.from("anime_tags").select("id,name,color,folder_id").eq("user_id", userId).eq("scope", scope).order("name").limit(100),
+    admin.from("anime_tags").select("id,name,color,folder_id,sort_order").eq("user_id", userId).eq("scope", scope).order("sort_order").order("name").limit(100),
     admin.from("anime_folders").select("id,name,scope,sort_order,is_visible").eq("user_id", userId).eq("scope", scope).order("sort_order").limit(100),
   ]);
   // The folder migration is additive.  Keep the existing Anime Library
   // readable while a production project is waiting for that migration.
   if (tagError) {
     const legacyTags = await admin.from("anime_tags").select("id,name,color").eq("user_id", userId).eq("scope", scope).order("name").limit(100);
-    tagRows = legacyTags.data?.map((tag) => ({ ...tag, folder_id: null })) ?? null;
+    tagRows = legacyTags.data?.map((tag) => ({ ...tag, folder_id: null, sort_order: 0 })) ?? null;
     tagError = legacyTags.error;
   }
   if (folderError) { folderRows = []; folderError = null; }
@@ -62,7 +62,7 @@ export async function getAnimeWorkspaceData(userId: string, scope: "standard" | 
     animeIds.length ? admin.from("anime_watch_logs").select("id,anime_id,from_episode,to_episode,action,watched_at").eq("user_id", userId).in("anime_id", animeIds).order("watched_at", { ascending: false }).limit(120) : Promise.resolve({ data: [], error: null }),
   ]);
   if (linkError || logError) throw new Error("Anime tags unavailable");
-  const tags = (tagRows ?? []).map((row: any): AnimeTag => ({ id: row.id, name: row.name, color: row.color, folderId: row.folder_id ?? null }));
+  const tags = (tagRows ?? []).map((row: any): AnimeTag => ({ id: row.id, name: row.name, color: row.color, folderId: row.folder_id ?? null, sortOrder: row.sort_order ?? 0 }));
   const folders = (folderRows ?? []).map((row: any): AnimeFolder => ({ id: row.id, name: row.name, scope: row.scope, sortOrder: row.sort_order, isVisible: row.is_visible }));
   const tagById = new Map(tags.map((tag) => [tag.id, tag])); const animeById = new Map(library.map((anime) => [anime.id, anime]));
   (links ?? []).forEach((link: any) => { const tag = tagById.get(link.tag_id); if (tag) animeById.get(link.anime_id)?.tags.push(tag); });
