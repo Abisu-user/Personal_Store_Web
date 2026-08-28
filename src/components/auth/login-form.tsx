@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PasswordInput } from "@/components/auth/password-input";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 
 export function LoginForm() {
-  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +32,14 @@ export function LoginForm() {
     setProgress("正在確認帳號安全驗證…");
     const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     setProgress("登入成功，正在開啟你的保管庫…");
-    router.replace(aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2" ? "/mfa-challenge" : "/dashboard");
+    const destination = aal?.nextLevel === "aal2" && aal.currentLevel !== "aal2"
+      ? "/mfa-challenge"
+      : "/dashboard";
+    // Supabase persists the fresh session in a browser cookie.  A full
+    // navigation after that write avoids reusing the App Router's anonymous
+    // login response, which could otherwise bounce a newly signed-in user
+    // straight back to /login.
+    window.setTimeout(() => window.location.assign(destination), 120);
   }
 
   async function signInWithPasskey() {
@@ -43,7 +48,7 @@ export function LoginForm() {
     if (passkeyError) { setPending(false); setProgress(null); setError(passkeyError.code === "passkey_disabled" ? "Face ID / Passkey 尚未啟用，請使用帳號密碼登入。" : "無法完成 Face ID / Passkey 驗證。請再試一次或使用帳號密碼。"); return; }
     window.sessionStorage.setItem("personal-vault:unlock-after-login", "1");
     setProgress("登入成功，正在開啟你的保管庫…");
-    router.replace("/dashboard");
+    window.setTimeout(() => window.location.assign("/dashboard"), 120);
   }
 
   return (
