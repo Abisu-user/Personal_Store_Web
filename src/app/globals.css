@@ -566,6 +566,42 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .taxonomy-item-name { min-width: 0; max-width: 14rem; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; font-weight: 850; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .taxonomy-delete { position: absolute; top: 4px; right: 4px; display: grid; width: 18px; height: 18px; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line)); border-radius: 50%; color: var(--danger); background: color-mix(in srgb, var(--surface) 90%, var(--danger)); font: 800 .8rem/1 sans-serif; cursor: pointer; }
 .taxonomy-delete:hover { color: #fff; background: var(--danger); }
+.anime-folder-manager-list > .anime-folder-manager-item {
+  /* Keep folder editing visually identical to category editing.  The explicit
+     direct-child rules also prevent older generic folder styles from turning
+     each chip into a nested two-box control. */
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  padding: 0 30px 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.anime-folder-manager-list > .anime-folder-manager-item > .taxonomy-item-name {
+  display: block;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.anime-folder-manager-list > .anime-folder-manager-item > .taxonomy-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+}
 .collection-category-manage-link { display: none; }
 @media (max-width: 700px) { .taxonomy-manager-item { min-height: 34px; } .taxonomy-item-name { max-width: 11rem; } }
 .anime-card { position: relative; }
