@@ -33,6 +33,7 @@ export type DictionarySearchResult = {
 };
 
 const CACHE_HOURS = 12;
+const lookupMemoryCache = new Map<string, { payload: unknown; expiresAt: number }>();
 const inMemoryTranslations = new Map<string, { expiresAt: number; value: string | null }>();
 let googleTranslationCooldownUntil = 0;
 
@@ -74,18 +75,29 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
 
 async function cached<T>(provider: "japanese_dictionary" | "english_dictionary", language: DictionaryLanguage, query: string, loader: () => Promise<T>): Promise<T> {
   const normalizedQuery = normalizeDictionaryQuery(language, query);
+  const memoryKey = `${provider}:${language}:${normalizedQuery}`;
+  const memory = lookupMemoryCache.get(memoryKey);
+  if (memory && memory.expiresAt > Date.now()) return memory.payload as T;
   const admin = createAdminClient();
   try {
-    const { data } = await admin.from("vocabulary_lookup_cache").select("payload,expires_at").eq("provider", provider).eq("language", language).eq("normalized_query", normalizedQuery).maybeSingle();
-    if (data && new Date(data.expires_at).getTime() > Date.now()) return data.payload as T;
-  } catch {
-    // Cached dictionaries are an optimisation; the source lookup must still work before a migration is applied.
+    const { data, error } = await admin.from("vocabulary_lookup_cache").select("payload,expires_at").eq("provider", provider).eq("language", language).eq("normalized_query", normalizedQuery).maybeSingle();
+    if (error) {
+      console.warn("[vocabulary.lookup-cache] read failed", { provider, language, code: error.code, message: error.message });
+    } else if (data && new Date(data.expires_at).getTime() > Date.now()) {
+      lookupMemoryCache.set(memoryKey, { payload: data.payload, expiresAt: new Date(data.expires_at).getTime() });
+      return data.payload as T;
+    }
+  } catch (error) {
+    console.warn("[vocabulary.lookup-cache] read exception", { provider, language, message: error instanceof Error ? error.message : String(error) });
   }
   const payload = await loader();
+  const expiresAt = Date.now() + CACHE_HOURS * 60 * 60 * 1000;
+  lookupMemoryCache.set(memoryKey, { payload, expiresAt });
   try {
-    await admin.from("vocabulary_lookup_cache").upsert({ provider, language, normalized_query: normalizedQuery, payload, expires_at: new Date(Date.now() + CACHE_HOURS * 60 * 60 * 1000).toISOString() }, { onConflict: "provider,language,normalized_query" });
-  } catch {
-    // Do not make dictionary availability depend on cache writes.
+    const { error } = await admin.from("vocabulary_lookup_cache").upsert({ provider, language, normalized_query: normalizedQuery, payload, expires_at: new Date(expiresAt).toISOString() }, { onConflict: "provider,language,normalized_query" });
+    if (error) console.warn("[vocabulary.lookup-cache] write failed", { provider, language, code: error.code, message: error.message });
+  } catch (error) {
+    console.warn("[vocabulary.lookup-cache] write exception", { provider, language, message: error instanceof Error ? error.message : String(error) });
   }
   return payload;
 }
