@@ -134,6 +134,7 @@ export async function translateDictionaryText(value: string, source: "zh-TW" | "
     try {
       const translated = await request();
       if (!translated) throw new Error("EMPTY_TRANSLATION");
+      if (target === "zh-TW" && !/[\u3400-\u9fff]/.test(translated)) throw new Error("NON_CHINESE_TRANSLATION");
       inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
       console.info("[vocabulary.translation] success", { provider, source, target, inputLength: value.length, durationMs: Date.now() - startedAt });
       return translated;
@@ -150,6 +151,10 @@ function translationKey(language: DictionaryLanguage, word: string) {
   return `${language}:${normalizeDictionaryQuery(language, word)}`;
 }
 
+function isTraditionalChineseTranslation(value: string | null) {
+  return Boolean(value && /[\u3400-\u9fff]/.test(value));
+}
+
 /** A translation cache is deliberately separate from dictionary facts. */
 export async function resolveChineseTranslation(entry: DictionaryEntry) {
   const normalizedWord = normalizeDictionaryQuery(entry.language, entry.word);
@@ -159,15 +164,20 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
   const admin = createAdminClient();
   try {
     const { data } = await admin.from("dictionary_translations").select("primary_meaning").eq("source_language", entry.language).eq("normalized_word", normalizedWord).eq("target_language", "zh-TW").maybeSingle();
-    if (data?.primary_meaning) {
-      inMemoryTranslations.set(key, { value: data.primary_meaning, expiresAt: Date.now() + 30 * 60 * 1000 });
-      return data.primary_meaning;
+    const cachedMeaning = data?.primary_meaning ?? null;
+    if (isTraditionalChineseTranslation(cachedMeaning)) {
+      inMemoryTranslations.set(key, { value: cachedMeaning, expiresAt: Date.now() + 30 * 60 * 1000 });
+      return cachedMeaning;
     }
   } catch {
     // The new shared table is optional until its migration is applied.
   }
-  const phrase = entry.language === "en" ? (entry.meanings.slice(0, 3).join("；") || entry.word) : entry.word;
-  const translated = await translateDictionaryText(phrase, entry.language, "zh-TW");
+  const direct = await translateDictionaryText(entry.word, entry.language, "zh-TW");
+  // Some public providers return English unchanged for a Japanese query. In that case,
+  // translate the dictionary's English definition instead of rendering a misleading result.
+  const translated = isTraditionalChineseTranslation(direct)
+    ? direct
+    : await translateDictionaryText(entry.meanings.slice(0, 3).join("；") || entry.word, "en", "zh-TW");
   inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
   if (translated) {
     try {
