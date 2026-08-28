@@ -905,6 +905,15 @@ export function AnimeWorkspace({
       setNotice(cause instanceof Error ? cause.message : "無法讀取垃圾桶。");
     }
   };
+  const selectLibraryStatus = (value: Filter) => {
+    // A watch-status view and a folder view are mutually exclusive.  Clear
+    // the folder first so the interface never leaves two navigation chips
+    // looking active at the same time.
+    setFolderFilter(null);
+    setCategoryFilter(null);
+    setLibraryView("library");
+    setFilter(value);
+  };
   const updateAdultPreferences = async (changes: Partial<AnimePreferences>) => {
     setPending("adult-settings");
     try {
@@ -1221,56 +1230,63 @@ export function AnimeWorkspace({
               ＋ 新增成人作品
             </button>
           </div>
-          {adultView === "library" ? (
-            <>
-              <div className="anime-filter-bar anime-adult-filter-bar">
-                <div className="anime-filter-scroll">
-                  <div
-                    className="anime-tabs anime-adult-library-tabs"
-                    role="tablist"
-                    aria-label="成人內容功能"
-                  >
-                    <button
-                      className={adultView === "library" ? "active" : ""}
-                      onClick={() => setAdultView("library")}
-                      type="button"
-                    >
-                      我的動漫
-                    </button>
-                    <button
-                      onClick={() => setAdultView("discover")}
-                      type="button"
-                    >
-                      搜尋／探索
-                    </button>
-                  </div>
-                  <AnimeFolderNavigation
-                    folders={adultData.folders}
-                    inline
-                    onChange={(folderId) => {
-                      setAdultLibraryView("library");
-                      setAdultFolderFilter(folderId);
-                      setAdultCategoryFilter(null);
-                    }}
-                    onFoldersChange={(folders) =>
-                      setAdultData((current) =>
-                        current ? { ...current, folders } : current,
-                      )
-                    }
-                    onTrash={() => void openTrash("adult")}
-                    scope="adult"
-                    selectedId={adultFolderFilter}
-                    trashCount={adultTrashData?.library.length ?? 0}
-                    trashSelected={adultLibraryView === "trash"}
-                  />
-                </div>
+          <div className="anime-filter-bar anime-adult-filter-bar">
+            <div className="anime-filter-scroll">
+              <div
+                className="anime-tabs anime-adult-library-tabs"
+                role="tablist"
+                aria-label="成人內容功能"
+              >
+                <button
+                  className={adultView === "library" ? "active" : ""}
+                  onClick={() => setAdultView("library")}
+                  type="button"
+                >
+                  我的動漫
+                </button>
+                <button
+                  className={adultView === "discover" ? "active" : ""}
+                  onClick={() => setAdultView("discover")}
+                  type="button"
+                >
+                  搜尋／探索
+                </button>
+              </div>
+              <AnimeFolderNavigation
+                folders={adultData.folders}
+                inline
+                onChange={(folderId) => {
+                  setAdultView("library");
+                  setAdultLibraryView("library");
+                  setAdultFolderFilter(folderId);
+                  setAdultCategoryFilter(null);
+                }}
+                onFoldersChange={(folders) =>
+                  setAdultData((current) =>
+                    current ? { ...current, folders } : current,
+                  )
+                }
+                onTrash={() => {
+                  setAdultView("library");
+                  void openTrash("adult");
+                }}
+                scope="adult"
+                selectedId={adultFolderFilter}
+                trashCount={adultTrashData?.library.length ?? 0}
+                trashSelected={adultLibraryView === "trash"}
+              />
+            </div>
+            {adultView === "library" && (
                 <input
                   aria-label="搜尋成人動漫"
                   onChange={(event) => setAdultQuery(event.target.value)}
                   placeholder="搜尋成人動漫"
                   value={adultQuery}
                 />
-              </div>
+            )}
+          </div>
+          {adultView === "library" ? (
+            <>
               {adultLibraryView === "library" ? (
                 <>
                   <section
@@ -1396,21 +1412,11 @@ export function AnimeWorkspace({
               )}
             </>
           ) : (
-            <>
-              <div className="anime-tabs" role="tablist" aria-label="成人內容功能">
-                <button onClick={() => setAdultView("library")} type="button">
-                  我的動漫
-                </button>
-                <button className="active" type="button">
-                  搜尋／探索
-                </button>
-              </div>
-              <AnimeDiscovery
-                adultMode
-                library={adultData.library}
-                onAdd={setAdultPrefill}
-              />
-            </>
+            <AnimeDiscovery
+              adultMode
+              library={adultData.library}
+              onAdd={setAdultPrefill}
+            />
           )}
         </section>
       )}
@@ -1534,12 +1540,7 @@ export function AnimeWorkspace({
                       : ""
                   }
                   key={value}
-                  onClick={() => {
-                    setLibraryView("library");
-                    setFolderFilter(null);
-                    setCategoryFilter(null);
-                    setFilter(value);
-                  }}
+                  onClick={() => selectLibraryStatus(value)}
                   type="button"
                 >
                   {value === "all" ? "全部" : animeStatusLabels[value]}
@@ -1766,10 +1767,7 @@ export function AnimeWorkspace({
                     }
                     key={value}
                     onClick={() => {
-                      setLibraryView("library");
-                      setFolderFilter(null);
-                      setCategoryFilter(null);
-                      setFilter(value);
+                      selectLibraryStatus(value);
                       setFilterOpen(false);
                     }}
                     type="button"
