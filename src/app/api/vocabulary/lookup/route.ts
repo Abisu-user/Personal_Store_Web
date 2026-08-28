@@ -32,6 +32,10 @@ async function localize(items: Awaited<ReturnType<typeof searchDictionary>>["exa
   }));
 }
 
+function isLikelyJapaneseKanjiResult(result: Awaited<ReturnType<typeof searchDictionary>>) {
+  return result.exact.some((entry) => /[\u3040-\u309f]/.test(entry.reading || entry.kana || ""));
+}
+
 export async function GET(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -51,16 +55,19 @@ export async function GET(request: NextRequest) {
     let originalChinese: string | null = null;
     let result;
 
-    // Kanji-only input can be valid Japanese or Chinese. For a Japanese dictionary, verify it directly first.
+    // Kanji-only input can be Japanese or Chinese. Jisho also indexes Chinese loan entries
+    // (for example 你好 → ニーハオ), so a katakana-only reading is not enough to call it Japanese.
     if (inputLanguage === "zh" && dictionaryLanguage === "ja") {
       result = await searchDictionary("ja", query);
-      if (!result.exact.length && !result.related.length) {
+      if (!isLikelyJapaneseKanjiResult(result)) {
         const translated = await translateLookupCandidate(query, "ja");
         if (!translated) {
           return NextResponse.json({ error: "無法將中文轉為可驗證的日文查詢，請改用更完整的詞語再試。" }, { status: 422 });
         }
         dictionaryQuery = translated;
-        result = await searchDictionary("ja", dictionaryQuery);
+        const translatedResult = await searchDictionary("ja", dictionaryQuery);
+        // Never invent a word from translation alone: only prefer it after the dictionary confirms it.
+        if (translatedResult.exact.length || translatedResult.related.length) result = translatedResult;
         originalChinese = query;
       }
     } else if (inputLanguage !== dictionaryLanguage) {
