@@ -578,7 +578,9 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   padding: 0 30px 0 11px;
   border: 1px solid var(--line);
   border-radius: 10px;
+  color: var(--ink);
   background: var(--surface);
+  font-weight: 850;
 }
 .anime-folder-manager-list > .anime-folder-manager-item > .taxonomy-item-name {
   display: block;
@@ -588,7 +590,10 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   padding: 0;
   border: 0;
   border-radius: 0;
+  color: var(--ink);
   background: transparent;
+  font-weight: 850;
+  opacity: 1;
 }
 .anime-folder-manager-list > .anime-folder-manager-item > .taxonomy-delete {
   position: absolute;
@@ -600,7 +605,12 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   min-height: 0;
   margin: 0;
   padding: 0;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
   border-radius: 50%;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--surface) 90%, var(--danger));
+  font: 800 .8rem/1 sans-serif;
+  opacity: 1;
 }
 .collection-category-manage-link { display: none; }
 @media (max-width: 700px) { .taxonomy-manager-item { min-height: 34px; } .taxonomy-item-name { max-width: 11rem; } }
