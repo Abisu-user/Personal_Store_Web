@@ -159,6 +159,34 @@ function isTraditionalChineseTranslation(value: string | null) {
   return Boolean(value && /[\u3400-\u9fff]/.test(value));
 }
 
+/**
+ * Older public-translation responses were occasionally persisted as repeated
+ * variants such as "蘋果（果）；蘋果（蘋果）".  Keep useful qualifiers, but remove
+ * parentheticals that merely repeat the headword and collapse duplicate parts
+ * before they reach the UI or are returned from the durable cache.
+ */
+function cleanChineseTranslation(value: string) {
+  const seen = new Set<string>();
+  const parts = value
+    .split(/[；;]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^(.+?)[（(]([^）)]+)[）)]$/);
+      if (!match) return part;
+      const headword = match[1].trim();
+      const qualifier = match[2].trim();
+      return qualifier === headword || headword.endsWith(qualifier) ? headword : part;
+    });
+
+  return parts.filter((part) => {
+    const key = part.replace(/[\s、，,。．]/g, "");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join("；");
+}
+
 /** A translation cache is deliberately separate from dictionary facts. */
 export async function resolveChineseTranslation(entry: DictionaryEntry) {
   const normalizedWord = normalizeDictionaryQuery(entry.language, entry.word);
@@ -170,8 +198,12 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
     const { data } = await admin.from("dictionary_translations").select("primary_meaning").eq("source_language", entry.language).eq("normalized_word", normalizedWord).eq("target_language", "zh-TW").maybeSingle();
     const cachedMeaning = data?.primary_meaning ?? null;
     if (isTraditionalChineseTranslation(cachedMeaning)) {
-      inMemoryTranslations.set(key, { value: cachedMeaning, expiresAt: Date.now() + 30 * 60 * 1000 });
-      return cachedMeaning;
+      const cleaned = cleanChineseTranslation(cachedMeaning);
+      inMemoryTranslations.set(key, { value: cleaned, expiresAt: Date.now() + 30 * 60 * 1000 });
+      if (cleaned !== cachedMeaning) {
+        void admin.from("dictionary_translations").upsert({ source_language: entry.language, normalized_word: normalizedWord, target_language: "zh-TW", primary_meaning: cleaned, meanings_json: [cleaned], source: "translation-cache-cleanup", verified: false, updated_at: new Date().toISOString() }, { onConflict: "source_language,normalized_word,target_language" });
+      }
+      return cleaned;
     }
   } catch {
     // The new shared table is optional until its migration is applied.
@@ -182,15 +214,16 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
   const translated = isTraditionalChineseTranslation(direct)
     ? direct
     : await translateDictionaryText(entry.meanings[0] || entry.word, "en", "zh-TW");
-  inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
-  if (translated) {
+  const cleanedTranslation = translated ? cleanChineseTranslation(translated) : null;
+  inMemoryTranslations.set(key, { value: cleanedTranslation, expiresAt: Date.now() + 30 * 60 * 1000 });
+  if (cleanedTranslation) {
     try {
-      await admin.from("dictionary_translations").upsert({ source_language: entry.language, normalized_word: normalizedWord, target_language: "zh-TW", primary_meaning: translated, meanings_json: [translated], source: "translation-fallback", verified: false, updated_at: new Date().toISOString() }, { onConflict: "source_language,normalized_word,target_language" });
+      await admin.from("dictionary_translations").upsert({ source_language: entry.language, normalized_word: normalizedWord, target_language: "zh-TW", primary_meaning: cleanedTranslation, meanings_json: [cleanedTranslation], source: "translation-fallback", verified: false, updated_at: new Date().toISOString() }, { onConflict: "source_language,normalized_word,target_language" });
     } catch {
       // Translation is still returned if persistence is unavailable.
     }
   }
-  return translated;
+  return cleanedTranslation;
 }
 
 function hasExactJapaneseForm(entry: DictionaryEntry, query: string) {
