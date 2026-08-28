@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type DictionaryLanguage = "ja" | "en";
@@ -291,13 +292,25 @@ function jishoEntries(query: string, data: JishoItem[]) {
   });
 }
 
-async function fetchJisho(query: string) {
-  return cached("japanese_dictionary", "ja", query, async () => {
-    const response = await fetchWithTimeout(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(query)}`, { headers: { Accept: "application/json", "User-Agent": "Personal-Vault/1.0 dictionary lookup" } });
+async function fetchJishoUpstream(query: string) {
+  const response = await fetchWithTimeout(`https://jisho.org/api/v1/search/words?keyword=${encodeURIComponent(query)}`, { headers: { Accept: "application/json", "User-Agent": "Personal-Vault/1.0 dictionary lookup" } });
     if (response.status === 404) return [] as DictionaryEntry[];
     if (!response.ok) throw new DictionaryProviderError("UPSTREAM", "Jisho", response.status);
     const body = await response.json() as { data?: JishoItem[] };
     return jishoEntries(query, body.data ?? []);
+}
+
+async function fetchJisho(query: string) {
+  const normalizedQuery = normalizeDictionaryQuery("ja", query);
+  return cached("japanese_dictionary", "ja", query, async () => {
+    // Vercel's Data Cache remains effective even if a cold server instance is
+    // created, while the Supabase cache remains the portable long-lived copy.
+    const fromDataCache = unstable_cache(
+      () => fetchJishoUpstream(query),
+      ["vocabulary", "jisho", normalizedQuery],
+      { revalidate: CACHE_HOURS * 60 * 60 },
+    );
+    return fromDataCache();
   });
 }
 
