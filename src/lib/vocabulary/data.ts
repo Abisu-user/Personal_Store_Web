@@ -5,7 +5,7 @@ import type { VocabularyCard, VocabularyDeck, VocabularyExample, VocabularyMeani
 const toCard = (row: any): VocabularyCard => ({
   id: row.id, language: row.language, word: row.word, reading: row.reading, kana: row.kana, romaji: row.romaji, pronunciation: row.pronunciation, ipa: row.ipa,
   primaryTranslation: row.primary_translation, englishDefinition: row.english_definition, partOfSpeech: row.part_of_speech, jlptLevel: row.jlpt_level, cefrLevel: row.cefr_level, frequency: row.frequency,
-  languageDetails: row.language_details ?? {}, notes: row.notes, isFavorite: row.is_favorite, masteryLevel: row.mastery_level, learningStatus: row.learning_status,
+  languageDetails: row.language_details ?? {}, notes: row.notes, isFavorite: row.is_favorite, masteryLevel: row.mastery_level, learningStatus: row.learning_status, sourceKind: row.source_kind ?? "custom", systemWordId: row.system_word_id ?? null,
   reviewCount: row.review_count, correctCount: row.correct_count, wrongCount: row.wrong_count, consecutiveCorrect: row.consecutive_correct, currentIntervalDays: row.current_interval_days,
   lastReviewedAt: row.last_reviewed_at, nextReviewAt: row.next_review_at, deletedAt: row.deleted_at, createdAt: row.created_at, updatedAt: row.updated_at, meanings: [], examples: [], tags: [], deckIds: [],
 });

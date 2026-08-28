@@ -9,7 +9,7 @@ export type VocabularyDeck = { id: string; name: string; description: string | n
 export type VocabularyCard = {
   id: string; language: VocabularyLanguage; word: string; reading: string | null; kana: string | null; romaji: string | null; pronunciation: string | null; ipa: string | null;
   primaryTranslation: string | null; englishDefinition: string | null; partOfSpeech: string | null; jlptLevel: string | null; cefrLevel: string | null; frequency: number | null;
-  languageDetails: Record<string, unknown>; notes: string | null; isFavorite: boolean; masteryLevel: number; learningStatus: VocabularyStatus;
+  languageDetails: Record<string, unknown>; notes: string | null; isFavorite: boolean; masteryLevel: number; learningStatus: VocabularyStatus; sourceKind?: "custom" | "catalog"; systemWordId?: string | null;
   reviewCount: number; correctCount: number; wrongCount: number; consecutiveCorrect: number; currentIntervalDays: number; lastReviewedAt: string | null; nextReviewAt: string | null; deletedAt: string | null; createdAt: string; updatedAt: string;
   meanings: VocabularyMeaning[]; examples: VocabularyExample[]; tags: VocabularyTag[]; deckIds: string[];
 };

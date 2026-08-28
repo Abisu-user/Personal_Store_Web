@@ -1,0 +1,127 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { getSecurityContext } from "@/lib/security/activity";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export const dynamic = "force-dynamic";
+
+const wordId = z.string().uuid();
+const actionSchema = z.object({
+  action: z.enum(["favorite", "unfavorite", "learn", "batchLearn"]),
+  ids: z.array(wordId).min(1).max(100),
+});
+
+const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });
+const safeSearch = (value: string) => value.replace(/[%,().]/g, " ").trim().slice(0, 80);
+
+function catalogCard(row: Record<string, unknown>, user: Record<string, unknown> | undefined) {
+  const status = user?.learning_status as string | undefined;
+  return {
+    id: row.id,
+    language: row.language,
+    collection: row.collection,
+    word: row.word,
+    reading: row.reading,
+    kana: row.kana,
+    romaji: row.romaji,
+    ipa: row.ipa,
+    meaningZhTw: row.meaning_zh_tw,
+    englishDefinition: row.english_definition,
+    partOfSpeech: row.part_of_speech,
+    jlptLevel: row.jlpt_level,
+    topics: row.topics ?? [],
+    importance: row.importance,
+    source: row.source,
+    license: row.license,
+    datasetVersion: row.dataset_version,
+    userState: {
+      favorite: Boolean(user?.is_favorite),
+      learning: status === "learning" || status === "reviewing" || status === "mastered",
+      mastered: status === "mastered",
+      cardId: user?.id ?? null,
+    },
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const context = await getSecurityContext();
+  if (!context) return jsonError("Unauthorized", 401);
+  const params = request.nextUrl.searchParams;
+  const language = params.get("language") === "en" ? "en" : "ja";
+  const collection = language === "ja" ? "jlpt_common" : "toeic_common";
+  const page = Math.max(1, Math.min(500, Number(params.get("page")) || 1));
+  const limit = Math.max(5, Math.min(30, Number(params.get("limit")) || 12));
+  const level = params.get("level");
+  const topic = params.get("topic");
+  const startsWith = params.get("startsWith");
+  const search = safeSearch(params.get("q") || "");
+
+  try {
+    const admin = createAdminClient();
+    let query = admin.from("system_vocabulary").select("*", { count: "exact" }).eq("language", language).eq("collection", collection).eq("is_active", true);
+    if (language === "ja" && level && ["N5", "N4", "N3", "N2", "N1"].includes(level)) query = query.eq("jlpt_level", level);
+    if (topic) query = query.contains("topics", [topic]);
+    if (startsWith) query = query.ilike("sort_key", `${safeSearch(startsWith)}%`);
+    if (search) query = query.or(`word.ilike.%${search}%,reading.ilike.%${search}%,meaning_zh_tw.ilike.%${search}%,romaji.ilike.%${search}%`);
+    const { data, error, count } = await query.order("sort_key", { ascending: true }).range((page - 1) * limit, page * limit - 1);
+    if (error) throw error;
+    const ids = (data ?? []).map((item) => item.id);
+    const { data: userRows, error: userError } = ids.length ? await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status").eq("user_id", context.userId).is("deleted_at", null).in("system_word_id", ids) : { data: [], error: null };
+    if (userError) throw userError;
+    const states = new Map((userRows ?? []).map((row) => [row.system_word_id, row]));
+    return NextResponse.json({ items: (data ?? []).map((row) => catalogCard(row, states.get(row.id))), page, limit, total: count ?? 0, hasNext: page * limit < (count ?? 0) }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch (error) {
+    console.error("[vocabulary.catalog] list failed", { message: error instanceof Error ? error.message : String(error) });
+    return jsonError("內建單字庫暫時無法讀取；若剛部署，請先套用資料庫 migration。", 503);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const context = await getSecurityContext();
+  if (!context) return jsonError("Unauthorized", 401);
+  const parsed = actionSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return jsonError("請選擇要處理的單字。", 400);
+  try {
+    const admin = createAdminClient();
+    const { data: systemWords, error: catalogError } = await admin.from("system_vocabulary").select("*").eq("is_active", true).in("id", parsed.data.ids);
+    if (catalogError) throw catalogError;
+    if ((systemWords?.length ?? 0) !== parsed.data.ids.length) return jsonError("找不到指定的內建單字。", 404);
+    const catalogWords = (systemWords ?? []).map((word) => word.word);
+    const { data: existing, error: existingError } = await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status,language,word").eq("user_id", context.userId).is("deleted_at", null).in("word", catalogWords);
+    if (existingError) throw existingError;
+    const current = new Map<string, (typeof existing extends (infer Row)[] | null ? Row : never)>();
+    for (const row of existing ?? []) {
+      if (row.system_word_id) current.set(row.system_word_id, row);
+    }
+    const wantsLearning = parsed.data.action === "learn" || parsed.data.action === "batchLearn";
+
+    for (const word of systemWords ?? []) {
+      const row = current.get(word.id) ?? (existing ?? []).find((item) => item.language === word.language && item.word === word.word);
+      if (parsed.data.action === "unfavorite") {
+        if (row) {
+          const { error } = await admin.from("vocabulary_cards").update({ is_favorite: false }).eq("id", row.id).eq("user_id", context.userId);
+          if (error) throw error;
+        }
+        continue;
+      }
+      if (row) {
+        const patch = wantsLearning ? { system_word_id: word.id, source_kind: "catalog", learning_status: row.learning_status === "paused" ? "learning" : row.learning_status, next_review_at: new Date().toISOString() } : { system_word_id: word.id, source_kind: "catalog", is_favorite: true };
+        const { error } = await admin.from("vocabulary_cards").update(patch).eq("id", row.id).eq("user_id", context.userId);
+        if (error) throw error;
+        continue;
+      }
+      const { data: created, error: createError } = await admin.from("vocabulary_cards").insert({
+        user_id: context.userId, system_word_id: word.id, source_kind: "catalog", language: word.language, word: word.word, reading: word.reading, kana: word.kana, romaji: word.romaji, ipa: word.ipa,
+        primary_translation: word.meaning_zh_tw, english_definition: word.english_definition, part_of_speech: word.part_of_speech, jlpt_level: word.jlpt_level,
+        language_details: { source: word.source, license: word.license, catalogVersion: word.dataset_version }, is_favorite: parsed.data.action === "favorite", learning_status: wantsLearning ? "learning" : "paused", next_review_at: new Date().toISOString(),
+      }).select("id").single();
+      if (createError) throw createError;
+      const { error: meaningError } = await admin.from("vocabulary_meanings").insert({ card_id: created.id, meaning: word.meaning_zh_tw, language: "zh-TW", part_of_speech: word.part_of_speech, is_primary: true, sort_order: 0 });
+      if (meaningError) throw meaningError;
+    }
+    return NextResponse.json({ ok: true, action: parsed.data.action, affected: parsed.data.ids.length });
+  } catch (error) {
+    console.error("[vocabulary.catalog] mutation failed", { message: error instanceof Error ? error.message : String(error) });
+    return jsonError("無法更新你的單字庫，請稍後再試。", 503);
+  }
+}
