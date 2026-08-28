@@ -19,6 +19,7 @@ export async function POST(request: NextRequest) {
     if (message === "AI_NOT_CONFIGURED") return NextResponse.json({ error: "AI 單字助手尚未設定，仍可使用字典查詢。" }, { status: 503 });
     if (message === "AI_UPSTREAM_429") return NextResponse.json({ error: "AI 查詢太頻繁，請稍後再試。", retryAfterSeconds: 60 }, { status: 429, headers: { "Retry-After": "60" } });
     if (message === "AI_UPSTREAM_401" || message === "AI_UPSTREAM_403") return NextResponse.json({ error: "AI 單字助手設定無法驗證，請稍後再試。" }, { status: 503 });
+    if (message === "AI_TIMEOUT") return NextResponse.json({ error: "AI 回應較慢，請再試一次；字典查詢不受影響。" }, { status: 504 });
     return NextResponse.json({ error: "AI 單字助手目前無法使用，仍可以使用字典查詢。" }, { status: 503 });
   }
 }

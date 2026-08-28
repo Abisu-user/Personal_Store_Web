@@ -5,7 +5,7 @@ export type VocabularyAiAction = "explain" | "compare" | "translate" | "autocomp
 export type VocabularyAiResult = { answer: string; examples: { sentence: string; translation: string }[]; notes: string[]; suggestedCard?: Record<string, unknown> };
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase();
-const maxDuration = 18_000;
+const maxDuration = 12_000;
 
 function instruction(action: VocabularyAiAction, language: "ja" | "en" | "auto") {
   const task = action === "compare" ? "比較字詞差異、語感、典型使用時機與對照例句" : action === "translate" ? "翻譯，並說明關鍵語法與可加入單字庫的重點字" : action === "autocomplete" ? "補全單字卡欄位；詞性、讀音、JLPT／CEFR 等無法確認時必須填「未確認」" : "解釋單字的核心意思、語感、常見搭配與使用時機";
@@ -25,6 +25,9 @@ async function callOpenAi(action: VocabularyAiAction, language: "ja" | "en" | "a
     if (!text) throw new Error("AI_EMPTY_RESPONSE");
     const parsed = JSON.parse(text) as Partial<VocabularyAiResult>;
     return { answer: typeof parsed.answer === "string" ? parsed.answer : "AI 未提供可用說明。", examples: Array.isArray(parsed.examples) ? parsed.examples.filter((item): item is { sentence: string; translation: string } => Boolean(item?.sentence && item?.translation)).slice(0, 4) : [], notes: Array.isArray(parsed.notes) ? parsed.notes.filter((item): item is string => typeof item === "string").slice(0, 8) : [], suggestedCard: parsed.suggestedCard && typeof parsed.suggestedCard === "object" ? parsed.suggestedCard : undefined };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("AI_TIMEOUT");
+    throw error;
   } finally { clearTimeout(timeout); }
 }
 
