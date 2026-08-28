@@ -1221,26 +1221,29 @@ export function AnimeWorkspace({
               ＋ 新增成人作品
             </button>
           </div>
-          <div className="anime-tabs" role="tablist" aria-label="成人內容功能">
-            <button
-              className={adultView === "library" ? "active" : ""}
-              onClick={() => setAdultView("library")}
-              type="button"
-            >
-              我的動漫
-            </button>
-            <button
-              className={adultView === "discover" ? "active" : ""}
-              onClick={() => setAdultView("discover")}
-              type="button"
-            >
-              搜尋／探索
-            </button>
-          </div>
           {adultView === "library" ? (
             <>
               <div className="anime-filter-bar anime-adult-filter-bar">
                 <div className="anime-filter-scroll">
+                  <div
+                    className="anime-tabs anime-adult-library-tabs"
+                    role="tablist"
+                    aria-label="成人內容功能"
+                  >
+                    <button
+                      className={adultView === "library" ? "active" : ""}
+                      onClick={() => setAdultView("library")}
+                      type="button"
+                    >
+                      我的動漫
+                    </button>
+                    <button
+                      onClick={() => setAdultView("discover")}
+                      type="button"
+                    >
+                      搜尋／探索
+                    </button>
+                  </div>
                   <AnimeFolderNavigation
                     folders={adultData.folders}
                     inline
@@ -1268,17 +1271,6 @@ export function AnimeWorkspace({
                   value={adultQuery}
                 />
               </div>
-              {adultLibraryView === "trash" && (
-                <div className="anime-bulk-toolbar">
-                  <button
-                    className="secondary-button compact"
-                    onClick={() => setAdultLibraryView("library")}
-                    type="button"
-                  >
-                    返回我的動漫
-                  </button>
-                </div>
-              )}
               {adultLibraryView === "library" ? (
                 <>
                   <section
@@ -1404,11 +1396,21 @@ export function AnimeWorkspace({
               )}
             </>
           ) : (
-            <AnimeDiscovery
-              adultMode
-              library={adultData.library}
-              onAdd={setAdultPrefill}
-            />
+            <>
+              <div className="anime-tabs" role="tablist" aria-label="成人內容功能">
+                <button onClick={() => setAdultView("library")} type="button">
+                  我的動漫
+                </button>
+                <button className="active" type="button">
+                  搜尋／探索
+                </button>
+              </div>
+              <AnimeDiscovery
+                adultMode
+                library={adultData.library}
+                onAdd={setAdultPrefill}
+              />
+            </>
           )}
         </section>
       )}
@@ -1582,17 +1584,6 @@ export function AnimeWorkspace({
               篩選{filter === "all" ? "" : `：${animeStatusLabels[filter]}`}
             </button>
           </div>
-          {libraryView === "trash" && (
-            <div className="anime-bulk-toolbar">
-              <button
-                className="secondary-button compact"
-                onClick={() => setLibraryView("library")}
-                type="button"
-              >
-                返回我的動漫
-              </button>
-            </div>
-          )}
           {libraryView === "library" ? (
             <>
               <section className="anime-category-bar" aria-label="動漫類別">

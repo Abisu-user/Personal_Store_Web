@@ -588,6 +588,7 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .bulk-mode-label { color: var(--brand); font-size: .82rem; }
 .anime-filter-scroll .anime-folder-bar-inline,
 .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll { display: contents; }
+.anime-filter-scroll .anime-adult-library-tabs { display: contents; }
 .anime-filter-scroll .anime-category-utility {
   min-width: 0;
   min-height: 38px;
