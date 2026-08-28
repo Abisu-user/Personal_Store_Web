@@ -1238,15 +1238,32 @@ export function AnimeWorkspace({
                 aria-label="成人內容功能"
               >
                 <button
-                  className={adultView === "library" ? "active" : ""}
-                  onClick={() => setAdultView("library")}
+                  className={
+                    adultView === "library" &&
+                    adultLibraryView === "library" &&
+                    !adultFolderFilter &&
+                    !adultCategoryFilter
+                      ? "active"
+                      : ""
+                  }
+                  onClick={() => {
+                    setAdultView("library");
+                    setAdultLibraryView("library");
+                    setAdultFolderFilter(null);
+                    setAdultCategoryFilter(null);
+                  }}
                   type="button"
                 >
                   我的動漫
                 </button>
                 <button
                   className={adultView === "discover" ? "active" : ""}
-                  onClick={() => setAdultView("discover")}
+                  onClick={() => {
+                    setAdultView("discover");
+                    setAdultLibraryView("library");
+                    setAdultFolderFilter(null);
+                    setAdultCategoryFilter(null);
+                  }}
                   type="button"
                 >
                   搜尋／探索
@@ -1268,6 +1285,8 @@ export function AnimeWorkspace({
                 }
                 onTrash={() => {
                   setAdultView("library");
+                  setAdultFolderFilter(null);
+                  setAdultCategoryFilter(null);
                   void openTrash("adult");
                 }}
                 scope="adult"
