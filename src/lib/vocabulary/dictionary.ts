@@ -95,39 +95,55 @@ export function detectLookupInputLanguage(value: string): LookupInputLanguage {
   return "en";
 }
 
+async function googleTranslate(value: string, source: "zh-TW" | "ja" | "en", target: "zh-TW" | "ja" | "en") {
+  const url = new URL("https://translate.googleapis.com/translate_a/single");
+  url.searchParams.set("client", "gtx");
+  url.searchParams.set("sl", source);
+  url.searchParams.set("tl", target);
+  url.searchParams.append("dt", "t");
+  url.searchParams.set("q", value);
+  const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, 4_000);
+  if (!response.ok) throw new DictionaryProviderError("UPSTREAM", "Google Translate", response.status);
+  const body = await response.json() as Array<Array<Array<string | null>>>;
+  return body[0]?.map((part) => part[0] ?? "").join("").trim() || null;
+}
+
+async function myMemoryTranslate(value: string, source: "zh-TW" | "ja" | "en", target: "zh-TW" | "ja" | "en") {
+  const url = new URL("https://api.mymemory.translated.net/get");
+  url.searchParams.set("q", value);
+  url.searchParams.set("langpair", `${source}|${target}`);
+  const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, 5_000);
+  if (!response.ok) throw new DictionaryProviderError("UPSTREAM", "MyMemory Translate", response.status);
+  const body = await response.json() as { responseStatus?: number; responseData?: { translatedText?: string } };
+  if (body.responseStatus && body.responseStatus !== 200) throw new DictionaryProviderError("UPSTREAM", "MyMemory Translate", body.responseStatus);
+  return body.responseData?.translatedText?.trim() || null;
+}
+
 export async function translateDictionaryText(value: string, source: "zh-TW" | "ja" | "en", target: "zh-TW" | "ja" | "en") {
   if (!value.trim() || source === target) return value.trim() || null;
   const key = `${source}:${target}:${normalize(value)}`;
   const memory = inMemoryTranslations.get(key);
   if (memory && memory.expiresAt > Date.now()) return memory.value;
   const startedAt = Date.now();
-  try {
-    const url = new URL("https://translate.googleapis.com/translate_a/single");
-    url.searchParams.set("client", "gtx");
-    url.searchParams.set("sl", source);
-    url.searchParams.set("tl", target);
-    url.searchParams.append("dt", "t");
-    url.searchParams.set("q", value);
-    // This public endpoint can reject non-browser-looking custom user agents from serverless regions.
-    const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, 6_000);
-    if (!response.ok) throw new DictionaryProviderError("UPSTREAM", "Google Translate", response.status);
-    const body = await response.json() as Array<Array<Array<string | null>>>;
-    const translated = body[0]?.map((part) => part[0] ?? "").join("").trim() || null;
-    inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
-    return translated;
-  } catch (error) {
-    console.warn("[vocabulary.translation] fallback unavailable", {
-      source,
-      target,
-      inputLength: value.length,
-      durationMs: Date.now() - startedAt,
-      code: error instanceof DictionaryProviderError ? error.code : "UNKNOWN",
-      upstreamStatus: error instanceof DictionaryProviderError ? error.status : undefined,
-      message: error instanceof Error ? error.message : String(error),
-    });
-    inMemoryTranslations.set(key, { value: null, expiresAt: Date.now() + 2 * 60 * 1000 });
-    return null;
+  const providers: Array<[string, () => Promise<string | null>]> = [
+    ["Google Translate", () => googleTranslate(value, source, target)],
+    ["MyMemory Translate", () => myMemoryTranslate(value, source, target)],
+  ];
+  const failures: Array<Record<string, unknown>> = [];
+  for (const [provider, request] of providers) {
+    try {
+      const translated = await request();
+      if (!translated) throw new Error("EMPTY_TRANSLATION");
+      inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
+      console.info("[vocabulary.translation] success", { provider, source, target, inputLength: value.length, durationMs: Date.now() - startedAt });
+      return translated;
+    } catch (error) {
+      failures.push({ provider, code: error instanceof DictionaryProviderError ? error.code : "UNKNOWN", upstreamStatus: error instanceof DictionaryProviderError ? error.status : undefined, message: error instanceof Error ? error.message : String(error) });
+    }
   }
+  console.warn("[vocabulary.translation] providers unavailable", { source, target, inputLength: value.length, durationMs: Date.now() - startedAt, failures });
+  inMemoryTranslations.set(key, { value: null, expiresAt: Date.now() + 2 * 60 * 1000 });
+  return null;
 }
 
 function translationKey(language: DictionaryLanguage, word: string) {
