@@ -1,44 +1,152 @@
 "use client";
 
-import { CSSProperties, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  CSSProperties,
+  FormEvent,
+  PointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
-import { CoverImageField, type CoverSelection, uploadCover } from "@/components/content/cover-image-field";
+import {
+  CoverImageField,
+  type CoverSelection,
+  uploadCover,
+} from "@/components/content/cover-image-field";
 import { BookmarkDisplay, readAppearance } from "@/lib/appearance/preferences";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
-import { readClientResource, writeClientResource } from "@/lib/pwa/client-resource-cache";
+import {
+  readClientResource,
+  writeClientResource,
+} from "@/lib/pwa/client-resource-cache";
 
 type SystemView = "all" | "favorite" | "pinned" | "archived" | "trash";
 type View = SystemView | `folder:${string}`;
-type Preview = { hostname: string; title: string | null; imageUrl: string | null; faviconUrl: string | null };
-type Confirmation = { title: string; description: string; confirmLabel?: string; action: () => Promise<void> };
-type RenameTarget = { type: "category"; id: string; value: string } | { type: "folder"; id: SystemView; value: string } | { type: "bookmark_folder"; id: string; value: string };
-const labels: Record<SystemView, string> = { all: "未整理", favorite: "我的最愛", pinned: "置頂", archived: "封存", trash: "垃圾桶" };
+type Preview = {
+  hostname: string;
+  title: string | null;
+  imageUrl: string | null;
+  faviconUrl: string | null;
+};
+type Confirmation = {
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  action: () => Promise<void>;
+};
+type RenameTarget =
+  | { type: "category"; id: string; value: string }
+  | { type: "folder"; id: SystemView; value: string }
+  | { type: "bookmark_folder"; id: string; value: string };
+const labels: Record<SystemView, string> = {
+  all: "未整理",
+  favorite: "我的最愛",
+  pinned: "置頂",
+  archived: "封存",
+  trash: "垃圾桶",
+};
 const folderStorageKey = "personal-vault:bookmark-system-folders:v1";
 const quickFolderStorageKey = "personal-vault:bookmark-quick-folders:v1";
 type FolderSettings = Record<SystemView, { label: string; visible: boolean }>;
-const defaultFolderSettings: FolderSettings = { all: { label: "未整理", visible: true }, favorite: { label: "我的最愛", visible: true }, pinned: { label: "置頂", visible: true }, archived: { label: "封存", visible: true }, trash: { label: "垃圾桶", visible: true } };
-const emptyBookmarks: BookmarksWorkspaceData = { bookmarks: [], categories: [], folders: [], tags: [] };
+const defaultFolderSettings: FolderSettings = {
+  all: { label: "未整理", visible: true },
+  favorite: { label: "我的最愛", visible: true },
+  pinned: { label: "置頂", visible: true },
+  archived: { label: "封存", visible: true },
+  trash: { label: "垃圾桶", visible: true },
+};
+const emptyBookmarks: BookmarksWorkspaceData = {
+  bookmarks: [],
+  categories: [],
+  folders: [],
+  tags: [],
+};
 
 function readFolderSettings(): FolderSettings {
   try {
-    const value = JSON.parse(window.localStorage.getItem(folderStorageKey) ?? "{}") as Partial<FolderSettings>;
-    return (Object.keys(defaultFolderSettings) as SystemView[]).reduce((next, key) => ({ ...next, [key]: { label: key === "all" ? "未整理" : typeof value[key]?.label === "string" && value[key].label.trim() ? value[key].label.trim().slice(0, 20) : labels[key], visible: key === "all" ? true : typeof value[key]?.visible === "boolean" ? value[key].visible : true } }), {} as FolderSettings);
-  } catch { return defaultFolderSettings; }
+    const value = JSON.parse(
+      window.localStorage.getItem(folderStorageKey) ?? "{}",
+    ) as Partial<FolderSettings>;
+    return (Object.keys(defaultFolderSettings) as SystemView[]).reduce(
+      (next, key) => ({
+        ...next,
+        [key]: {
+          label:
+            key === "all"
+              ? "未整理"
+              : typeof value[key]?.label === "string" && value[key].label.trim()
+                ? value[key].label.trim().slice(0, 20)
+                : labels[key],
+          visible:
+            key === "all"
+              ? true
+              : typeof value[key]?.visible === "boolean"
+                ? value[key].visible
+                : true,
+        },
+      }),
+      {} as FolderSettings,
+    );
+  } catch {
+    return defaultFolderSettings;
+  }
 }
-function readQuickFolderIds() { try { const value = JSON.parse(window.localStorage.getItem(quickFolderStorageKey) ?? "[]"); return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []; } catch { return []; } }
+function readQuickFolderIds() {
+  try {
+    const value = JSON.parse(
+      window.localStorage.getItem(quickFolderStorageKey) ?? "[]",
+    );
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 function WebsitePreview({ item }: { item: Bookmark }) {
-  const url = item.detail?.url; let hostname = "網站連結";
-  try { if (url) hostname = new URL(url).hostname.replace(/^www\./, ""); } catch { /* Existing records can be malformed. */ }
+  const url = item.detail?.url;
+  let hostname = "網站連結";
+  try {
+    if (url) hostname = new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    /* Existing records can be malformed. */
+  }
   const cover = item.coverImageUrl ?? item.detail?.favicon_url;
-  return <a className={cover ? "bookmark-preview has-image" : "bookmark-preview"} href={url} rel="noreferrer noopener" target="_blank"><span className="bookmark-preview-fallback">{hostname.slice(0, 1).toUpperCase()}</span>{cover && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={cover} />}<span>{hostname}</span></a>;
+  return (
+    <a
+      className={cover ? "bookmark-preview has-image" : "bookmark-preview"}
+      href={url}
+      rel="noreferrer noopener"
+      target="_blank"
+    >
+      <span className="bookmark-preview-fallback">
+        {hostname.slice(0, 1).toUpperCase()}
+      </span>
+      {cover && (
+        <img alt="" loading="lazy" referrerPolicy="no-referrer" src={cover} />
+      )}
+      <span>{hostname}</span>
+    </a>
+  );
 }
 
-function expiry(value: string) { const days = Math.ceil(Math.max(0, new Date(value).getTime() + 30 * 86_400_000 - Date.now()) / 86_400_000); return { urgent: days <= 3, text: days ? `剩餘 ${days} 天後自動刪除` : "即將自動刪除" }; }
+function expiry(value: string) {
+  const days = Math.ceil(
+    Math.max(0, new Date(value).getTime() + 30 * 86_400_000 - Date.now()) /
+      86_400_000,
+  );
+  return {
+    urgent: days <= 3,
+    text: days ? `剩餘 ${days} 天後自動刪除` : "即將自動刪除",
+  };
+}
 
 function BookmarkCoverField({ initialUrl }: { initialUrl?: string | null }) {
   const [ticket, setTicket] = useState("");
@@ -46,117 +154,2290 @@ function BookmarkCoverField({ initialUrl }: { initialUrl?: string | null }) {
   const latestRequest = useRef(0);
   async function change(selection: CoverSelection) {
     const request = ++latestRequest.current;
-    setTicket(""); setCoverError(null);
+    setTicket("");
+    setCoverError(null);
     if (!selection) return;
     try {
       const nextTicket = await uploadCover(selection);
       if (request === latestRequest.current) setTicket(nextTicket ?? "");
     } catch (error) {
-      if (request === latestRequest.current) setCoverError(error instanceof Error ? error.message : "無法處理自訂封面。");
+      if (request === latestRequest.current)
+        setCoverError(
+          error instanceof Error ? error.message : "無法處理自訂封面。",
+        );
     }
   }
-  return <div className="bookmark-custom-cover"><CoverImageField initialUrl={initialUrl} onChange={(selection) => void change(selection)} /><input name="coverTicket" type="hidden" value={ticket} />{coverError && <p className="notice error">{coverError}</p>}{!ticket && <p className="hint">未上傳時會使用網站自動封面；若網站沒有圖片則顯示預設封面。</p>}</div>;
+  return (
+    <div className="bookmark-custom-cover">
+      <CoverImageField
+        initialUrl={initialUrl}
+        onChange={(selection) => void change(selection)}
+      />
+      <input name="coverTicket" type="hidden" value={ticket} />
+      {coverError && <p className="notice error">{coverError}</p>}
+      {!ticket && (
+        <p className="hint">
+          未上傳時會使用網站自動封面；若網站沒有圖片則顯示預設封面。
+        </p>
+      )}
+    </div>
+  );
 }
 
-function BookmarkCollectionSettings({ categories = [], folders, favorite = false, pinned = false, archived = false, folderId = "", categoryId = "", coverImageUrl }: { categories?: BookmarksWorkspaceData["categories"]; folders: BookmarksWorkspaceData["folders"]; favorite?: boolean; pinned?: boolean; archived?: boolean; folderId?: string; categoryId?: string; coverImageUrl?: string | null }) {
+function BookmarkCollectionSettings({
+  categories = [],
+  folders,
+  favorite = false,
+  pinned = false,
+  archived = false,
+  folderId = "",
+  categoryId = "",
+  coverImageUrl,
+}: {
+  categories?: BookmarksWorkspaceData["categories"];
+  folders: BookmarksWorkspaceData["folders"];
+  favorite?: boolean;
+  pinned?: boolean;
+  archived?: boolean;
+  folderId?: string;
+  categoryId?: string;
+  coverImageUrl?: string | null;
+}) {
   const [selectedFolderId, setSelectedFolderId] = useState(folderId);
   const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
-  const scopedCategories = categories.filter((item) => (item.folder_id ?? "") === selectedFolderId);
-  const selectFolder = (nextFolderId: string) => { setSelectedFolderId(nextFolderId); setSelectedCategoryId(""); };
-  return <><details className="collection-settings"><summary>收藏設定 <small>可複選</small></summary><div className="collection-settings-menu"><label><input defaultChecked={favorite} name="favorite" type="checkbox" /> 我的最愛</label><label><input defaultChecked={pinned} name="pinned" type="checkbox" /> 置頂</label><label><input defaultChecked={archived} name="archived" type="checkbox" /> 封存</label><div className="collection-settings-divider" /><span>資料夾（選擇一個）</span><label><input checked={!selectedFolderId} name="bookmarkFolderId" onChange={() => selectFolder("")} type="radio" value="" /> 不放入資料夾</label>{folders.filter((item) => item.is_visible || item.id === folderId).map((item) => <label key={item.id}><input checked={selectedFolderId === item.id} name="bookmarkFolderId" onChange={() => selectFolder(item.id)} type="radio" value={item.id} /> {item.name}{item.is_visible ? "" : "（已隱藏）"}</label>)}<div className="collection-settings-divider" /><label>類別<select name="categoryId" onChange={(event) => setSelectedCategoryId(event.target.value)} value={scopedCategories.some((item) => item.id === selectedCategoryId) ? selectedCategoryId : ""}><option value="">未分類</option>{scopedCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>{!scopedCategories.length && <small>此資料夾尚未建立類別。</small>}</div></details><BookmarkCoverField initialUrl={coverImageUrl} /></>;
+  const scopedCategories = categories.filter(
+    (item) => (item.folder_id ?? "") === selectedFolderId,
+  );
+  const selectFolder = (nextFolderId: string) => {
+    setSelectedFolderId(nextFolderId);
+    setSelectedCategoryId("");
+  };
+  return (
+    <>
+      <details className="collection-settings">
+        <summary>
+          收藏設定 <small>可複選</small>
+        </summary>
+        <div className="collection-settings-menu">
+          <label>
+            <input defaultChecked={favorite} name="favorite" type="checkbox" />{" "}
+            我的最愛
+          </label>
+          <label>
+            <input defaultChecked={pinned} name="pinned" type="checkbox" /> 置頂
+          </label>
+          <label>
+            <input defaultChecked={archived} name="archived" type="checkbox" />{" "}
+            封存
+          </label>
+          <div className="collection-settings-divider" />
+          <span>資料夾（選擇一個）</span>
+          <label>
+            <input
+              checked={!selectedFolderId}
+              name="bookmarkFolderId"
+              onChange={() => selectFolder("")}
+              type="radio"
+              value=""
+            />{" "}
+            不放入資料夾
+          </label>
+          {folders
+            .filter((item) => item.is_visible || item.id === folderId)
+            .map((item) => (
+              <label key={item.id}>
+                <input
+                  checked={selectedFolderId === item.id}
+                  name="bookmarkFolderId"
+                  onChange={() => selectFolder(item.id)}
+                  type="radio"
+                  value={item.id}
+                />{" "}
+                {item.name}
+                {item.is_visible ? "" : "（已隱藏）"}
+              </label>
+            ))}
+          <div className="collection-settings-divider" />
+          <label>
+            類別
+            <select
+              name="categoryId"
+              onChange={(event) => setSelectedCategoryId(event.target.value)}
+              value={
+                scopedCategories.some((item) => item.id === selectedCategoryId)
+                  ? selectedCategoryId
+                  : ""
+              }
+            >
+              <option value="">未分類</option>
+              {scopedCategories.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {!scopedCategories.length && <small>此資料夾尚未建立類別。</small>}
+        </div>
+      </details>
+      <BookmarkCoverField initialUrl={coverImageUrl} />
+    </>
+  );
 }
 
-function BookmarkFolderLockGate({ folders, onOpen, onRefresh }: { folders: BookmarksWorkspaceData["folders"]; onOpen: (folderId: string) => void; onRefresh: () => Promise<void> }) {
-  const [lockedFolder, setLockedFolder] = useState<BookmarksWorkspaceData["folders"][number] | null>(null);
+function BookmarkFolderLockGate({
+  folders,
+  onOpen,
+  onRefresh,
+}: {
+  folders: BookmarksWorkspaceData["folders"];
+  onOpen: (folderId: string) => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const [lockedFolder, setLockedFolder] = useState<
+    BookmarksWorkspaceData["folders"][number] | null
+  >(null);
   useEffect(() => {
     const intercept = (event: MouseEvent) => {
-      const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".bookmark-view-tabs-scroll button");
+      const button = (
+        event.target as HTMLElement | null
+      )?.closest<HTMLButtonElement>(".bookmark-view-tabs-scroll button");
       if (!button) return;
-      const folder = folders.find((candidate) => candidate.is_locked && button.textContent?.includes(candidate.name));
+      const folder = folders.find(
+        (candidate) =>
+          candidate.is_locked && button.textContent?.includes(candidate.name),
+      );
       if (!folder) return;
-      event.preventDefault(); event.stopPropagation(); setLockedFolder(folder);
+      event.preventDefault();
+      event.stopPropagation();
+      setLockedFolder(folder);
     };
     document.addEventListener("click", intercept, true);
     return () => document.removeEventListener("click", intercept, true);
   }, [folders]);
-  return <FolderUnlockDialog folder={lockedFolder} kind="bookmark" onClose={() => setLockedFolder(null)} onUnlocked={async () => { const folderId = lockedFolder?.id; await onRefresh(); if (folderId) onOpen(folderId); }} />;
+  return (
+    <FolderUnlockDialog
+      folder={lockedFolder}
+      kind="bookmark"
+      onClose={() => setLockedFolder(null)}
+      onUnlocked={async () => {
+        const folderId = lockedFolder?.id;
+        await onRefresh();
+        if (folderId) onOpen(folderId);
+      }}
+    />
+  );
 }
 
-function BookmarkResultCard({ item, selected, onSelect, onOpen }: { item: Bookmark; selected: boolean; onSelect: () => void; onOpen: () => void }) {
-  return <article className="bookmark-card" onClick={(event) => { if (!(event.target as HTMLElement).closest("a, input, button")) onOpen(); }}><label className="item-select"><input aria-label={`選擇 ${item.title}`} checked={selected} onChange={onSelect} type="checkbox" /></label><WebsitePreview item={item} /><button aria-label={`查看 ${item.title} 的詳細資訊`} className="bookmark-card-content library-open" onClick={onOpen} type="button"><p className="bookmark-meta">{item.category?.name ?? "未分類"}{item.folder && ` · ${item.folder.name}`}</p><h3 className="bookmark-title">{item.title}</h3>{item.description && <p className="bookmark-description">{item.description}</p>}<div className="bookmark-status">{item.favorite && <span>★ 我的最愛</span>}{item.pinned && <span>⌖ 置頂</span>}{item.archived && <span>封存</span>}</div>{item.deletedAt && <p className={expiry(item.deletedAt).urgent ? "trash-expiry urgent" : "trash-expiry"}>{expiry(item.deletedAt).text}</p>}</button></article>;
+function BookmarkResultCard({
+  item,
+  selected,
+  onSelect,
+  onOpen,
+}: {
+  item: Bookmark;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <article
+      className="bookmark-card"
+      onClick={(event) => {
+        if (!(event.target as HTMLElement).closest("a, input, button"))
+          onOpen();
+      }}
+    >
+      <label className="item-select">
+        <input
+          aria-label={`選擇 ${item.title}`}
+          checked={selected}
+          onChange={onSelect}
+          type="checkbox"
+        />
+      </label>
+      <WebsitePreview item={item} />
+      <button
+        aria-label={`查看 ${item.title} 的詳細資訊`}
+        className="bookmark-card-content library-open"
+        onClick={onOpen}
+        type="button"
+      >
+        <p className="bookmark-meta">
+          {item.category?.name ?? "未分類"}
+          {item.folder && ` · ${item.folder.name}`}
+        </p>
+        <h3 className="bookmark-title">{item.title}</h3>
+        {item.description && (
+          <p className="bookmark-description">{item.description}</p>
+        )}
+        <div className="bookmark-status">
+          {item.favorite && <span>★ 我的最愛</span>}
+          {item.pinned && <span>⌖ 置頂</span>}
+          {item.archived && <span>封存</span>}
+        </div>
+        {item.deletedAt && (
+          <p
+            className={
+              expiry(item.deletedAt).urgent
+                ? "trash-expiry urgent"
+                : "trash-expiry"
+            }
+          >
+            {expiry(item.deletedAt).text}
+          </p>
+        )}
+      </button>
+    </article>
+  );
 }
 
 function BookmarkListSkeleton() {
-  return <>{Array.from({ length: 4 }, (_, index) => <article aria-hidden="true" className="bookmark-card bookmark-card-skeleton" key={index}><span className="skeleton-block skeleton-checkbox" /><span className="skeleton-block skeleton-bookmark-cover" /><div className="bookmark-card-content"><span className="skeleton-block skeleton-line short" /><span className="skeleton-block skeleton-line" /><span className="skeleton-block skeleton-line medium" /></div></article>)}</>;
+  return (
+    <>
+      {Array.from({ length: 4 }, (_, index) => (
+        <article
+          aria-hidden="true"
+          className="bookmark-card bookmark-card-skeleton"
+          key={index}
+        >
+          <span className="skeleton-block skeleton-checkbox" />
+          <span className="skeleton-block skeleton-bookmark-cover" />
+          <div className="bookmark-card-content">
+            <span className="skeleton-block skeleton-line short" />
+            <span className="skeleton-block skeleton-line" />
+            <span className="skeleton-block skeleton-line medium" />
+          </div>
+        </article>
+      ))}
+    </>
+  );
 }
 
-export function BookmarksWorkspace({ initialData, createMode = false }: { initialData?: BookmarksWorkspaceData; createMode?: boolean }) {
-  const router = useRouter(); const previewRequest = useRef<AbortController | null>(null);
-  const [data, setData] = useState(initialData ?? emptyBookmarks); const [loaded, setLoaded] = useState(Boolean(initialData)); const [view, setView] = useState<View>("all"); const [category, setCategory] = useState("all"); const [bookmarkFolder, setBookmarkFolder] = useState("all"); const [query, setQuery] = useState(""); const [error, setError] = useState<string | null>(null); const [success, setSuccess] = useState<string | null>(null); const [pending, setPending] = useState(false); const [chosen, setChosen] = useState<Set<string>>(new Set()); const [preview, setPreview] = useState<Preview | null>(null); const [previewError, setPreviewError] = useState<string | null>(null); const [draftUrl, setDraftUrl] = useState(""); const [draftTitle, setDraftTitle] = useState(""); const [draftDescription, setDraftDescription] = useState(""); const [editing, setEditing] = useState<Bookmark | null>(null); const [detailItem, setDetailItem] = useState<Bookmark | null>(null); const [newCategory, setNewCategory] = useState(""); const [newBookmarkFolder, setNewBookmarkFolder] = useState(""); const [folders, setFolders] = useState<FolderSettings>(defaultFolderSettings); const [quickFolderIds, setQuickFolderIds] = useState<string[]>([]); const [bookmarkDisplay, setBookmarkDisplay] = useState<BookmarkDisplay>("list"); const [bookmarkGridColumns, setBookmarkGridColumns] = useState(2); const [confirmation, setConfirmation] = useState<Confirmation | null>(null); const [renaming, setRenaming] = useState<RenameTarget | null>(null); const [categoryAddOpen, setCategoryAddOpen] = useState(false); const [categoryMoreOpen, setCategoryMoreOpen] = useState(false); const [categoryManagerOpen, setCategoryManagerOpen] = useState(false); const [folderAddOpen, setFolderAddOpen] = useState(false); const [folderManagerOpen, setFolderManagerOpen] = useState(false); const [categoryQuery, setCategoryQuery] = useState(""); const [inlineLimit, setInlineLimit] = useState(4); const [dragging, setDragging] = useState<{ kind: "category" | "folder"; id: string } | null>(null); const [managedCategories, setManagedCategories] = useState<BookmarksWorkspaceData["categories"]>([]); const [managedFolders, setManagedFolders] = useState<BookmarksWorkspaceData["folders"]>([]); const [removedCategoryIds, setRemovedCategoryIds] = useState<string[]>([]); const [removedFolderIds, setRemovedFolderIds] = useState<string[]>([]); const dragTimer = useRef<number | null>(null);
-  useEffect(() => { const timer = window.setTimeout(() => { setFolders(readFolderSettings()); setQuickFolderIds(readQuickFolderIds()); }, 0); return () => window.clearTimeout(timer); }, []);
-  useEffect(() => { const syncDisplay = () => { const appearance = readAppearance(); setBookmarkDisplay(appearance.bookmarkDisplay); setBookmarkGridColumns(appearance.bookmarkGridColumns); }; syncDisplay(); window.addEventListener("personal-vault:appearance", syncDisplay); return () => window.removeEventListener("personal-vault:appearance", syncDisplay); }, []);
+export function BookmarksWorkspace({
+  initialData,
+  createMode = false,
+}: {
+  initialData?: BookmarksWorkspaceData;
+  createMode?: boolean;
+}) {
+  const router = useRouter();
+  const previewRequest = useRef<AbortController | null>(null);
+  const [data, setData] = useState(initialData ?? emptyBookmarks);
+  const [loaded, setLoaded] = useState(Boolean(initialData));
+  const [view, setView] = useState<View>("all");
+  const [category, setCategory] = useState("all");
+  const [bookmarkFolder, setBookmarkFolder] = useState("all");
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [draftUrl, setDraftUrl] = useState("");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
+  const [editing, setEditing] = useState<Bookmark | null>(null);
+  const [detailItem, setDetailItem] = useState<Bookmark | null>(null);
+  const [newCategory, setNewCategory] = useState("");
+  const [newBookmarkFolder, setNewBookmarkFolder] = useState("");
+  const [folders, setFolders] = useState<FolderSettings>(defaultFolderSettings);
+  const [quickFolderIds, setQuickFolderIds] = useState<string[]>([]);
+  const [bookmarkDisplay, setBookmarkDisplay] =
+    useState<BookmarkDisplay>("list");
+  const [bookmarkGridColumns, setBookmarkGridColumns] = useState(2);
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  const [renaming, setRenaming] = useState<RenameTarget | null>(null);
+  const [categoryAddOpen, setCategoryAddOpen] = useState(false);
+  const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [folderAddOpen, setFolderAddOpen] = useState(false);
+  const [folderMoreOpen, setFolderMoreOpen] = useState(false);
+  const [folderManagerOpen, setFolderManagerOpen] = useState(false);
+  const [categoryQuery, setCategoryQuery] = useState("");
+  const [folderQuery, setFolderQuery] = useState("");
+  const [inlineLimit, setInlineLimit] = useState(2);
+  const [dragging, setDragging] = useState<{
+    kind: "category" | "folder";
+    id: string;
+  } | null>(null);
+  const [managedCategories, setManagedCategories] = useState<
+    BookmarksWorkspaceData["categories"]
+  >([]);
+  const [managedFolders, setManagedFolders] = useState<
+    BookmarksWorkspaceData["folders"]
+  >([]);
+  const [removedCategoryIds, setRemovedCategoryIds] = useState<string[]>([]);
+  const [removedFolderIds, setRemovedFolderIds] = useState<string[]>([]);
+  const dragTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setFolders(readFolderSettings());
+      setQuickFolderIds(readQuickFolderIds());
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    const syncDisplay = () => {
+      const appearance = readAppearance();
+      setBookmarkDisplay(appearance.bookmarkDisplay);
+      setBookmarkGridColumns(appearance.bookmarkGridColumns);
+    };
+    syncDisplay();
+    window.addEventListener("personal-vault:appearance", syncDisplay);
+    return () =>
+      window.removeEventListener("personal-vault:appearance", syncDisplay);
+  }, []);
   useEffect(() => () => previewRequest.current?.abort(), []);
-  useEffect(() => { if (!createMode) router.prefetch("/bookmarks"); }, [createMode, router]);
-  const load = useCallback(async () => { const response = await fetch("/api/bookmarks", { cache: "no-store" }); if (!response.ok) { setError("目前無法讀取書籤。"); return; } const next = await response.json() as BookmarksWorkspaceData; setData(next); setLoaded(true); if (!createMode) writeClientResource("bookmarks:standard", next); }, [createMode]);
+  useEffect(() => {
+    if (!createMode) router.prefetch("/bookmarks");
+  }, [createMode, router]);
+  const load = useCallback(async () => {
+    const response = await fetch("/api/bookmarks", { cache: "no-store" });
+    if (!response.ok) {
+      setError("目前無法讀取書籤。");
+      return;
+    }
+    const next = (await response.json()) as BookmarksWorkspaceData;
+    setData(next);
+    setLoaded(true);
+    if (!createMode) writeClientResource("bookmarks:standard", next);
+  }, [createMode]);
   useEffect(() => {
     if (createMode) return;
     let active = true;
-    const cached = readClientResource<BookmarksWorkspaceData>("bookmarks:standard");
-    if (cached) { setData(cached); setLoaded(true); }
-    const loadInitial = async () => { try { const response = await fetch("/api/bookmarks", { cache: "no-store" }); if (!response.ok) throw new Error("目前無法讀取書籤。"); const next = await response.json() as BookmarksWorkspaceData; if (!active) return; setData(next); setLoaded(true); writeClientResource("bookmarks:standard", next); } catch (cause) { if (active && !cached) setError(cause instanceof Error ? cause.message : "目前無法讀取書籤。"); } };
+    const cached =
+      readClientResource<BookmarksWorkspaceData>("bookmarks:standard");
+    if (cached) {
+      setData(cached);
+      setLoaded(true);
+    }
+    const loadInitial = async () => {
+      try {
+        const response = await fetch("/api/bookmarks", { cache: "no-store" });
+        if (!response.ok) throw new Error("目前無法讀取書籤。");
+        const next = (await response.json()) as BookmarksWorkspaceData;
+        if (!active) return;
+        setData(next);
+        setLoaded(true);
+        writeClientResource("bookmarks:standard", next);
+      } catch (cause) {
+        if (active && !cached)
+          setError(
+            cause instanceof Error ? cause.message : "目前無法讀取書籤。",
+          );
+      }
+    };
     void loadInitial();
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [createMode]);
-  useEffect(() => { if (loaded && !createMode) writeClientResource("bookmarks:standard", data); }, [createMode, data, loaded]);
-  useEffect(() => { if (!success) return; const timer = window.setTimeout(() => setSuccess(null), 3000); return () => window.clearTimeout(timer); }, [success]);
-  useEffect(() => { const updateLimit = () => { const width = window.innerWidth; setInlineLimit(width >= 1440 ? 5 : width >= 1080 ? 4 : width >= 760 ? 3 : 2); }; updateLimit(); window.addEventListener("resize", updateLimit); return () => window.removeEventListener("resize", updateLimit); }, []);
+  useEffect(() => {
+    if (loaded && !createMode) writeClientResource("bookmarks:standard", data);
+  }, [createMode, data, loaded]);
+  useEffect(() => {
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [success]);
+  useEffect(() => {
+    const updateLimit = () => {
+      const width = window.innerWidth;
+      // Keep room for the fixed 「更多」與垃圾桶 chips on a single line.
+      setInlineLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
+    };
+    updateLimit();
+    window.addEventListener("resize", updateLimit);
+    return () => window.removeEventListener("resize", updateLimit);
+  }, []);
   const activeFolderId = view.startsWith("folder:") ? view.slice(7) : null;
-  const scopedCategories = useMemo(() => data.categories.filter((item) => (item.folder_id ?? null) === activeFolderId), [activeFolderId, data.categories]);
-  const list = useMemo(() => data.bookmarks.filter((item) => { const quickFolderId = view.startsWith("folder:") ? view.slice(7) : null; if (view === "trash" ? !item.deletedAt : item.deletedAt) return false; if (view === "all" && (item.archived || item.folder)) return false; if (view === "favorite" && (!item.favorite || item.archived)) return false; if (view === "pinned" && (!item.pinned || item.archived)) return false; if (view === "archived" && !item.archived) return false; if (quickFolderId && (item.archived || item.folder?.id !== quickFolderId)) return false; const search = `${item.title} ${item.description ?? ""} ${item.detail?.url ?? ""}`.toLowerCase(); const inCategory = category === "all" || category === "unclassified" ? category === "all" || !item.category : item.category?.id === category; return inCategory && (bookmarkFolder === "all" || item.folder?.id === bookmarkFolder) && search.includes(query.toLowerCase()); }), [bookmarkFolder, category, data.bookmarks, query, view]);
-  const counts = useMemo(() => data.bookmarks.reduce<Record<SystemView, number>>((total, item) => { if (item.deletedAt) total.trash += 1; else if (item.archived) total.archived += 1; else { if (!item.folder) total.all += 1; if (item.favorite) total.favorite += 1; if (item.pinned) total.pinned += 1; } return total; }, { all: 0, favorite: 0, pinned: 0, archived: 0, trash: 0 }), [data.bookmarks]);
+  const scopedCategories = useMemo(
+    () =>
+      data.categories.filter(
+        (item) => (item.folder_id ?? null) === activeFolderId,
+      ),
+    [activeFolderId, data.categories],
+  );
+  const list = useMemo(
+    () =>
+      data.bookmarks.filter((item) => {
+        const quickFolderId = view.startsWith("folder:") ? view.slice(7) : null;
+        if (view === "trash" ? !item.deletedAt : item.deletedAt) return false;
+        if (view === "all" && (item.archived || item.folder)) return false;
+        if (view === "favorite" && (!item.favorite || item.archived))
+          return false;
+        if (view === "pinned" && (!item.pinned || item.archived)) return false;
+        if (view === "archived" && !item.archived) return false;
+        if (
+          quickFolderId &&
+          (item.archived || item.folder?.id !== quickFolderId)
+        )
+          return false;
+        const search =
+          `${item.title} ${item.description ?? ""} ${item.detail?.url ?? ""}`.toLowerCase();
+        const inCategory =
+          category === "all" || category === "unclassified"
+            ? category === "all" || !item.category
+            : item.category?.id === category;
+        return (
+          inCategory &&
+          (bookmarkFolder === "all" || item.folder?.id === bookmarkFolder) &&
+          search.includes(query.toLowerCase())
+        );
+      }),
+    [bookmarkFolder, category, data.bookmarks, query, view],
+  );
+  const counts = useMemo(
+    () =>
+      data.bookmarks.reduce<Record<SystemView, number>>(
+        (total, item) => {
+          if (item.deletedAt) total.trash += 1;
+          else if (item.archived) total.archived += 1;
+          else {
+            if (!item.folder) total.all += 1;
+            if (item.favorite) total.favorite += 1;
+            if (item.pinned) total.pinned += 1;
+          }
+          return total;
+        },
+        { all: 0, favorite: 0, pinned: 0, archived: 0, trash: 0 },
+      ),
+    [data.bookmarks],
+  );
   const selected = list.filter((item) => chosen.has(item.id));
-  const visibleBookmarkFolders = data.folders.filter((item) => item.is_visible).sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name, "zh-Hant"));
-  const keepSelectedVisible = <T extends { id: string }>(source: T[], selectedId: string | null) => { const first = source.slice(0, inlineLimit); const selectedItem = selectedId ? source.find((item) => item.id === selectedId) : null; if (!selectedItem || first.some((item) => item.id === selectedItem.id)) return first; return [...first.slice(0, Math.max(0, inlineLimit - 1)), selectedItem]; };
-  const displayBookmarkFolders = keepSelectedVisible(visibleBookmarkFolders, activeFolderId); const displayCategories = keepSelectedVisible(scopedCategories, category === "all" || category === "unclassified" ? null : category); const hasMoreBookmarkFolders = displayBookmarkFolders.length < visibleBookmarkFolders.length; const hasMoreCategories = displayCategories.length < scopedCategories.length;
+  const visibleBookmarkFolders = data.folders
+    .filter((item) => item.is_visible)
+    .sort(
+      (left, right) =>
+        left.sort_order - right.sort_order ||
+        left.name.localeCompare(right.name, "zh-Hant"),
+    );
+  const keepSelectedVisible = <T extends { id: string }>(
+    source: T[],
+    selectedId: string | null,
+  ) => {
+    const first = source.slice(0, inlineLimit);
+    const selectedItem = selectedId
+      ? source.find((item) => item.id === selectedId)
+      : null;
+    if (!selectedItem || first.some((item) => item.id === selectedItem.id))
+      return first;
+    return [...first.slice(0, Math.max(0, inlineLimit - 1)), selectedItem];
+  };
+  const displayBookmarkFolders = keepSelectedVisible(
+    visibleBookmarkFolders,
+    activeFolderId,
+  );
+  const displayCategories = keepSelectedVisible(
+    scopedCategories,
+    category === "all" || category === "unclassified" ? null : category,
+  );
+  const hasMoreBookmarkFolders =
+    displayBookmarkFolders.length < visibleBookmarkFolders.length;
+  const hasMoreCategories = displayCategories.length < scopedCategories.length;
 
-  async function onPreview() { const url = draftUrl.trim(); previewRequest.current?.abort(); setPreviewError(null); if (!url) { setPreview(null); return; } const controller = new AbortController(); previewRequest.current = controller; try { const response = await fetch("/api/bookmarks/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }), signal: controller.signal }); const value = await response.json().catch(() => null) as Preview | null; if (controller.signal.aborted) return; if (!response.ok || !value) { setPreview(null); setPreviewError("暫時無法取得預覽，仍可自行填寫標題後儲存。"); return; } setPreview(value); setDraftTitle((current) => current.trim() ? current : value.title ?? value.hostname); } catch (cause) { if (!(cause instanceof DOMException && cause.name === "AbortError")) { setPreview(null); setPreviewError("暫時無法取得預覽，仍可自行填寫標題後儲存。"); } } finally { if (previewRequest.current === controller) previewRequest.current = null; } }
-  async function create(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); setPending(true); setError(null); setSuccess(null); const response = await fetch("/api/bookmarks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: draftUrl, title: draftTitle, description: draftDescription, categoryId: form.get("categoryId") || null, bookmarkFolderId: form.get("bookmarkFolderId") || null, coverTicket: form.get("coverTicket") || null, favorite: form.get("favorite") === "on", pinned: form.get("pinned") === "on", archived: form.get("archived") === "on" }) }); setPending(false); if (!response.ok) { const body = await response.json().catch(() => null); setError(body?.error ?? "無法儲存書籤。"); return; } setSuccess("書籤已儲存，正在開啟收藏清單…"); router.replace("/bookmarks"); router.refresh(); }
-  async function saveEdit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!editing) return; const form = new FormData(event.currentTarget); setPending(true); setError(null); setSuccess(null); const title = String(form.get("title") ?? ""); const description = String(form.get("description") ?? ""); const categoryId = String(form.get("categoryId") ?? "") || null; const bookmarkFolderId = String(form.get("bookmarkFolderId") ?? "") || null; const coverTicket = String(form.get("coverTicket") ?? "") || null; const favorite = form.get("favorite") === "on"; const archived = form.get("archived") === "on"; const pinned = form.get("pinned") === "on" && !archived; const response = await fetch("/api/bookmarks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editing.id, url: editing.detail?.url ?? "https://example.com", title, description, categoryId, bookmarkFolderId, coverTicket, favorite, pinned, archived }) }); if (!response.ok) { setPending(false); setError("無法儲存修改。"); return; } await load(); setEditing(null); setSuccess("收藏已更新。"); setPending(false); }
-  async function update(id: string, action: "trash" | "restore") { setPending(true); setError(null); const response = await fetch("/api/bookmarks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action }) }); setPending(false); if (!response.ok) { setError("無法更新書籤。"); return; } setData((current) => ({ ...current, bookmarks: current.bookmarks.map((item) => item.id !== id ? item : { ...item, deletedAt: action === "trash" ? new Date().toISOString() : null, pinned: action === "trash" ? false : item.pinned, archived: action === "restore" ? false : item.archived }) })); setSuccess(action === "trash" ? "已移至垃圾桶。" : "書籤已還原。"); setConfirmation(null); }
-  async function permanentlyRemove(id: string) { setPending(true); setError(null); const response = await fetch("/api/bookmarks", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }); setPending(false); if (!response.ok) { setError("無法永久刪除書籤。"); return; } setData((current) => ({ ...current, bookmarks: current.bookmarks.filter((item) => item.id !== id) })); setSuccess("書籤已永久刪除。"); setConfirmation(null); }
-  async function trashSelected() { if (!selected.length) return; const ids = selected.map((item) => item.id); setPending(true); setError(null); const response = await fetch("/api/bookmarks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, action: "trash" }) }); setPending(false); if (!response.ok) { setError("無法批量移至垃圾桶。"); return; } setChosen(new Set()); setData((current) => ({ ...current, bookmarks: current.bookmarks.map((item) => ids.includes(item.id) ? { ...item, deletedAt: new Date().toISOString(), pinned: false } : item) })); setSuccess(`已將 ${ids.length} 筆收藏移至垃圾桶。`); setConfirmation(null); }
-  async function permanentlyRemoveSelected() { if (!selected.length) return; const ids = selected.map((item) => item.id); setPending(true); setError(null); const response = await fetch("/api/bookmarks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, action: "permanent" }) }); setPending(false); if (!response.ok) { setError("無法批量永久刪除書籤。"); return; } setChosen(new Set()); setData((current) => ({ ...current, bookmarks: current.bookmarks.filter((item) => !ids.includes(item.id)) })); setSuccess(`已永久刪除 ${ids.length} 筆收藏。`); setConfirmation(null); }
-  async function addCategory(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const name = newCategory.trim(); if (!name) return; setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "category", name, contentKind: "bookmark", folderId: activeFolderId }) }); const payload = await response.json().catch(() => null) as { item?: BookmarksWorkspaceData["categories"][number] } | null; setPending(false); if (!response.ok || !payload?.item) { setError("無法新增類別，名稱可能已存在。"); return; } setData((current) => ({ ...current, categories: [...current.categories, payload.item!].sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name, "zh-Hant")) })); setNewCategory(""); setCategoryAddOpen(false); setSuccess("類別已新增。 "); }
-  async function addBookmarkFolder(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const name = newBookmarkFolder.trim(); if (!name) return; setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "bookmark_folder", name }) }); const payload = await response.json().catch(() => null) as { item?: BookmarksWorkspaceData["folders"][number] } | null; setPending(false); if (!response.ok || !payload?.item) { setError("無法新增收藏資料夾，名稱可能已存在。"); return; } setData((current) => ({ ...current, folders: [...current.folders, payload.item!].sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name, "zh-Hant")) })); setNewBookmarkFolder(""); setSuccess("收藏資料夾已新增。"); }
-  async function saveRename(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!renaming || !renaming.value.trim()) return; if (renaming.type === "folder") { saveFolders({ ...folders, [renaming.id]: { ...folders[renaming.id], label: renaming.value.trim().slice(0, 20) } }); setRenaming(null); setSuccess("智慧資料夾名稱已更新，收藏設定已同步。 "); return; } const name = renaming.value.trim(); const kind = renaming.type; setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id: renaming.id, name }) }); setPending(false); if (!response.ok) { setError("無法修改資料夾。"); return; } setData((current) => kind === "category" ? { ...current, categories: current.categories.map((item) => item.id === renaming.id ? { ...item, name } : item) } : { ...current, folders: current.folders.map((item) => item.id === renaming.id ? { ...item, name } : item), bookmarks: current.bookmarks.map((item) => item.folder?.id === renaming.id ? { ...item, folder: { ...item.folder, name } } : item) }); if (kind === "category") setManagedCategories((current) => current.map((item) => item.id === renaming.id ? { ...item, name } : item)); else setManagedFolders((current) => current.map((item) => item.id === renaming.id ? { ...item, name } : item)); setRenaming(null); setSuccess("資料夾已更新。"); }
-  async function setBookmarkFolderVisibility(id: string, visible: boolean) { setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "bookmark_folder", id, visible }) }); setPending(false); if (!response.ok) { setError("無法更新收藏資料夾。 "); return; } setData((current) => ({ ...current, folders: current.folders.map((item) => item.id === id ? { ...item, is_visible: visible } : item) })); setSuccess(visible ? "收藏資料夾已顯示。" : "收藏資料夾已隱藏。"); }
-  async function deleteBookmarkFolder(id: string) { setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "bookmark_folder", id }) }); setPending(false); if (!response.ok) { setError("無法刪除收藏資料夾。 "); return; } setData((current) => ({ ...current, folders: current.folders.filter((item) => item.id !== id), bookmarks: current.bookmarks.map((item) => item.folder?.id === id ? { ...item, folder: null } : item) })); if (bookmarkFolder === id) setBookmarkFolder("all"); setSuccess("收藏資料夾已刪除，原有收藏已移出資料夾。"); setConfirmation(null); }
-  async function deleteCategory(id: string) { setPending(true); setError(null); const response = await fetch("/api/taxonomy", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "category", id }) }); setPending(false); if (!response.ok) { setError("無法刪除資料夾。"); return; } saveQuickFolders(quickFolderIds.filter((current) => current !== id)); setData((current) => ({ ...current, categories: current.categories.filter((item) => item.id !== id), bookmarks: current.bookmarks.map((item) => item.category?.id === id ? { ...item, category: null } : item) })); if (category === id) setCategory("all"); if (view === `folder:${id}`) setView("all"); setSuccess("資料夾已刪除，原有收藏已改為未分類。"); setConfirmation(null); await load(); router.refresh(); }
-  function openManager(kind: "category" | "folder") { setError(null); setDragging(null); if (kind === "category") { setManagedCategories(scopedCategories); setRemovedCategoryIds([]); setCategoryManagerOpen(true); } else { setManagedFolders([...data.folders].sort((left, right) => left.sort_order - right.sort_order)); setRemovedFolderIds([]); setFolderManagerOpen(true); } }
-  function reorder(kind: "category" | "bookmark_folder", fromId: string, toId: string) { if (fromId === toId) return; const move = <T extends { id: string }>(current: T[]) => { const from = current.findIndex((item) => item.id === fromId); const to = current.findIndex((item) => item.id === toId); if (from < 0 || to < 0) return current; const next = [...current]; const [moving] = next.splice(from, 1); next.splice(to, 0, moving); return next; }; if (kind === "category") setManagedCategories(move); else setManagedFolders(move); }
-  async function commitManager(kind: "category" | "bookmark_folder") { if (kind === "category") { const source = scopedCategories; const draft = managedCategories; const changed = removedCategoryIds.length || source.length !== draft.length || source.some((item, index) => item.id !== draft[index]?.id); if (!changed) { setCategoryManagerOpen(false); return; } setPending(true); setError(null); try { for (const [sortOrder, item] of draft.entries()) { if (source.findIndex((candidate) => candidate.id === item.id) !== sortOrder) { const response = await fetch("/api/taxonomy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id: item.id, sortOrder, contentKind: "bookmark" }) }); if (!response.ok) throw new Error("無法更新排序。"); } } for (const id of removedCategoryIds) { const response = await fetch("/api/taxonomy", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id, contentKind: "bookmark" }) }); if (!response.ok) throw new Error("無法移除項目。"); } setData((current) => ({ ...current, categories: [...current.categories.filter((item) => (item.folder_id ?? null) !== activeFolderId), ...draft.map((item, sort_order) => ({ ...item, sort_order }))] })); if (removedCategoryIds.includes(category)) setCategory("all"); setCategoryManagerOpen(false); setSuccess("整理結果已儲存。 "); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存整理結果。"); } finally { setPending(false); setDragging(null); } return; } const source = data.folders; const draft = managedFolders; const changed = removedFolderIds.length || source.length !== draft.length || source.some((item, index) => item.id !== draft[index]?.id); if (!changed) { setFolderManagerOpen(false); return; } setPending(true); setError(null); try { for (const [sortOrder, item] of draft.entries()) { if (source.findIndex((candidate) => candidate.id === item.id) !== sortOrder) { const response = await fetch("/api/taxonomy", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id: item.id, sortOrder }) }); if (!response.ok) throw new Error("無法更新排序。"); } } for (const id of removedFolderIds) { const response = await fetch("/api/taxonomy", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, id }) }); if (!response.ok) throw new Error("無法移除項目。"); } setData((current) => ({ ...current, folders: draft.map((item, sort_order) => ({ ...item, sort_order })), bookmarks: current.bookmarks.map((item) => removedFolderIds.includes(item.folder?.id ?? "") ? { ...item, folder: null } : item) })); setFolderManagerOpen(false); setSuccess("整理結果已儲存。 "); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存整理結果。"); } finally { setPending(false); setDragging(null); } }
-  function beginLongPress(kind: "category" | "folder", id: string, pointerType: string) { if (pointerType === "mouse") return; if (dragTimer.current) window.clearTimeout(dragTimer.current); dragTimer.current = window.setTimeout(() => { setDragging({ kind, id }); }, 420); }
-  function endLongPress() { if (dragTimer.current) window.clearTimeout(dragTimer.current); dragTimer.current = null; setDragging(null); }
-  function moveFromPoint(kind: "category" | "folder", event: PointerEvent<HTMLElement>) { if (dragging?.kind !== kind) return; const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-bookmark-manager-kind]"); if (target?.dataset.bookmarkManagerKind === kind && target.dataset.bookmarkManagerId) reorder(kind === "folder" ? "bookmark_folder" : "category", dragging.id, target.dataset.bookmarkManagerId); }
-  function saveFolders(next: FolderSettings) { setFolders(next); window.localStorage.setItem(folderStorageKey, JSON.stringify(next)); if (!view.startsWith("folder:") && !next[view as SystemView].visible) setView("all"); }
-  function toggleFolder(key: Exclude<SystemView, "all">) { saveFolders({ ...folders, [key]: { ...folders[key], visible: !folders[key].visible } }); }
-  function saveQuickFolders(ids: string[]) { const unique = [...new Set(ids)]; setQuickFolderIds(unique); window.localStorage.setItem(quickFolderStorageKey, JSON.stringify(unique)); }
-  const dialog = <><BookmarkFolderLockGate folders={data.folders} onOpen={(folderId) => setView(`folder:${folderId}`)} onRefresh={load} /><ConfirmDialog {...(confirmation ?? { title: "", description: "", action: async () => undefined })} error={error} onCancel={() => setConfirmation(null)} onConfirm={() => { void confirmation?.action(); }} open={Boolean(confirmation)} pending={pending} /></>;
-  const form = <form className="bookmark-form" onSubmit={create}><h2>新增書籤</h2><label>網址<input aria-describedby={previewError ? "bookmark-preview-error" : undefined} aria-label="網址" name="url" onBlur={() => void onPreview()} onChange={(event) => setDraftUrl(event.target.value)} placeholder="貼上網址後自動帶入標題與預覽圖" required type="url" value={draftUrl} /></label>{preview && <div className="bookmark-draft-preview">{(preview.imageUrl ?? preview.faviconUrl) && <img alt="" referrerPolicy="no-referrer" src={preview.imageUrl ?? preview.faviconUrl ?? undefined} />}<strong>{preview.title ?? preview.hostname}</strong></div>}{previewError && <p className="notice" id="bookmark-preview-error" role="status">{previewError}</p>}<label>標題<input aria-label="標題" name="title" onChange={(event) => setDraftTitle(event.target.value)} placeholder="標題會自動帶入，也可自行改寫" value={draftTitle} /></label><label>備註<textarea aria-label="備註" name="description" onChange={(event) => setDraftDescription(event.target.value)} placeholder="備註（選填）" rows={2} value={draftDescription} /></label><BookmarkCollectionSettings categories={data.categories} folders={data.folders} /><button className="button" disabled={pending} type="submit">{pending ? "儲存中…" : "儲存書籤"}</button></form>;
-  const renameDialog = renaming && <section aria-labelledby="rename-folder-title" aria-modal="true" className="inline-dialog edit-dialog rename-dialog" role="dialog"><form onSubmit={saveRename}><p className="eyebrow">RENAME FOLDER</p><h2 id="rename-folder-title">修改{renaming.type === "folder" ? "智慧資料夾" : renaming.type === "category" ? "收藏類別" : "收藏資料夾"}</h2><label htmlFor="rename-folder-input">資料夾名稱</label><input autoFocus id="rename-folder-input" maxLength={80} onChange={(event) => setRenaming((current) => current ? { ...current, value: event.target.value } : current)} required value={renaming.value} /><p className="hint">修改後會立刻同步到收藏清單與新增書籤的選項。</p><div className="dialog-actions"><button className="button compact" disabled={pending} type="submit">{pending ? "儲存中…" : "儲存名稱"}</button><button className="secondary-button compact" disabled={pending} onClick={() => setRenaming(null)} type="button">取消</button></div></form></section>;
-  if (createMode) return <section className="bookmarks-workspace create-only">{pending && <OperationStatus label="正在更新收藏設定…" />}{error && <p className="notice error" role="alert">{error}</p>}{success && <p className="collection-operation-toast" role="status">{success}</p>}{form}<section aria-labelledby="bookmark-folders-title" className="category-manager create-category-manager"><header className="manager-heading"><div><p className="eyebrow">BOOKMARK ORGANIZATION</p><h2 id="bookmark-folders-title">管理收藏／類別</h2><p>類別用於整理內容；「未分類」會永久保留。只有選擇「置於上方」的類別，才會顯示在收藏頁頂端。</p></div></header><form className="category-create-row" onSubmit={addCategory}><label className="sr-only" htmlFor="new-category">新類別名稱</label><input id="new-category" onChange={(event) => setNewCategory(event.target.value)} placeholder="例如：動畫、工作、稍後閱讀" value={newCategory} /><button className="button compact" disabled={pending} type="submit">＋ 新增類別</button></form><div className="category-list"><article className="category-row system-folder"><div><strong>未分類</strong><small>固定保留：未指定類別的收藏會顯示在此</small></div><span>固定保留</span></article>{data.categories.length ? data.categories.map((item) => <article className="category-row" key={item.id}><div><strong>{item.name}</strong><small>{quickFolderIds.includes(item.id) ? "已顯示於上方" : "目前隱藏於上方"}</small></div><div className="manager-actions"><button className="secondary-button compact" onClick={() => saveQuickFolders(quickFolderIds.includes(item.id) ? quickFolderIds.filter((id) => id !== item.id) : [...quickFolderIds, item.id])} type="button">{quickFolderIds.includes(item.id) ? "隱藏於上方" : "置於上方"}</button><button className="secondary-button compact" onClick={() => setRenaming({ type: "category", id: item.id, value: item.name })} type="button">修改</button><button className="delete-button compact" onClick={() => setConfirmation({ title: "移除收藏類別？", description: `「${item.name}」的收藏會改為未分類；此操作無法復原。`, action: () => deleteCategory(item.id) })} type="button">移除</button></div></article>) : <p className="manager-empty">尚未建立自訂類別。</p>}</div><section aria-labelledby="bookmark-folder-manager-title" className="folder-settings"><div className="folder-heading"><div><p className="eyebrow">BOOKMARK FOLDERS</p><h3 id="bookmark-folder-manager-title">管理收藏資料夾</h3><p>資料夾和類別分開管理；隱藏資料夾不會出現在新增書籤的選單或收藏頁。</p></div></div><form className="category-create-row" onSubmit={addBookmarkFolder}><label className="sr-only" htmlFor="new-bookmark-folder">新收藏資料夾名稱</label><input id="new-bookmark-folder" onChange={(event) => setNewBookmarkFolder(event.target.value)} placeholder="例如：待閱讀、專案 A、旅遊" value={newBookmarkFolder} /><button className="button compact" disabled={pending} type="submit">＋ 新增資料夾</button></form><div className="folder-list">{data.folders.length ? data.folders.map((item) => <article className="folder-row" key={item.id}><div><strong>{item.name}</strong><small>{item.is_visible ? "目前顯示於收藏頁與新增選單" : "目前已隱藏"}</small></div><div className="manager-actions"><button className="secondary-button compact" onClick={() => void setBookmarkFolderVisibility(item.id, !item.is_visible)} type="button">{item.is_visible ? "隱藏" : "顯示"}</button><button className="secondary-button compact" onClick={() => setRenaming({ type: "bookmark_folder", id: item.id, value: item.name })} type="button">修改</button><button className="delete-button compact" onClick={() => setConfirmation({ title: "移除收藏資料夾？", description: `「${item.name}」中的收藏不會被刪除，只會移出這個資料夾。`, action: () => deleteBookmarkFolder(item.id) })} type="button">移除</button></div></article>) : <p className="manager-empty">尚未建立收藏資料夾。</p>}</div></section><section className="folder-settings"><div className="folder-heading"><div><p className="eyebrow">SMART FOLDERS</p><h3>智慧資料夾</h3><p>「全部」固定保留；其他智慧資料夾可改名、隱藏或再次恢復。</p></div><button className="secondary-button compact" onClick={() => saveFolders(defaultFolderSettings)} type="button">還原預設</button></div><div className="folder-list">{(["favorite", "pinned", "archived", "trash"] as Exclude<SystemView, "all">[]).map((key) => <article className="folder-row" key={key}><div><strong>{folders[key].label}</strong><small>{folders[key].visible ? "目前顯示於收藏頁" : "目前已隱藏（可恢復）"}</small></div><div className="manager-actions"><button className="secondary-button compact" onClick={() => setRenaming({ type: "folder", id: key, value: folders[key].label })} type="button">修改</button><button className={folders[key].visible ? "delete-button compact" : "secondary-button compact"} onClick={() => toggleFolder(key)} type="button">{folders[key].visible ? "隱藏" : "恢復"}</button></div></article>)}</div></section></section>{renameDialog}{dialog}</section>;
-  const toggleAll = () => setChosen((current) => { const next = new Set(current); const all = selected.length === list.length && list.length > 0; list.forEach((item) => { if (all) next.delete(item.id); else next.add(item.id); }); return next; });
-  const quickCount = (id: string) => data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.folder?.id === id).length;
-  return <section className="bookmarks-workspace">
-    {pending && <OperationStatus label="正在處理收藏資料…" />}{error && <p className="notice error" role="alert">{error}</p>}{success && <p className="collection-operation-toast" role="status">{success}</p>}
-    <section aria-label="資料夾" className="collection-navigation-section"><header><strong>資料夾</strong><div><button className="collection-navigation-action" onClick={() => openManager("folder")} type="button">管理</button><button className="collection-navigation-action primary" onClick={() => setFolderAddOpen(true)} type="button">＋ 新增</button></div></header><div className="bookmark-view-tabs" role="tablist"><div className="bookmark-view-tabs-scroll"><button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => { setView("all"); setCategory("all"); }} role="tab" type="button">未整理 <span>{counts.all}</span></button>{displayBookmarkFolders.map((item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => { setView(`folder:${item.id}`); setCategory("all"); }} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>)}{hasMoreBookmarkFolders && <button aria-label="管理收藏資料夾" className="collection-category-utility" onClick={() => openManager("folder")} type="button">更多</button>}{folders.trash.visible && <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button>}</div></div></section>
-    <section aria-label="類別" className="collection-navigation-section"><header><strong>類別</strong><div><button className="collection-navigation-action" onClick={() => openManager("category")} type="button">管理</button><button className="collection-navigation-action primary" onClick={() => setCategoryAddOpen(true)} type="button">＋ 新增</button></div></header><div className="category-strip collection-category-strip"><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => setCategory("unclassified")} type="button">未分類</button>{displayCategories.map((item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)} type="button">{item.name}</button>)}{hasMoreCategories && <button aria-label="查看更多收藏類別" className="collection-category-utility" onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}</div></section>
-    <div className="bookmark-toolbar"><input aria-label="搜尋書籤" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋標題或網址" value={query} /></div>
-    <div className="bulk-toolbar"><label><input checked={list.length > 0 && selected.length === list.length} onChange={toggleAll} type="checkbox" /> 全選目前清單</label>{selected.length > 0 && (view === "trash" ? <button className="delete-button" disabled={pending} onClick={() => setConfirmation({ title: `永久刪除 ${selected.length} 筆收藏？`, description: "這些收藏將無法還原。", action: permanentlyRemoveSelected })} type="button">永久刪除 {selected.length} 筆</button> : <button className="delete-button" disabled={pending} onClick={() => setConfirmation({ title: `移除 ${selected.length} 筆收藏？`, description: "這些收藏將移至垃圾桶，30 天內仍可還原。", confirmLabel: "移至垃圾桶", action: trashSelected })} type="button">移至垃圾桶 {selected.length} 筆</button>)}</div>
-    <div className={`bookmark-list bookmark-list-${bookmarkDisplay}`} style={bookmarkDisplay === "grid" ? { "--bookmark-grid-columns": bookmarkGridColumns } as CSSProperties : undefined}>{!loaded ? <BookmarkListSkeleton /> : <>{list.map((item) => <BookmarkResultCard item={item} key={item.id} onOpen={() => setDetailItem(item)} onSelect={() => setChosen((current) => { const next = new Set(current); if (next.has(item.id)) next.delete(item.id); else next.add(item.id); return next; })} selected={chosen.has(item.id)} />)}{list.length === 0 && <p className="lead">尚無符合條件的書籤。</p>}</>}</div>
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => setFolderAddOpen(false)} open={folderAddOpen} pending={pending} title="新增收藏資料夾"><form className="collection-category-dialog" onSubmit={(event) => void addBookmarkFolder(event)}><label>資料夾名稱<input autoFocus maxLength={80} onChange={(event) => setNewBookmarkFolder(event.target.value)} placeholder="例如：待閱讀、專案 A" value={newBookmarkFolder} /></label><div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setFolderAddOpen(false)} type="button">取消</button><button className="button" disabled={pending || !newBookmarkFolder.trim()} type="submit">新增資料夾</button></div></form></ModalDialog>
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => { endLongPress(); void commitManager("bookmark_folder"); }} open={folderManagerOpen} pending={pending} title="管理收藏資料夾"><div className="collection-category-dialog"><p>電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整順序；放開後固定。× 會先在畫面移除，關閉時再一次儲存。</p><div className="taxonomy-manager-list">{managedFolders.map((item) => <article aria-grabbed={dragging?.kind === "folder" && dragging.id === item.id} className={dragging?.kind === "folder" && dragging.id === item.id ? "taxonomy-manager-item dragging" : "taxonomy-manager-item"} data-bookmark-manager-id={item.id} data-bookmark-manager-kind="folder" draggable key={item.id} onDragEnd={endLongPress} onDragOver={(event) => { event.preventDefault(); if (dragging?.kind === "folder") reorder("bookmark_folder", dragging.id, item.id); }} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDragging({ kind: "folder", id: item.id }); }} onPointerDown={(event) => beginLongPress("folder", item.id, event.pointerType)} onPointerMove={(event) => moveFromPoint("folder", event)} onPointerUp={endLongPress}><button className="taxonomy-item-name" onClick={() => setRenaming({ type: "bookmark_folder", id: item.id, value: item.name })} type="button">{item.is_locked ? "🔒 " : ""}{item.name}</button><button aria-label={`刪除 ${item.name}`} className="taxonomy-delete" onClick={() => { setManagedFolders((current) => current.filter((folder) => folder.id !== item.id)); setRemovedFolderIds((current) => [...current, item.id]); }} type="button">×</button></article>)}{!managedFolders.length && <p className="manager-empty">尚未建立收藏資料夾。</p>}</div></div></ModalDialog>
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => { endLongPress(); void commitManager("category"); }} open={categoryManagerOpen} pending={pending} title="修改收藏類別"><div className="collection-category-dialog"><p>目前資料夾的類別。電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整順序；放開後固定。× 會先在畫面移除，關閉時再一次儲存。</p><div className="taxonomy-manager-list">{managedCategories.map((item) => <article aria-grabbed={dragging?.kind === "category" && dragging.id === item.id} className={dragging?.kind === "category" && dragging.id === item.id ? "taxonomy-manager-item dragging" : "taxonomy-manager-item"} data-bookmark-manager-id={item.id} data-bookmark-manager-kind="category" draggable key={item.id} onDragEnd={endLongPress} onDragOver={(event) => { event.preventDefault(); if (dragging?.kind === "category") reorder("category", dragging.id, item.id); }} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", item.id); setDragging({ kind: "category", id: item.id }); }} onPointerDown={(event) => beginLongPress("category", item.id, event.pointerType)} onPointerMove={(event) => moveFromPoint("category", event)} onPointerUp={endLongPress}><button className="taxonomy-item-name" onClick={() => setRenaming({ type: "category", id: item.id, value: item.name })} type="button">{item.name}</button><button aria-label={`刪除 ${item.name}`} className="taxonomy-delete" onClick={() => { setManagedCategories((current) => current.filter((category) => category.id !== item.id)); setRemovedCategoryIds((current) => [...current, item.id]); }} type="button">×</button></article>)}{!managedCategories.length && <p className="manager-empty">此資料夾尚未建立自訂類別。</p>}</div></div></ModalDialog>
-    <ModalDialog className="mobile-sheet-dialog" onClose={() => setCategoryAddOpen(false)} open={categoryAddOpen} pending={pending} title="新增收藏類別"><form className="collection-category-dialog" onSubmit={(event) => void addCategory(event)}><p>新增後會立即出現在收藏類別列與新增收藏的選項中。</p><label>類別名稱<input autoFocus maxLength={80} onChange={(event) => setNewCategory(event.target.value)} placeholder="例如：動畫、工作" value={newCategory} /></label><div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setCategoryAddOpen(false)} type="button">取消</button><button className="button" disabled={pending || !newCategory.trim()} type="submit">新增類別</button></div></form></ModalDialog><ModalDialog className="mobile-sheet-dialog" onClose={() => setCategoryMoreOpen(false)} open={categoryMoreOpen} title="收藏類別"><div className="collection-category-dialog collection-category-manager"><p>可快速選擇收藏類別；資料夾、鎖定與常駐清單請在管理資料夾調整。</p><input aria-label="搜尋收藏類別" onChange={(event) => setCategoryQuery(event.target.value)} placeholder="搜尋類別" value={categoryQuery} /><div className="collection-category-manager-list"><button className={category === "all" ? "active" : ""} onClick={() => { setCategory("all"); setCategoryMoreOpen(false); }} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => { setCategory("unclassified"); setCategoryMoreOpen(false); }} type="button">未分類</button>{data.categories.filter((item) => item.name.toLocaleLowerCase().includes(categoryQuery.trim().toLocaleLowerCase())).map((item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => { setCategory(item.id); setCategoryMoreOpen(false); }} type="button">{item.name}</button>)}</div><Link className="secondary-button collection-category-manage-link" href="/organize?type=bookmark">管理資料夾</Link></div></ModalDialog>{detailItem && <div aria-label="關閉詳細資訊" className="bookmark-detail-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailItem(null); }}><section aria-modal="true" aria-labelledby="bookmark-detail-title" className="bookmark-detail-dialog" role="dialog"><div><button aria-label="關閉詳細資訊" className="detail-close" onClick={() => setDetailItem(null)} type="button">×</button><p className="eyebrow">BOOKMARK DETAILS</p><h2 id="bookmark-detail-title">{detailItem.title}</h2><a className="detail-url" href={detailItem.detail?.url} rel="noreferrer noopener" target="_blank">{detailItem.detail?.url}</a><dl><div><dt>類別</dt><dd>{detailItem.category?.name ?? "未分類"}</dd></div><div><dt>資料夾</dt><dd>{detailItem.folder?.name ?? "未放入資料夾"}</dd></div><div><dt>收藏設定</dt><dd>{[detailItem.favorite && "我的最愛", detailItem.pinned && "置頂", detailItem.archived && "封存"].filter(Boolean).join("、") || "一般收藏"}</dd></div></dl><h3>備註</h3><p className="detail-content">{detailItem.description || "沒有備註。"}</p><div className="dialog-actions">{detailItem.deletedAt ? <><button className="button" onClick={() => { void update(detailItem.id, "restore"); setDetailItem(null); }} type="button">還原</button><button className="delete-button" onClick={() => setConfirmation({ title: "永久刪除收藏？", description: `「${detailItem.title}」將無法還原。`, action: () => permanentlyRemove(detailItem.id) })} type="button">永久刪除</button></> : <><button className="secondary-button" onClick={() => { setEditing(detailItem); setDetailItem(null); }} type="button">修改</button><button className="delete-button" onClick={() => setConfirmation({ title: "移至垃圾桶？", description: `「${detailItem.title}」會保留 30 天，期間可隨時還原。`, confirmLabel: "移至垃圾桶", action: async () => { await update(detailItem.id, "trash"); setDetailItem(null); } })} type="button">刪除</button></>}</div></div></section></div>}{editing && <section aria-modal="true" aria-labelledby="edit-bookmark-title" className="inline-dialog edit-dialog" role="dialog"><form onSubmit={saveEdit}><h2 id="edit-bookmark-title">修改收藏</h2><p className="edit-link">{editing.detail?.url}</p><label>標題<input aria-label="標題" defaultValue={editing.title} name="title" required /></label><label>備註<textarea aria-label="備註" defaultValue={editing.description ?? ""} name="description" rows={3} /></label><label>類別<select aria-label="類別" defaultValue={editing.category?.id ?? ""} name="categoryId"><option value="">未分類</option>{data.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><BookmarkCollectionSettings archived={editing.archived} favorite={editing.favorite} folderId={editing.folder?.id ?? ""} folders={data.folders} pinned={editing.pinned} /><div className="dialog-actions"><button className="button" disabled={pending} type="submit">{pending ? "儲存中…" : "儲存修改"}</button><button className="secondary-button" onClick={() => setEditing(null)} type="button">取消</button></div></form></section>}{dialog}
-  </section>;
+  async function onPreview() {
+    const url = draftUrl.trim();
+    previewRequest.current?.abort();
+    setPreviewError(null);
+    if (!url) {
+      setPreview(null);
+      return;
+    }
+    const controller = new AbortController();
+    previewRequest.current = controller;
+    try {
+      const response = await fetch("/api/bookmarks/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+        signal: controller.signal,
+      });
+      const value = (await response.json().catch(() => null)) as Preview | null;
+      if (controller.signal.aborted) return;
+      if (!response.ok || !value) {
+        setPreview(null);
+        setPreviewError("暫時無法取得預覽，仍可自行填寫標題後儲存。");
+        return;
+      }
+      setPreview(value);
+      setDraftTitle((current) =>
+        current.trim() ? current : (value.title ?? value.hostname),
+      );
+    } catch (cause) {
+      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+        setPreview(null);
+        setPreviewError("暫時無法取得預覽，仍可自行填寫標題後儲存。");
+      }
+    } finally {
+      if (previewRequest.current === controller) previewRequest.current = null;
+    }
+  }
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+    const response = await fetch("/api/bookmarks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: draftUrl,
+        title: draftTitle,
+        description: draftDescription,
+        categoryId: form.get("categoryId") || null,
+        bookmarkFolderId: form.get("bookmarkFolderId") || null,
+        coverTicket: form.get("coverTicket") || null,
+        favorite: form.get("favorite") === "on",
+        pinned: form.get("pinned") === "on",
+        archived: form.get("archived") === "on",
+      }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      setError(body?.error ?? "無法儲存書籤。");
+      return;
+    }
+    setSuccess("書籤已儲存，正在開啟收藏清單…");
+    router.replace("/bookmarks");
+    router.refresh();
+  }
+  async function saveEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+    const form = new FormData(event.currentTarget);
+    setPending(true);
+    setError(null);
+    setSuccess(null);
+    const title = String(form.get("title") ?? "");
+    const description = String(form.get("description") ?? "");
+    const categoryId = String(form.get("categoryId") ?? "") || null;
+    const bookmarkFolderId = String(form.get("bookmarkFolderId") ?? "") || null;
+    const coverTicket = String(form.get("coverTicket") ?? "") || null;
+    const favorite = form.get("favorite") === "on";
+    const archived = form.get("archived") === "on";
+    const pinned = form.get("pinned") === "on" && !archived;
+    const response = await fetch("/api/bookmarks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: editing.id,
+        url: editing.detail?.url ?? "https://example.com",
+        title,
+        description,
+        categoryId,
+        bookmarkFolderId,
+        coverTicket,
+        favorite,
+        pinned,
+        archived,
+      }),
+    });
+    if (!response.ok) {
+      setPending(false);
+      setError("無法儲存修改。");
+      return;
+    }
+    await load();
+    setEditing(null);
+    setSuccess("收藏已更新。");
+    setPending(false);
+  }
+  async function update(id: string, action: "trash" | "restore") {
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/bookmarks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法更新書籤。");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.map((item) =>
+        item.id !== id
+          ? item
+          : {
+              ...item,
+              deletedAt: action === "trash" ? new Date().toISOString() : null,
+              pinned: action === "trash" ? false : item.pinned,
+              archived: action === "restore" ? false : item.archived,
+            },
+      ),
+    }));
+    setSuccess(action === "trash" ? "已移至垃圾桶。" : "書籤已還原。");
+    setConfirmation(null);
+  }
+  async function permanentlyRemove(id: string) {
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/bookmarks", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法永久刪除書籤。");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.filter((item) => item.id !== id),
+    }));
+    setSuccess("書籤已永久刪除。");
+    setConfirmation(null);
+  }
+  async function trashSelected() {
+    if (!selected.length) return;
+    const ids = selected.map((item) => item.id);
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/bookmarks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, action: "trash" }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法批量移至垃圾桶。");
+      return;
+    }
+    setChosen(new Set());
+    setData((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.map((item) =>
+        ids.includes(item.id)
+          ? { ...item, deletedAt: new Date().toISOString(), pinned: false }
+          : item,
+      ),
+    }));
+    setSuccess(`已將 ${ids.length} 筆收藏移至垃圾桶。`);
+    setConfirmation(null);
+  }
+  async function permanentlyRemoveSelected() {
+    if (!selected.length) return;
+    const ids = selected.map((item) => item.id);
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/bookmarks", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, action: "permanent" }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法批量永久刪除書籤。");
+      return;
+    }
+    setChosen(new Set());
+    setData((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.filter((item) => !ids.includes(item.id)),
+    }));
+    setSuccess(`已永久刪除 ${ids.length} 筆收藏。`);
+    setConfirmation(null);
+  }
+  async function addCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newCategory.trim();
+    if (!name) return;
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "category",
+        name,
+        contentKind: "bookmark",
+        folderId: activeFolderId,
+      }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      item?: BookmarksWorkspaceData["categories"][number];
+    } | null;
+    setPending(false);
+    if (!response.ok || !payload?.item) {
+      setError("無法新增類別，名稱可能已存在。");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      categories: [...current.categories, payload.item!].sort(
+        (left, right) =>
+          left.sort_order - right.sort_order ||
+          left.name.localeCompare(right.name, "zh-Hant"),
+      ),
+    }));
+    setNewCategory("");
+    setCategoryAddOpen(false);
+    setSuccess("類別已新增。 ");
+  }
+  async function addBookmarkFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newBookmarkFolder.trim();
+    if (!name) return;
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "bookmark_folder", name }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      item?: BookmarksWorkspaceData["folders"][number];
+    } | null;
+    setPending(false);
+    if (!response.ok || !payload?.item) {
+      setError("無法新增收藏資料夾，名稱可能已存在。");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      folders: [...current.folders, payload.item!].sort(
+        (left, right) =>
+          left.sort_order - right.sort_order ||
+          left.name.localeCompare(right.name, "zh-Hant"),
+      ),
+    }));
+    setNewBookmarkFolder("");
+    setSuccess("收藏資料夾已新增。");
+  }
+  async function saveRename(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renaming || !renaming.value.trim()) return;
+    if (renaming.type === "folder") {
+      saveFolders({
+        ...folders,
+        [renaming.id]: {
+          ...folders[renaming.id],
+          label: renaming.value.trim().slice(0, 20),
+        },
+      });
+      setRenaming(null);
+      setSuccess("智慧資料夾名稱已更新，收藏設定已同步。 ");
+      return;
+    }
+    const name = renaming.value.trim();
+    const kind = renaming.type;
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, id: renaming.id, name }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法修改資料夾。");
+      return;
+    }
+    setData((current) =>
+      kind === "category"
+        ? {
+            ...current,
+            categories: current.categories.map((item) =>
+              item.id === renaming.id ? { ...item, name } : item,
+            ),
+          }
+        : {
+            ...current,
+            folders: current.folders.map((item) =>
+              item.id === renaming.id ? { ...item, name } : item,
+            ),
+            bookmarks: current.bookmarks.map((item) =>
+              item.folder?.id === renaming.id
+                ? { ...item, folder: { ...item.folder, name } }
+                : item,
+            ),
+          },
+    );
+    if (kind === "category")
+      setManagedCategories((current) =>
+        current.map((item) =>
+          item.id === renaming.id ? { ...item, name } : item,
+        ),
+      );
+    else
+      setManagedFolders((current) =>
+        current.map((item) =>
+          item.id === renaming.id ? { ...item, name } : item,
+        ),
+      );
+    setRenaming(null);
+    setSuccess("資料夾已更新。");
+  }
+  async function setBookmarkFolderVisibility(id: string, visible: boolean) {
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "bookmark_folder", id, visible }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法更新收藏資料夾。 ");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      folders: current.folders.map((item) =>
+        item.id === id ? { ...item, is_visible: visible } : item,
+      ),
+    }));
+    setSuccess(visible ? "收藏資料夾已顯示。" : "收藏資料夾已隱藏。");
+  }
+  async function deleteBookmarkFolder(id: string) {
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "bookmark_folder", id }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法刪除收藏資料夾。 ");
+      return;
+    }
+    setData((current) => ({
+      ...current,
+      folders: current.folders.filter((item) => item.id !== id),
+      bookmarks: current.bookmarks.map((item) =>
+        item.folder?.id === id ? { ...item, folder: null } : item,
+      ),
+    }));
+    if (bookmarkFolder === id) setBookmarkFolder("all");
+    setSuccess("收藏資料夾已刪除，原有收藏已移出資料夾。");
+    setConfirmation(null);
+  }
+  async function deleteCategory(id: string) {
+    setPending(true);
+    setError(null);
+    const response = await fetch("/api/taxonomy", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "category", id }),
+    });
+    setPending(false);
+    if (!response.ok) {
+      setError("無法刪除資料夾。");
+      return;
+    }
+    saveQuickFolders(quickFolderIds.filter((current) => current !== id));
+    setData((current) => ({
+      ...current,
+      categories: current.categories.filter((item) => item.id !== id),
+      bookmarks: current.bookmarks.map((item) =>
+        item.category?.id === id ? { ...item, category: null } : item,
+      ),
+    }));
+    if (category === id) setCategory("all");
+    if (view === `folder:${id}`) setView("all");
+    setSuccess("資料夾已刪除，原有收藏已改為未分類。");
+    setConfirmation(null);
+    await load();
+    router.refresh();
+  }
+  function openManager(kind: "category" | "folder") {
+    setError(null);
+    setDragging(null);
+    if (kind === "category") {
+      setManagedCategories(scopedCategories);
+      setRemovedCategoryIds([]);
+      setCategoryManagerOpen(true);
+    } else {
+      setManagedFolders(
+        [...data.folders].sort(
+          (left, right) => left.sort_order - right.sort_order,
+        ),
+      );
+      setRemovedFolderIds([]);
+      setFolderManagerOpen(true);
+    }
+  }
+  function reorder(
+    kind: "category" | "bookmark_folder",
+    fromId: string,
+    toId: string,
+  ) {
+    if (fromId === toId) return;
+    const move = <T extends { id: string }>(current: T[]) => {
+      const from = current.findIndex((item) => item.id === fromId);
+      const to = current.findIndex((item) => item.id === toId);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      const [moving] = next.splice(from, 1);
+      next.splice(to, 0, moving);
+      return next;
+    };
+    if (kind === "category") setManagedCategories(move);
+    else setManagedFolders(move);
+  }
+  async function commitManager(kind: "category" | "bookmark_folder") {
+    if (kind === "category") {
+      const source = scopedCategories;
+      const draft = managedCategories;
+      const changed =
+        removedCategoryIds.length ||
+        source.length !== draft.length ||
+        source.some((item, index) => item.id !== draft[index]?.id);
+      if (!changed) {
+        setCategoryManagerOpen(false);
+        return;
+      }
+      setPending(true);
+      setError(null);
+      try {
+        for (const [sortOrder, item] of draft.entries()) {
+          if (
+            source.findIndex((candidate) => candidate.id === item.id) !==
+            sortOrder
+          ) {
+            const response = await fetch("/api/taxonomy", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                kind,
+                id: item.id,
+                sortOrder,
+                contentKind: "bookmark",
+              }),
+            });
+            if (!response.ok) throw new Error("無法更新排序。");
+          }
+        }
+        for (const id of removedCategoryIds) {
+          const response = await fetch("/api/taxonomy", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, id, contentKind: "bookmark" }),
+          });
+          if (!response.ok) throw new Error("無法移除項目。");
+        }
+        setData((current) => ({
+          ...current,
+          categories: [
+            ...current.categories.filter(
+              (item) => (item.folder_id ?? null) !== activeFolderId,
+            ),
+            ...draft.map((item, sort_order) => ({ ...item, sort_order })),
+          ],
+        }));
+        if (removedCategoryIds.includes(category)) setCategory("all");
+        setCategoryManagerOpen(false);
+        setSuccess("整理結果已儲存。 ");
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "無法儲存整理結果。");
+      } finally {
+        setPending(false);
+        setDragging(null);
+      }
+      return;
+    }
+    const source = data.folders;
+    const draft = managedFolders;
+    const changed =
+      removedFolderIds.length ||
+      source.length !== draft.length ||
+      source.some((item, index) => item.id !== draft[index]?.id);
+    if (!changed) {
+      setFolderManagerOpen(false);
+      return;
+    }
+    setPending(true);
+    setError(null);
+    try {
+      for (const [sortOrder, item] of draft.entries()) {
+        if (
+          source.findIndex((candidate) => candidate.id === item.id) !==
+          sortOrder
+        ) {
+          const response = await fetch("/api/taxonomy", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind, id: item.id, sortOrder }),
+          });
+          if (!response.ok) throw new Error("無法更新排序。");
+        }
+      }
+      for (const id of removedFolderIds) {
+        const response = await fetch("/api/taxonomy", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind, id }),
+        });
+        if (!response.ok) throw new Error("無法移除項目。");
+      }
+      setData((current) => ({
+        ...current,
+        folders: draft.map((item, sort_order) => ({ ...item, sort_order })),
+        bookmarks: current.bookmarks.map((item) =>
+          removedFolderIds.includes(item.folder?.id ?? "")
+            ? { ...item, folder: null }
+            : item,
+        ),
+      }));
+      setFolderManagerOpen(false);
+      setSuccess("整理結果已儲存。 ");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法儲存整理結果。");
+    } finally {
+      setPending(false);
+      setDragging(null);
+    }
+  }
+  function beginLongPress(
+    kind: "category" | "folder",
+    id: string,
+    pointerType: string,
+  ) {
+    if (pointerType === "mouse") return;
+    if (dragTimer.current) window.clearTimeout(dragTimer.current);
+    dragTimer.current = window.setTimeout(() => {
+      setDragging({ kind, id });
+    }, 420);
+  }
+  function endLongPress() {
+    if (dragTimer.current) window.clearTimeout(dragTimer.current);
+    dragTimer.current = null;
+    setDragging(null);
+  }
+  function moveFromPoint(
+    kind: "category" | "folder",
+    event: PointerEvent<HTMLElement>,
+  ) {
+    if (dragging?.kind !== kind) return;
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-bookmark-manager-kind]");
+    if (
+      target?.dataset.bookmarkManagerKind === kind &&
+      target.dataset.bookmarkManagerId
+    )
+      reorder(
+        kind === "folder" ? "bookmark_folder" : "category",
+        dragging.id,
+        target.dataset.bookmarkManagerId,
+      );
+  }
+  function saveFolders(next: FolderSettings) {
+    setFolders(next);
+    window.localStorage.setItem(folderStorageKey, JSON.stringify(next));
+    if (!view.startsWith("folder:") && !next[view as SystemView].visible)
+      setView("all");
+  }
+  function toggleFolder(key: Exclude<SystemView, "all">) {
+    saveFolders({
+      ...folders,
+      [key]: { ...folders[key], visible: !folders[key].visible },
+    });
+  }
+  function saveQuickFolders(ids: string[]) {
+    const unique = [...new Set(ids)];
+    setQuickFolderIds(unique);
+    window.localStorage.setItem(quickFolderStorageKey, JSON.stringify(unique));
+  }
+  const dialog = (
+    <>
+      <BookmarkFolderLockGate
+        folders={data.folders}
+        onOpen={(folderId) => setView(`folder:${folderId}`)}
+        onRefresh={load}
+      />
+      <ConfirmDialog
+        {...(confirmation ?? {
+          title: "",
+          description: "",
+          action: async () => undefined,
+        })}
+        error={error}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => {
+          void confirmation?.action();
+        }}
+        open={Boolean(confirmation)}
+        pending={pending}
+      />
+    </>
+  );
+  const form = (
+    <form className="bookmark-form" onSubmit={create}>
+      <h2>新增書籤</h2>
+      <label>
+        網址
+        <input
+          aria-describedby={previewError ? "bookmark-preview-error" : undefined}
+          aria-label="網址"
+          name="url"
+          onBlur={() => void onPreview()}
+          onChange={(event) => setDraftUrl(event.target.value)}
+          placeholder="貼上網址後自動帶入標題與預覽圖"
+          required
+          type="url"
+          value={draftUrl}
+        />
+      </label>
+      {preview && (
+        <div className="bookmark-draft-preview">
+          {(preview.imageUrl ?? preview.faviconUrl) && (
+            <img
+              alt=""
+              referrerPolicy="no-referrer"
+              src={preview.imageUrl ?? preview.faviconUrl ?? undefined}
+            />
+          )}
+          <strong>{preview.title ?? preview.hostname}</strong>
+        </div>
+      )}
+      {previewError && (
+        <p className="notice" id="bookmark-preview-error" role="status">
+          {previewError}
+        </p>
+      )}
+      <label>
+        標題
+        <input
+          aria-label="標題"
+          name="title"
+          onChange={(event) => setDraftTitle(event.target.value)}
+          placeholder="標題會自動帶入，也可自行改寫"
+          value={draftTitle}
+        />
+      </label>
+      <label>
+        備註
+        <textarea
+          aria-label="備註"
+          name="description"
+          onChange={(event) => setDraftDescription(event.target.value)}
+          placeholder="備註（選填）"
+          rows={2}
+          value={draftDescription}
+        />
+      </label>
+      <BookmarkCollectionSettings
+        categories={data.categories}
+        folders={data.folders}
+      />
+      <button className="button" disabled={pending} type="submit">
+        {pending ? "儲存中…" : "儲存書籤"}
+      </button>
+    </form>
+  );
+  const renameDialog = renaming && (
+    <section
+      aria-labelledby="rename-folder-title"
+      aria-modal="true"
+      className="inline-dialog edit-dialog rename-dialog"
+      role="dialog"
+    >
+      <form onSubmit={saveRename}>
+        <p className="eyebrow">RENAME FOLDER</p>
+        <h2 id="rename-folder-title">
+          修改
+          {renaming.type === "folder"
+            ? "智慧資料夾"
+            : renaming.type === "category"
+              ? "收藏類別"
+              : "收藏資料夾"}
+        </h2>
+        <label htmlFor="rename-folder-input">資料夾名稱</label>
+        <input
+          autoFocus
+          id="rename-folder-input"
+          maxLength={80}
+          onChange={(event) =>
+            setRenaming((current) =>
+              current ? { ...current, value: event.target.value } : current,
+            )
+          }
+          required
+          value={renaming.value}
+        />
+        <p className="hint">修改後會立刻同步到收藏清單與新增書籤的選項。</p>
+        <div className="dialog-actions">
+          <button className="button compact" disabled={pending} type="submit">
+            {pending ? "儲存中…" : "儲存名稱"}
+          </button>
+          <button
+            className="secondary-button compact"
+            disabled={pending}
+            onClick={() => setRenaming(null)}
+            type="button"
+          >
+            取消
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+  if (createMode)
+    return (
+      <section className="bookmarks-workspace create-only">
+        {pending && <OperationStatus label="正在更新收藏設定…" />}
+        {error && (
+          <p className="notice error" role="alert">
+            {error}
+          </p>
+        )}
+        {success && (
+          <p className="collection-operation-toast" role="status">
+            {success}
+          </p>
+        )}
+        {form}
+        <section
+          aria-labelledby="bookmark-folders-title"
+          className="category-manager create-category-manager"
+        >
+          <header className="manager-heading">
+            <div>
+              <p className="eyebrow">BOOKMARK ORGANIZATION</p>
+              <h2 id="bookmark-folders-title">管理收藏／類別</h2>
+              <p>
+                類別用於整理內容；「未分類」會永久保留。只有選擇「置於上方」的類別，才會顯示在收藏頁頂端。
+              </p>
+            </div>
+          </header>
+          <form className="category-create-row" onSubmit={addCategory}>
+            <label className="sr-only" htmlFor="new-category">
+              新類別名稱
+            </label>
+            <input
+              id="new-category"
+              onChange={(event) => setNewCategory(event.target.value)}
+              placeholder="例如：動畫、工作、稍後閱讀"
+              value={newCategory}
+            />
+            <button className="button compact" disabled={pending} type="submit">
+              ＋ 新增類別
+            </button>
+          </form>
+          <div className="category-list">
+            <article className="category-row system-folder">
+              <div>
+                <strong>未分類</strong>
+                <small>固定保留：未指定類別的收藏會顯示在此</small>
+              </div>
+              <span>固定保留</span>
+            </article>
+            {data.categories.length ? (
+              data.categories.map((item) => (
+                <article className="category-row" key={item.id}>
+                  <div>
+                    <strong>{item.name}</strong>
+                    <small>
+                      {quickFolderIds.includes(item.id)
+                        ? "已顯示於上方"
+                        : "目前隱藏於上方"}
+                    </small>
+                  </div>
+                  <div className="manager-actions">
+                    <button
+                      className="secondary-button compact"
+                      onClick={() =>
+                        saveQuickFolders(
+                          quickFolderIds.includes(item.id)
+                            ? quickFolderIds.filter((id) => id !== item.id)
+                            : [...quickFolderIds, item.id],
+                        )
+                      }
+                      type="button"
+                    >
+                      {quickFolderIds.includes(item.id)
+                        ? "隱藏於上方"
+                        : "置於上方"}
+                    </button>
+                    <button
+                      className="secondary-button compact"
+                      onClick={() =>
+                        setRenaming({
+                          type: "category",
+                          id: item.id,
+                          value: item.name,
+                        })
+                      }
+                      type="button"
+                    >
+                      修改
+                    </button>
+                    <button
+                      className="delete-button compact"
+                      onClick={() =>
+                        setConfirmation({
+                          title: "移除收藏類別？",
+                          description: `「${item.name}」的收藏會改為未分類；此操作無法復原。`,
+                          action: () => deleteCategory(item.id),
+                        })
+                      }
+                      type="button"
+                    >
+                      移除
+                    </button>
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="manager-empty">尚未建立自訂類別。</p>
+            )}
+          </div>
+          <section
+            aria-labelledby="bookmark-folder-manager-title"
+            className="folder-settings"
+          >
+            <div className="folder-heading">
+              <div>
+                <p className="eyebrow">BOOKMARK FOLDERS</p>
+                <h3 id="bookmark-folder-manager-title">管理收藏資料夾</h3>
+                <p>
+                  資料夾和類別分開管理；隱藏資料夾不會出現在新增書籤的選單或收藏頁。
+                </p>
+              </div>
+            </div>
+            <form className="category-create-row" onSubmit={addBookmarkFolder}>
+              <label className="sr-only" htmlFor="new-bookmark-folder">
+                新收藏資料夾名稱
+              </label>
+              <input
+                id="new-bookmark-folder"
+                onChange={(event) => setNewBookmarkFolder(event.target.value)}
+                placeholder="例如：待閱讀、專案 A、旅遊"
+                value={newBookmarkFolder}
+              />
+              <button
+                className="button compact"
+                disabled={pending}
+                type="submit"
+              >
+                ＋ 新增資料夾
+              </button>
+            </form>
+            <div className="folder-list">
+              {data.folders.length ? (
+                data.folders.map((item) => (
+                  <article className="folder-row" key={item.id}>
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>
+                        {item.is_visible
+                          ? "目前顯示於收藏頁與新增選單"
+                          : "目前已隱藏"}
+                      </small>
+                    </div>
+                    <div className="manager-actions">
+                      <button
+                        className="secondary-button compact"
+                        onClick={() =>
+                          void setBookmarkFolderVisibility(
+                            item.id,
+                            !item.is_visible,
+                          )
+                        }
+                        type="button"
+                      >
+                        {item.is_visible ? "隱藏" : "顯示"}
+                      </button>
+                      <button
+                        className="secondary-button compact"
+                        onClick={() =>
+                          setRenaming({
+                            type: "bookmark_folder",
+                            id: item.id,
+                            value: item.name,
+                          })
+                        }
+                        type="button"
+                      >
+                        修改
+                      </button>
+                      <button
+                        className="delete-button compact"
+                        onClick={() =>
+                          setConfirmation({
+                            title: "移除收藏資料夾？",
+                            description: `「${item.name}」中的收藏不會被刪除，只會移出這個資料夾。`,
+                            action: () => deleteBookmarkFolder(item.id),
+                          })
+                        }
+                        type="button"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="manager-empty">尚未建立收藏資料夾。</p>
+              )}
+            </div>
+          </section>
+          <section className="folder-settings">
+            <div className="folder-heading">
+              <div>
+                <p className="eyebrow">SMART FOLDERS</p>
+                <h3>智慧資料夾</h3>
+                <p>「全部」固定保留；其他智慧資料夾可改名、隱藏或再次恢復。</p>
+              </div>
+              <button
+                className="secondary-button compact"
+                onClick={() => saveFolders(defaultFolderSettings)}
+                type="button"
+              >
+                還原預設
+              </button>
+            </div>
+            <div className="folder-list">
+              {(
+                ["favorite", "pinned", "archived", "trash"] as Exclude<
+                  SystemView,
+                  "all"
+                >[]
+              ).map((key) => (
+                <article className="folder-row" key={key}>
+                  <div>
+                    <strong>{folders[key].label}</strong>
+                    <small>
+                      {folders[key].visible
+                        ? "目前顯示於收藏頁"
+                        : "目前已隱藏（可恢復）"}
+                    </small>
+                  </div>
+                  <div className="manager-actions">
+                    <button
+                      className="secondary-button compact"
+                      onClick={() =>
+                        setRenaming({
+                          type: "folder",
+                          id: key,
+                          value: folders[key].label,
+                        })
+                      }
+                      type="button"
+                    >
+                      修改
+                    </button>
+                    <button
+                      className={
+                        folders[key].visible
+                          ? "delete-button compact"
+                          : "secondary-button compact"
+                      }
+                      onClick={() => toggleFolder(key)}
+                      type="button"
+                    >
+                      {folders[key].visible ? "隱藏" : "恢復"}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        </section>
+        {renameDialog}
+        {dialog}
+      </section>
+    );
+  const toggleAll = () =>
+    setChosen((current) => {
+      const next = new Set(current);
+      const all = selected.length === list.length && list.length > 0;
+      list.forEach((item) => {
+        if (all) next.delete(item.id);
+        else next.add(item.id);
+      });
+      return next;
+    });
+  const quickCount = (id: string) =>
+    data.bookmarks.filter(
+      (item) => !item.deletedAt && !item.archived && item.folder?.id === id,
+    ).length;
+  return (
+    <section className="bookmarks-workspace">
+      {pending && <OperationStatus label="正在處理收藏資料…" />}
+      {error && (
+        <p className="notice error" role="alert">
+          {error}
+        </p>
+      )}
+      {success && (
+        <p className="collection-operation-toast" role="status">
+          {success}
+        </p>
+      )}
+      <section aria-label="資料夾" className="collection-navigation-section">
+        <header>
+          <strong>資料夾</strong>
+          <div>
+            <button
+              className="collection-navigation-action"
+              onClick={() => openManager("folder")}
+              type="button"
+            >
+              管理
+            </button>
+            <button
+              className="collection-navigation-action primary"
+              onClick={() => setFolderAddOpen(true)}
+              type="button"
+            >
+              ＋ 新增
+            </button>
+          </div>
+        </header>
+        <div className="bookmark-view-tabs" role="tablist">
+          <div className="bookmark-view-tabs-scroll">
+            <button
+              aria-selected={view === "all"}
+              className={view === "all" ? "active" : ""}
+              onClick={() => {
+                setView("all");
+                setCategory("all");
+              }}
+              role="tab"
+              type="button"
+            >
+              未整理 <span>{counts.all}</span>
+            </button>
+            {displayBookmarkFolders.map((item) => (
+              <button
+                aria-selected={view === `folder:${item.id}`}
+                className={view === `folder:${item.id}` ? "active" : ""}
+                key={`folder-${item.id}`}
+                onClick={() => {
+                  setView(`folder:${item.id}`);
+                  setCategory("all");
+                }}
+                role="tab"
+                type="button"
+              >
+                {item.is_locked ? "🔒 " : ""}
+                {item.name} <span>{quickCount(item.id)}</span>
+              </button>
+            ))}
+            {hasMoreBookmarkFolders && (
+              <button
+                aria-label="查看更多收藏資料夾"
+                className="collection-category-utility"
+                onClick={() => setFolderMoreOpen(true)}
+                type="button"
+              >
+                更多
+              </button>
+            )}
+            {folders.trash.visible && (
+              <button
+                aria-selected={view === "trash"}
+                className={view === "trash" ? "active trash-tab" : "trash-tab"}
+                onClick={() => {
+                  setView("trash");
+                  setCategory("all");
+                }}
+                role="tab"
+                type="button"
+              >
+                {folders.trash.label} <span>{counts.trash}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+      <section aria-label="類別" className="collection-navigation-section">
+        <header>
+          <strong>類別</strong>
+          <div>
+            <button
+              className="collection-navigation-action"
+              onClick={() => openManager("category")}
+              type="button"
+            >
+              管理
+            </button>
+            <button
+              className="collection-navigation-action primary"
+              onClick={() => setCategoryAddOpen(true)}
+              type="button"
+            >
+              ＋ 新增
+            </button>
+          </div>
+        </header>
+        <div className="category-strip collection-category-strip">
+          <button
+            className={category === "all" ? "active" : ""}
+            onClick={() => setCategory("all")}
+            type="button"
+          >
+            所有類別
+          </button>
+          <button
+            className={category === "unclassified" ? "active" : ""}
+            onClick={() => setCategory("unclassified")}
+            type="button"
+          >
+            未分類
+          </button>
+          {displayCategories.map((item) => (
+            <button
+              className={category === item.id ? "active" : ""}
+              key={item.id}
+              onClick={() => setCategory(item.id)}
+              type="button"
+            >
+              {item.name}
+            </button>
+          ))}
+          {hasMoreCategories && (
+            <button
+              aria-label="查看更多收藏類別"
+              className="collection-category-utility"
+              onClick={() => setCategoryMoreOpen(true)}
+              type="button"
+            >
+              更多
+            </button>
+          )}
+        </div>
+      </section>
+      <div className="bookmark-toolbar">
+        <input
+          aria-label="搜尋書籤"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜尋標題或網址"
+          value={query}
+        />
+      </div>
+      <div className="bulk-toolbar">
+        <label>
+          <input
+            checked={list.length > 0 && selected.length === list.length}
+            onChange={toggleAll}
+            type="checkbox"
+          />{" "}
+          全選目前清單
+        </label>
+        {selected.length > 0 &&
+          (view === "trash" ? (
+            <button
+              className="delete-button"
+              disabled={pending}
+              onClick={() =>
+                setConfirmation({
+                  title: `永久刪除 ${selected.length} 筆收藏？`,
+                  description: "這些收藏將無法還原。",
+                  action: permanentlyRemoveSelected,
+                })
+              }
+              type="button"
+            >
+              永久刪除 {selected.length} 筆
+            </button>
+          ) : (
+            <button
+              className="delete-button"
+              disabled={pending}
+              onClick={() =>
+                setConfirmation({
+                  title: `移除 ${selected.length} 筆收藏？`,
+                  description: "這些收藏將移至垃圾桶，30 天內仍可還原。",
+                  confirmLabel: "移至垃圾桶",
+                  action: trashSelected,
+                })
+              }
+              type="button"
+            >
+              移至垃圾桶 {selected.length} 筆
+            </button>
+          ))}
+      </div>
+      <div
+        className={`bookmark-list bookmark-list-${bookmarkDisplay}`}
+        style={
+          bookmarkDisplay === "grid"
+            ? ({
+                "--bookmark-grid-columns": bookmarkGridColumns,
+              } as CSSProperties)
+            : undefined
+        }
+      >
+        {!loaded ? (
+          <BookmarkListSkeleton />
+        ) : (
+          <>
+            {list.map((item) => (
+              <BookmarkResultCard
+                item={item}
+                key={item.id}
+                onOpen={() => setDetailItem(item)}
+                onSelect={() =>
+                  setChosen((current) => {
+                    const next = new Set(current);
+                    if (next.has(item.id)) next.delete(item.id);
+                    else next.add(item.id);
+                    return next;
+                  })
+                }
+                selected={chosen.has(item.id)}
+              />
+            ))}
+            {list.length === 0 && <p className="lead">尚無符合條件的書籤。</p>}
+          </>
+        )}
+      </div>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => setFolderAddOpen(false)}
+        open={folderAddOpen}
+        pending={pending}
+        title="新增收藏資料夾"
+      >
+        <form
+          className="collection-category-dialog"
+          onSubmit={(event) => void addBookmarkFolder(event)}
+        >
+          <label>
+            資料夾名稱
+            <input
+              autoFocus
+              maxLength={80}
+              onChange={(event) => setNewBookmarkFolder(event.target.value)}
+              placeholder="例如：待閱讀、專案 A"
+              value={newBookmarkFolder}
+            />
+          </label>
+          <div className="dialog-actions">
+            <button
+              className="secondary-button"
+              disabled={pending}
+              onClick={() => setFolderAddOpen(false)}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className="button"
+              disabled={pending || !newBookmarkFolder.trim()}
+              type="submit"
+            >
+              新增資料夾
+            </button>
+          </div>
+        </form>
+      </ModalDialog>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => {
+          setFolderMoreOpen(false);
+          setFolderQuery("");
+        }}
+        open={folderMoreOpen}
+        title="更多收藏資料夾"
+      >
+        <div className="collection-category-dialog collection-category-manager">
+          <p>此處僅用來選擇資料夾；新增、修改、排序與刪除請使用資料夾列的「管理」。</p>
+          <input
+            aria-label="搜尋收藏資料夾"
+            onChange={(event) => setFolderQuery(event.target.value)}
+            placeholder="搜尋資料夾"
+            value={folderQuery}
+          />
+          <div className="collection-category-manager-list bookmark-folder-more-list">
+            <button
+              className={view === "all" ? "active" : ""}
+              onClick={() => {
+                setView("all");
+                setCategory("all");
+                setFolderMoreOpen(false);
+                setFolderQuery("");
+              }}
+              type="button"
+            >
+              未整理 <span>{counts.all}</span>
+            </button>
+            {visibleBookmarkFolders
+              .filter((item) =>
+                item.name
+                  .toLocaleLowerCase()
+                  .includes(folderQuery.trim().toLocaleLowerCase()),
+              )
+              .map((item) => (
+                <button
+                  className={view === `folder:${item.id}` ? "active" : ""}
+                  key={item.id}
+                  onClick={() => {
+                    setView(`folder:${item.id}`);
+                    setCategory("all");
+                    setFolderMoreOpen(false);
+                    setFolderQuery("");
+                  }}
+                  type="button"
+                >
+                  {item.is_locked ? "🔒 " : ""}
+                  {item.name} <span>{quickCount(item.id)}</span>
+                </button>
+              ))}
+          </div>
+        </div>
+      </ModalDialog>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => {
+          endLongPress();
+          void commitManager("bookmark_folder");
+        }}
+        open={folderManagerOpen}
+        pending={pending}
+        title="管理收藏資料夾"
+      >
+        <div className="collection-category-dialog">
+          <p>
+            電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整順序；放開後固定。×
+            會先在畫面移除，關閉時再一次儲存。
+          </p>
+          <div className="taxonomy-manager-list">
+            {managedFolders.map((item) => (
+              <article
+                aria-grabbed={
+                  dragging?.kind === "folder" && dragging.id === item.id
+                }
+                className={
+                  dragging?.kind === "folder" && dragging.id === item.id
+                    ? "taxonomy-manager-item dragging"
+                    : "taxonomy-manager-item"
+                }
+                data-bookmark-manager-id={item.id}
+                data-bookmark-manager-kind="folder"
+                draggable
+                key={item.id}
+                onDragEnd={endLongPress}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (dragging?.kind === "folder")
+                    reorder("bookmark_folder", dragging.id, item.id);
+                }}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", item.id);
+                  setDragging({ kind: "folder", id: item.id });
+                }}
+                onPointerDown={(event) =>
+                  beginLongPress("folder", item.id, event.pointerType)
+                }
+                onPointerMove={(event) => moveFromPoint("folder", event)}
+                onPointerUp={endLongPress}
+              >
+                <button
+                  className="taxonomy-item-name"
+                  onClick={() =>
+                    setRenaming({
+                      type: "bookmark_folder",
+                      id: item.id,
+                      value: item.name,
+                    })
+                  }
+                  type="button"
+                >
+                  {item.is_locked ? "🔒 " : ""}
+                  {item.name}
+                </button>
+                <button
+                  aria-label={`刪除 ${item.name}`}
+                  className="taxonomy-delete"
+                  onClick={() => {
+                    setManagedFolders((current) =>
+                      current.filter((folder) => folder.id !== item.id),
+                    );
+                    setRemovedFolderIds((current) => [...current, item.id]);
+                  }}
+                  type="button"
+                >
+                  ×
+                </button>
+              </article>
+            ))}
+            {!managedFolders.length && (
+              <p className="manager-empty">尚未建立收藏資料夾。</p>
+            )}
+          </div>
+        </div>
+      </ModalDialog>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => {
+          endLongPress();
+          void commitManager("category");
+        }}
+        open={categoryManagerOpen}
+        pending={pending}
+        title="修改收藏類別"
+      >
+        <div className="collection-category-dialog">
+          <p>
+            目前資料夾的類別。電腦以滑鼠左鍵拖曳、手機以手指長按拖曳調整順序；放開後固定。×
+            會先在畫面移除，關閉時再一次儲存。
+          </p>
+          <div className="taxonomy-manager-list">
+            {managedCategories.map((item) => (
+              <article
+                aria-grabbed={
+                  dragging?.kind === "category" && dragging.id === item.id
+                }
+                className={
+                  dragging?.kind === "category" && dragging.id === item.id
+                    ? "taxonomy-manager-item dragging"
+                    : "taxonomy-manager-item"
+                }
+                data-bookmark-manager-id={item.id}
+                data-bookmark-manager-kind="category"
+                draggable
+                key={item.id}
+                onDragEnd={endLongPress}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  if (dragging?.kind === "category")
+                    reorder("category", dragging.id, item.id);
+                }}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", item.id);
+                  setDragging({ kind: "category", id: item.id });
+                }}
+                onPointerDown={(event) =>
+                  beginLongPress("category", item.id, event.pointerType)
+                }
+                onPointerMove={(event) => moveFromPoint("category", event)}
+                onPointerUp={endLongPress}
+              >
+                <button
+                  className="taxonomy-item-name"
+                  onClick={() =>
+                    setRenaming({
+                      type: "category",
+                      id: item.id,
+                      value: item.name,
+                    })
+                  }
+                  type="button"
+                >
+                  {item.name}
+                </button>
+                <button
+                  aria-label={`刪除 ${item.name}`}
+                  className="taxonomy-delete"
+                  onClick={() => {
+                    setManagedCategories((current) =>
+                      current.filter((category) => category.id !== item.id),
+                    );
+                    setRemovedCategoryIds((current) => [...current, item.id]);
+                  }}
+                  type="button"
+                >
+                  ×
+                </button>
+              </article>
+            ))}
+            {!managedCategories.length && (
+              <p className="manager-empty">此資料夾尚未建立自訂類別。</p>
+            )}
+          </div>
+        </div>
+      </ModalDialog>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => setCategoryAddOpen(false)}
+        open={categoryAddOpen}
+        pending={pending}
+        title="新增收藏類別"
+      >
+        <form
+          className="collection-category-dialog"
+          onSubmit={(event) => void addCategory(event)}
+        >
+          <p>新增後會立即出現在收藏類別列與新增收藏的選項中。</p>
+          <label>
+            類別名稱
+            <input
+              autoFocus
+              maxLength={80}
+              onChange={(event) => setNewCategory(event.target.value)}
+              placeholder="例如：動畫、工作"
+              value={newCategory}
+            />
+          </label>
+          <div className="dialog-actions">
+            <button
+              className="secondary-button"
+              disabled={pending}
+              onClick={() => setCategoryAddOpen(false)}
+              type="button"
+            >
+              取消
+            </button>
+            <button
+              className="button"
+              disabled={pending || !newCategory.trim()}
+              type="submit"
+            >
+              新增類別
+            </button>
+          </div>
+        </form>
+      </ModalDialog>
+      <ModalDialog
+        className="mobile-sheet-dialog"
+        onClose={() => setCategoryMoreOpen(false)}
+        open={categoryMoreOpen}
+        title="收藏類別"
+      >
+        <div className="collection-category-dialog collection-category-manager">
+          <p>可快速選擇收藏類別；資料夾、鎖定與常駐清單請在管理資料夾調整。</p>
+          <input
+            aria-label="搜尋收藏類別"
+            onChange={(event) => setCategoryQuery(event.target.value)}
+            placeholder="搜尋類別"
+            value={categoryQuery}
+          />
+          <div className="collection-category-manager-list">
+            <button
+              className={category === "all" ? "active" : ""}
+              onClick={() => {
+                setCategory("all");
+                setCategoryMoreOpen(false);
+              }}
+              type="button"
+            >
+              所有類別
+            </button>
+            <button
+              className={category === "unclassified" ? "active" : ""}
+              onClick={() => {
+                setCategory("unclassified");
+                setCategoryMoreOpen(false);
+              }}
+              type="button"
+            >
+              未分類
+            </button>
+            {data.categories
+              .filter((item) =>
+                item.name
+                  .toLocaleLowerCase()
+                  .includes(categoryQuery.trim().toLocaleLowerCase()),
+              )
+              .map((item) => (
+                <button
+                  className={category === item.id ? "active" : ""}
+                  key={item.id}
+                  onClick={() => {
+                    setCategory(item.id);
+                    setCategoryMoreOpen(false);
+                  }}
+                  type="button"
+                >
+                  {item.name}
+                </button>
+              ))}
+          </div>
+        </div>
+      </ModalDialog>
+      {detailItem && (
+        <div
+          aria-label="關閉詳細資訊"
+          className="bookmark-detail-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDetailItem(null);
+          }}
+        >
+          <section
+            aria-modal="true"
+            aria-labelledby="bookmark-detail-title"
+            className="bookmark-detail-dialog"
+            role="dialog"
+          >
+            <div>
+              <button
+                aria-label="關閉詳細資訊"
+                className="detail-close"
+                onClick={() => setDetailItem(null)}
+                type="button"
+              >
+                ×
+              </button>
+              <p className="eyebrow">BOOKMARK DETAILS</p>
+              <h2 id="bookmark-detail-title">{detailItem.title}</h2>
+              <a
+                className="detail-url"
+                href={detailItem.detail?.url}
+                rel="noreferrer noopener"
+                target="_blank"
+              >
+                {detailItem.detail?.url}
+              </a>
+              <dl>
+                <div>
+                  <dt>類別</dt>
+                  <dd>{detailItem.category?.name ?? "未分類"}</dd>
+                </div>
+                <div>
+                  <dt>資料夾</dt>
+                  <dd>{detailItem.folder?.name ?? "未放入資料夾"}</dd>
+                </div>
+                <div>
+                  <dt>收藏設定</dt>
+                  <dd>
+                    {[
+                      detailItem.favorite && "我的最愛",
+                      detailItem.pinned && "置頂",
+                      detailItem.archived && "封存",
+                    ]
+                      .filter(Boolean)
+                      .join("、") || "一般收藏"}
+                  </dd>
+                </div>
+              </dl>
+              <h3>備註</h3>
+              <p className="detail-content">
+                {detailItem.description || "沒有備註。"}
+              </p>
+              <div className="dialog-actions">
+                {detailItem.deletedAt ? (
+                  <>
+                    <button
+                      className="button"
+                      onClick={() => {
+                        void update(detailItem.id, "restore");
+                        setDetailItem(null);
+                      }}
+                      type="button"
+                    >
+                      還原
+                    </button>
+                    <button
+                      className="delete-button"
+                      onClick={() =>
+                        setConfirmation({
+                          title: "永久刪除收藏？",
+                          description: `「${detailItem.title}」將無法還原。`,
+                          action: () => permanentlyRemove(detailItem.id),
+                        })
+                      }
+                      type="button"
+                    >
+                      永久刪除
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="secondary-button"
+                      onClick={() => {
+                        setEditing(detailItem);
+                        setDetailItem(null);
+                      }}
+                      type="button"
+                    >
+                      修改
+                    </button>
+                    <button
+                      className="delete-button"
+                      onClick={() =>
+                        setConfirmation({
+                          title: "移至垃圾桶？",
+                          description: `「${detailItem.title}」會保留 30 天，期間可隨時還原。`,
+                          confirmLabel: "移至垃圾桶",
+                          action: async () => {
+                            await update(detailItem.id, "trash");
+                            setDetailItem(null);
+                          },
+                        })
+                      }
+                      type="button"
+                    >
+                      刪除
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+      {editing && (
+        <section
+          aria-modal="true"
+          aria-labelledby="edit-bookmark-title"
+          className="inline-dialog edit-dialog"
+          role="dialog"
+        >
+          <form onSubmit={saveEdit}>
+            <h2 id="edit-bookmark-title">修改收藏</h2>
+            <p className="edit-link">{editing.detail?.url}</p>
+            <label>
+              標題
+              <input
+                aria-label="標題"
+                defaultValue={editing.title}
+                name="title"
+                required
+              />
+            </label>
+            <label>
+              備註
+              <textarea
+                aria-label="備註"
+                defaultValue={editing.description ?? ""}
+                name="description"
+                rows={3}
+              />
+            </label>
+            <label>
+              類別
+              <select
+                aria-label="類別"
+                defaultValue={editing.category?.id ?? ""}
+                name="categoryId"
+              >
+                <option value="">未分類</option>
+                {data.categories.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <BookmarkCollectionSettings
+              archived={editing.archived}
+              favorite={editing.favorite}
+              folderId={editing.folder?.id ?? ""}
+              folders={data.folders}
+              pinned={editing.pinned}
+            />
+            <div className="dialog-actions">
+              <button className="button" disabled={pending} type="submit">
+                {pending ? "儲存中…" : "儲存修改"}
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setEditing(null)}
+                type="button"
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+      {dialog}
+    </section>
+  );
 }

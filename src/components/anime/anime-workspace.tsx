@@ -186,7 +186,8 @@ function AnimeFolderNavigation({
     if (!inline) return;
     const updateLimit = () => {
       const width = window.innerWidth;
-      setInlineFolderLimit(width >= 1440 ? 5 : width >= 1150 ? 4 : width >= 940 ? 3 : width >= 820 ? 2 : 1);
+      // Preserve room for 更多、管理、新增與垃圾桶 instead of wrapping.
+      setInlineFolderLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
     };
     updateLimit();
     window.addEventListener("resize", updateLimit);
@@ -386,9 +387,10 @@ function AnimeFolderNavigation({
         title="動漫資料夾"
       >
         <div className="collection-category-dialog collection-category-manager">
+          <p>此處僅可選擇資料夾；新增、修改、排序與刪除請使用資料夾列的管理按鈕。</p>
           <input aria-label="搜尋動漫資料夾" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋資料夾" value={query} />
           <div className="collection-category-manager-list">
-            {sortedFolders(folders).filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(folder.id); setMoreOpen(false); }} type="button">{folder.name}{folder.isVisible ? "" : "（已隱藏）"}</button>)}
+            {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(folder.id); setMoreOpen(false); }} type="button">{folder.name}</button>)}
             {!folders.length && <p className="manager-empty">尚未建立資料夾。</p>}
           </div>
         </div>
@@ -802,6 +804,7 @@ export function AnimeWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
+  const [inlineCategoryLimit, setInlineCategoryLimit] = useState(2);
   const [categoryManageScope, setCategoryManageScope] =
     useState<CategoryScope | null>(null);
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
@@ -1058,6 +1061,15 @@ export function AnimeWorkspace({
   useEffect(() => {
     setLibraryPage(1);
   }, [filter, categoryFilter, folderFilter, query]);
+  useEffect(() => {
+    const updateLimit = () => {
+      const width = window.innerWidth;
+      setInlineCategoryLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
+    };
+    updateLimit();
+    window.addEventListener("resize", updateLimit);
+    return () => window.removeEventListener("resize", updateLimit);
+  }, []);
 
   const createCategory = async (scope: CategoryScope) => {
     const name = categoryName.trim();
@@ -1138,6 +1150,34 @@ export function AnimeWorkspace({
       setPending(null);
     }
   };
+  const keepActiveTaxonomyVisible = <T extends { id: string }>(
+    items: T[],
+    selectedId: string | null,
+  ) => {
+    const first = items.slice(0, inlineCategoryLimit);
+    const selectedItem = selectedId
+      ? items.find((item) => item.id === selectedId)
+      : null;
+    if (!selectedItem || first.some((item) => item.id === selectedItem.id))
+      return first;
+    return [...first.slice(0, Math.max(0, inlineCategoryLimit - 1)), selectedItem];
+  };
+  const standardScopedTags = data.tags.filter(
+    (item) => !folderFilter || item.folderId === folderFilter,
+  );
+  const adultScopedTags = (adultData?.tags ?? []).filter(
+    (item) => !adultFolderFilter || item.folderId === adultFolderFilter,
+  );
+  const standardInlineTags = keepActiveTaxonomyVisible(
+    standardScopedTags,
+    categoryFilter,
+  );
+  const adultInlineTags = keepActiveTaxonomyVisible(
+    adultScopedTags,
+    adultCategoryFilter,
+  );
+  const standardHasMoreTags = standardInlineTags.length < standardScopedTags.length;
+  const adultHasMoreTags = adultInlineTags.length < adultScopedTags.length;
 
   return (
     <section className="anime-workspace">
@@ -1320,13 +1360,7 @@ export function AnimeWorkspace({
                       >
                         所有類別
                       </button>
-                      {adultData.tags
-                        .filter(
-                          (category) =>
-                            !adultFolderFilter ||
-                            category.folderId === adultFolderFilter,
-                        )
-                        .map((category) => (
+                      {adultInlineTags.map((category) => (
                           <button
                             className={
                               adultCategoryFilter === category.id
@@ -1349,14 +1383,16 @@ export function AnimeWorkspace({
                             </small>
                           </button>
                         ))}
-                      <button
-                        aria-label="查看更多成人動漫類別"
-                        className="anime-category-utility"
-                        onClick={() => setCategoryMoreOpen(true)}
-                        type="button"
-                      >
-                        更多
-                      </button>
+                      {adultHasMoreTags && (
+                        <button
+                          aria-label="查看更多成人動漫類別"
+                          className="anime-category-utility"
+                          onClick={() => setCategoryMoreOpen(true)}
+                          type="button"
+                        >
+                          更多
+                        </button>
+                      )}
                       <button
                         aria-label="修改成人動漫類別"
                         className="anime-category-utility"
@@ -1615,12 +1651,7 @@ export function AnimeWorkspace({
                   >
                     所有類別
                   </button>
-                  {data.tags
-                    .filter(
-                      (category) =>
-                        !folderFilter || category.folderId === folderFilter,
-                    )
-                    .map((category) => (
+                  {standardInlineTags.map((category) => (
                       <button
                         className={
                           categoryFilter === category.id ? "active" : ""
@@ -1641,14 +1672,16 @@ export function AnimeWorkspace({
                         </small>
                       </button>
                     ))}
-                  <button
-                    aria-label="查看更多類別"
-                    className="anime-category-utility"
-                    onClick={() => setCategoryMoreOpen(true)}
-                    type="button"
-                  >
-                    更多
-                  </button>
+                  {standardHasMoreTags && (
+                    <button
+                      aria-label="查看更多類別"
+                      className="anime-category-utility"
+                      onClick={() => setCategoryMoreOpen(true)}
+                      type="button"
+                    >
+                      更多
+                    </button>
+                  )}
                   <button
                     aria-label="修改動漫類別"
                     className="anime-category-utility"

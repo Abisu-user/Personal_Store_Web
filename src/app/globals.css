@@ -727,3 +727,49 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
     min-height: 100dvh;
   }
 }
+
+/* Collection rails are always a single deliberate line. Extra folders and
+   categories belong in their picker, leaving room for the fixed trash chip. */
+.collection-navigation-section .bookmark-view-tabs-scroll,
+.collection-navigation-section .collection-category-strip {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+.collection-navigation-section .bookmark-view-tabs-scroll > button,
+.collection-navigation-section .collection-category-strip > button {
+  max-width: min(17vw, 180px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Anime uses the same compact taxonomy rule. The selected item stays visible,
+   while additional folders/categories are selected through 「更多」. */
+.anime-workspace .anime-category-scroll {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-right: 0;
+}
+.anime-workspace .anime-category-scroll > button:not(.anime-category-utility),
+.anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button:not(.anime-category-utility) {
+  max-width: min(16vw, 160px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.anime-filter-scroll,
+.anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+@media (max-width: 700px) {
+  .collection-navigation-section .bookmark-view-tabs-scroll > button,
+  .collection-navigation-section .collection-category-strip > button {
+    max-width: 108px;
+  }
+  .anime-workspace .anime-category-scroll > button:not(.anime-category-utility),
+  .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button:not(.anime-category-utility) {
+    max-width: 92px;
+  }
+}
