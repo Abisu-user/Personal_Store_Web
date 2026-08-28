@@ -47,7 +47,27 @@ export async function GET(request: NextRequest) { const context = await getSecur
 
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return jsonError("Unauthorized", 401); const parsed = payloadSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return jsonError("請檢查單字欄位。", 400); if (!(await validateRelated(context.userId, parsed.data.tagIds, parsed.data.deckIds))) return jsonError("標籤或單字本不存在。", 400);
-  try { const admin = createAdminClient(); const { data: existing, error: duplicateError } = await admin.from("vocabulary_cards").select("id").eq("user_id", context.userId).eq("language", parsed.data.language).eq("word", parsed.data.word).is("deleted_at", null).maybeSingle(); if (duplicateError) throw duplicateError; if (existing) return jsonError("這個單字已經存在於你的單字庫。", 409); const { data, error } = await admin.from("vocabulary_cards").insert({ user_id: context.userId, ...toRow(parsed.data) }).select("id").single(); if (error) throw error; await replaceRelations(data.id, parsed.data); return NextResponse.json({ id: data.id }, { status: 201 }); } catch { return jsonError("無法儲存單字，請稍後再試。", 503); }
+  try {
+    const admin = createAdminClient();
+    const { data: existing, error: duplicateError } = await admin.from("vocabulary_cards").select("id").eq("user_id", context.userId).eq("language", parsed.data.language).eq("word", parsed.data.word).is("deleted_at", null).maybeSingle();
+    if (duplicateError) throw duplicateError;
+    if (existing) return jsonError("這個單字已經存在於你的單字庫。", 409);
+    const { data, error } = await admin.from("vocabulary_cards").insert({ user_id: context.userId, ...toRow(parsed.data) }).select("id").single();
+    if (error) throw error;
+    try {
+      await replaceRelations(data.id, parsed.data);
+    } catch (relationError) {
+      // Do not leave an invisible, half-created word behind when a linked
+      // tag, deck, meaning, or example fails to persist.
+      const { error: rollbackError } = await admin.from("vocabulary_cards").delete().eq("id", data.id).eq("user_id", context.userId);
+      if (rollbackError) console.error("[vocabulary.create] rollback failed", { code: rollbackError.code, message: rollbackError.message });
+      throw relationError;
+    }
+    return NextResponse.json({ id: data.id }, { status: 201 });
+  } catch (error) {
+    console.error("[vocabulary.create] failed", { message: error instanceof Error ? error.message : String(error) });
+    return jsonError("無法儲存單字，請稍後再試。", 503);
+  }
 }
 
 export async function PUT(request: NextRequest) {

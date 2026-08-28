@@ -136,7 +136,17 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     const meanings = draft.meaningsText.split("\n").map((value) => value.trim()).filter(Boolean).map((meaning, index) => ({ meaning, language: "zh-TW", isPrimary: index === 0, sortOrder: index }));
     const examples = draft.examplesText.split("\n").map((value) => value.trim()).filter(Boolean).map((value) => { const [sentence, translation] = value.split("｜"); return { sentence: sentence.trim(), translation: translation?.trim() || null }; });
     const result = await request("/api/vocabulary", { method: draft.id ? "PUT" : "POST", body: JSON.stringify({ ...draft, jlptLevel: draft.jlptLevel || null, cefrLevel: draft.cefrLevel || null, languageDetails, meanings, examples }) });
-    if (result) { setDraft(null); await load(false); }
+    if (result) {
+      const word = draft.word;
+      const editing = Boolean(draft.id);
+      setDraft(null);
+      try {
+        await load(false);
+        setNotice(editing ? `已儲存「${word}」的修改。` : `已將「${word}」加入單字庫。`);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "單字已儲存，但清單重新整理失敗；請稍後再試。");
+      }
+    }
   }
   async function mutate(ids: string[], action: "trash" | "restore" | "permanent") { const result = await request("/api/vocabulary", { method: "PATCH", body: JSON.stringify({ ids, action }) }); if (result) { setSelected(null); setDeleting(null); setChosen(new Set()); setSelectionMode(false); await load(action === "restore" ? false : trash); setNotice(action === "trash" ? "已移至垃圾桶。" : action === "restore" ? "已還原單字。" : "已永久刪除單字。"); } }
   async function organizeSelected() { if (!chosen.size) return; const result = await request("/api/vocabulary", { method: "PATCH", body: JSON.stringify({ ids: [...chosen], action: "organize", deckId: batchDeckId, tagIds: [...batchTagIds] }) }); if (result) { setOrganizeOpen(false); setBatchDeckId(undefined); setBatchTagIds(new Set()); setChosen(new Set()); setSelectionMode(false); await load(false); } }
