@@ -34,6 +34,7 @@ export type DictionarySearchResult = {
 
 const CACHE_HOURS = 12;
 const inMemoryTranslations = new Map<string, { expiresAt: number; value: string | null }>();
+let googleTranslationCooldownUntil = 0;
 
 export class DictionaryProviderError extends Error {
   constructor(public readonly code: "TIMEOUT" | "NETWORK" | "UPSTREAM", public readonly provider: string, public readonly status?: number) {
@@ -126,8 +127,8 @@ export async function translateDictionaryText(value: string, source: "zh-TW" | "
   if (memory && memory.expiresAt > Date.now()) return memory.value;
   const startedAt = Date.now();
   const providers: Array<[string, () => Promise<string | null>]> = [
-    ["Google Translate", () => googleTranslate(value, source, target)],
     ["MyMemory Translate", () => myMemoryTranslate(value, source, target)],
+    ...(Date.now() >= googleTranslationCooldownUntil ? [["Google Translate", () => googleTranslate(value, source, target)] as [string, () => Promise<string | null>]] : []),
   ];
   const failures: Array<Record<string, unknown>> = [];
   for (const [provider, request] of providers) {
@@ -139,6 +140,9 @@ export async function translateDictionaryText(value: string, source: "zh-TW" | "
       console.info("[vocabulary.translation] success", { provider, source, target, inputLength: value.length, durationMs: Date.now() - startedAt });
       return translated;
     } catch (error) {
+      if (provider === "Google Translate" && error instanceof DictionaryProviderError && error.status === 429) {
+        googleTranslationCooldownUntil = Date.now() + 5 * 60 * 1000;
+      }
       failures.push({ provider, code: error instanceof DictionaryProviderError ? error.code : "UNKNOWN", upstreamStatus: error instanceof DictionaryProviderError ? error.status : undefined, message: error instanceof Error ? error.message : String(error) });
     }
   }
@@ -177,7 +181,7 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
   // translate the dictionary's English definition instead of rendering a misleading result.
   const translated = isTraditionalChineseTranslation(direct)
     ? direct
-    : await translateDictionaryText(entry.meanings.slice(0, 3).join("；") || entry.word, "en", "zh-TW");
+    : await translateDictionaryText(entry.meanings[0] || entry.word, "en", "zh-TW");
   inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
   if (translated) {
     try {
