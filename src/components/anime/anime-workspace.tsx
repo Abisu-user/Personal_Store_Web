@@ -1946,7 +1946,6 @@ export function AnimeWorkspace({
               if (tab === "adult") await refreshAdult();
               else {
                 await refresh();
-                setTab("library");
               }
               setNotice(tab === "adult" ? "已新增成人作品。" : "已新增動漫。");
             } finally {
@@ -1967,7 +1966,6 @@ export function AnimeWorkspace({
             setPending("refresh");
             try {
               await refresh();
-              setTab("library");
               setNotice("已新增動漫。");
             } finally {
               setPending(null);

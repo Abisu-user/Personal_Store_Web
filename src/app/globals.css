@@ -726,6 +726,21 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .vocabulary-page {
     min-height: 100dvh;
   }
+
+  /* The PWA shell is fixed on mobile. Give Vocabulary its own inner scroll
+     area so later dictionary cards stay reachable above the bottom navigation. */
+  .app-main .dashboard:has(.vocabulary-workspace) {
+    display: block;
+    height: 100%;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-main .dashboard:has(.vocabulary-workspace) > .vocabulary-workspace {
+    min-height: 100%;
+    padding-bottom: calc(132px + env(safe-area-inset-bottom));
+  }
 }
 
 /* Collection rails are always a single deliberate line. Extra folders and
