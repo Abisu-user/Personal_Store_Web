@@ -2402,6 +2402,8 @@ function AnimeEditor({
         adultSource: isAdult ? adultSource.trim() || "manual" : null,
         coverUrl: !cover && !anime ? (prefill?.coverUrl ?? null) : undefined,
         metadata: !anime && prefill ? prefill : undefined,
+        externalId: !anime && prefill ? prefill.id : undefined,
+        externalSource: !anime && prefill ? prefill.source : undefined,
         coverTicket,
         watchStatus,
         rating,

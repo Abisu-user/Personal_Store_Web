@@ -21,6 +21,10 @@ const cn = (value: string) => names[value] ?? value;
 const displayTitle = (anime: ExternalAnime) => anime.titleChinese ?? anime.titleJapanese ?? anime.title;
 const state = (value: string | null) => ({ RELEASING: "連載中", FINISHED: "已完結", NOT_YET_RELEASED: "尚未播出", HIATUS: "暫停播出", CANCELLED: "已取消" }[value ?? ""] ?? "資訊待定");
 const formatName = (value: string | null) => formats.find((item) => item[0] === value)?.[1] ?? (value === "ANIME" || !value ? "動畫" : value);
+const normalizeTitle = (value: string) => value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}_]+/gu, "");
+const titleVariants = (anime: Pick<ExternalAnime | AnimeLibraryItem, "title" | "titleJapanese" | "titleEnglish" | "titleChinese" | "originalTitle">) => [anime.title, anime.titleJapanese, anime.titleEnglish, anime.titleChinese, anime.originalTitle]
+  .filter((value): value is string => Boolean(value?.trim()))
+  .map(normalizeTitle);
 
 function nowSeason() {
   const date = new Date(); const month = date.getMonth() + 1;
@@ -61,12 +65,15 @@ export function AnimeDiscovery({ library, onAdd, adultMode = false }: { library:
   const [catalogueSearchResults, setCatalogueSearchResults] = useState<ExternalAnime[]>([]);
   const [catalogueSearching, setCatalogueSearching] = useState(false);
   const seen = useRef(""); const sentinel = useRef<HTMLDivElement>(null);
-  // A saved anime can be renamed by its owner. Prefer the metadata provider ID
-  // so it still shows as already collected, with a title fallback for old data.
-  const hasItem = useCallback((anime: ExternalAnime) => library.some((item) => (
-    (item.externalSource === anime.source && item.externalId === anime.id)
-    || item.title.trim().toLocaleLowerCase() === anime.title.trim().toLocaleLowerCase()
-  )), [library]);
+  // Older records saved provider metadata but not its source ID. Compare every
+  // stored title variant too, so a user-renamed title is still recognised.
+  const hasItem = useCallback((anime: ExternalAnime) => {
+    const externalTitles = new Set(titleVariants(anime));
+    return library.some((item) => (
+      (item.externalSource === anime.source && item.externalId === anime.id)
+      || titleVariants(item).some((title) => externalTitles.has(title))
+    ));
+  }, [library]);
 
   const reloadHome = useCallback(async () => {
     try {
