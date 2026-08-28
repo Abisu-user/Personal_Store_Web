@@ -727,17 +727,20 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
     min-height: 100dvh;
   }
 
-  /* The PWA shell is fixed on mobile. Give Vocabulary its own inner scroll
-     area so later dictionary cards stay reachable above the bottom navigation. */
-  .app-main .dashboard:has(.vocabulary-workspace) {
+  /* Vocabulary deliberately does not use the generic .dashboard wrapper.
+     The PWA shell itself is fixed, therefore the route main must own scrolling
+     or dictionary cards below the fold become unreachable. */
+  .app-main > .vocabulary-page {
     display: block;
     height: 100%;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
   }
 
-  .app-main .dashboard:has(.vocabulary-workspace) > .vocabulary-workspace {
+  .app-main > .vocabulary-page > .vocabulary-workspace {
     min-height: 100%;
     padding-bottom: calc(132px + env(safe-area-inset-bottom));
   }
