@@ -100,6 +100,7 @@ export async function translateDictionaryText(value: string, source: "zh-TW" | "
   const key = `${source}:${target}:${normalize(value)}`;
   const memory = inMemoryTranslations.get(key);
   if (memory && memory.expiresAt > Date.now()) return memory.value;
+  const startedAt = Date.now();
   try {
     const url = new URL("https://translate.googleapis.com/translate_a/single");
     url.searchParams.set("client", "gtx");
@@ -107,13 +108,23 @@ export async function translateDictionaryText(value: string, source: "zh-TW" | "
     url.searchParams.set("tl", target);
     url.searchParams.append("dt", "t");
     url.searchParams.set("q", value);
-    const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json", "User-Agent": "Personal-Vault/1.0 vocabulary translation" } }, 4_000);
+    // This public endpoint can reject non-browser-looking custom user agents from serverless regions.
+    const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, 6_000);
     if (!response.ok) throw new DictionaryProviderError("UPSTREAM", "Google Translate", response.status);
     const body = await response.json() as Array<Array<Array<string | null>>>;
     const translated = body[0]?.map((part) => part[0] ?? "").join("").trim() || null;
     inMemoryTranslations.set(key, { value: translated, expiresAt: Date.now() + 30 * 60 * 1000 });
     return translated;
-  } catch {
+  } catch (error) {
+    console.warn("[vocabulary.translation] fallback unavailable", {
+      source,
+      target,
+      inputLength: value.length,
+      durationMs: Date.now() - startedAt,
+      code: error instanceof DictionaryProviderError ? error.code : "UNKNOWN",
+      upstreamStatus: error instanceof DictionaryProviderError ? error.status : undefined,
+      message: error instanceof Error ? error.message : String(error),
+    });
     inMemoryTranslations.set(key, { value: null, expiresAt: Date.now() + 2 * 60 * 1000 });
     return null;
   }
