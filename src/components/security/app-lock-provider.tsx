@@ -9,6 +9,7 @@ type PinStatus = { configured: boolean; mode: PinMode | null };
 const lockDelayMs: Record<LockDelay, number> = { immediate: 0, "30": 30_000, "60": 60_000, "300": 300_000, "900": 900_000 };
 const lockSettingKey = "personal-vault:app-lock-delay:v1";
 const pinStatusEvent = "personal-vault:app-lock-pin-updated";
+const unlockSessionKey = "personal-vault:app-lock-session-unlocked:v1";
 
 function readDelay(): LockDelay { const value = window.localStorage.getItem(lockSettingKey); return value === "30" || value === "60" || value === "300" || value === "900" ? value : "immediate"; }
 async function getPinStatus(): Promise<PinStatus> { const response = await fetch("/api/security/app-lock", { cache: "no-store" }); return response.ok ? response.json() as Promise<PinStatus> : { configured: false, mode: null }; }
@@ -16,12 +17,17 @@ async function getPinStatus(): Promise<PinStatus> { const response = await fetch
 export function AppLockProvider({ children }: { children: ReactNode }) {
   const [locked, setLocked] = useState(true); const [pending, setPending] = useState(false); const [passwordMode, setPasswordMode] = useState(false); const [pinStatus, setPinStatus] = useState<PinStatus>({ configured: false, mode: null }); const [pin, setPin] = useState(""); const [email, setEmail] = useState(""); const [error, setError] = useState<string | null>(null);
   const backgroundAt = useRef<number | null>(null); const timer = useRef<number | null>(null);
-  const lock = useCallback(() => { if (timer.current) window.clearTimeout(timer.current); document.documentElement.dataset.vaultLocked = "true"; setPin(""); setLocked(true); setPasswordMode(false); }, []);
-  const unlock = useCallback(() => { if (timer.current) window.clearTimeout(timer.current); document.documentElement.dataset.vaultLocked = "false"; setError(null); setPin(""); setPasswordMode(false); setLocked(false); }, []);
+  const lock = useCallback(() => { if (timer.current) window.clearTimeout(timer.current); window.sessionStorage.removeItem(unlockSessionKey); document.documentElement.dataset.vaultLocked = "true"; setPin(""); setLocked(true); setPasswordMode(false); }, []);
+  const unlock = useCallback(() => { if (timer.current) window.clearTimeout(timer.current); window.sessionStorage.setItem(unlockSessionKey, "1"); document.documentElement.dataset.vaultLocked = "false"; setError(null); setPin(""); setPasswordMode(false); setLocked(false); }, []);
   const loadPinStatus = useCallback(async () => setPinStatus(await getPinStatus()), []);
   useEffect(() => {
     const justAuthenticated = window.sessionStorage.getItem("personal-vault:unlock-after-login") === "1";
-    if (justAuthenticated) { window.sessionStorage.removeItem("personal-vault:unlock-after-login"); unlock(); } else lock();
+    // A route transition may remount this provider. It is not an app
+    // background event, so preserve an unlocked in-memory session here.
+    // Real background/pagehide events still clear this marker via lock().
+    if (justAuthenticated) { window.sessionStorage.removeItem("personal-vault:unlock-after-login"); unlock(); }
+    else if (window.sessionStorage.getItem(unlockSessionKey) === "1" && document.visibilityState === "visible") unlock();
+    else lock();
     void createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? "")); void loadPinStatus();
     const onPinUpdated = () => void loadPinStatus();
     const onVisibility = () => { if (document.visibilityState === "hidden") { backgroundAt.current = Date.now(); const delay = readDelay(); if (delay === "immediate") lock(); else timer.current = window.setTimeout(lock, lockDelayMs[delay]); return; } const delay = readDelay(); if (backgroundAt.current && Date.now() - backgroundAt.current >= lockDelayMs[delay]) lock(); backgroundAt.current = null; };
