@@ -67,6 +67,10 @@ function importErrorMessage(error) {
   return String(error);
 }
 
+function throwImportError(label, error) {
+  if (error) throw new Error(`${label}: ${importErrorMessage(error)}`);
+}
+
 // Keep the catalogue at the same granularity as the UI: each modern
 // gojūon sound is independently filterable, while voiced/small variants stay
 // with their base sound (が → か, きゃ → き, etc.).
@@ -203,7 +207,7 @@ async function importJapanese({ dryRun = false } = {}) {
         .select("source_entry_id,primary_translation,english_definition,part_of_speech,kanji_forms,reading_forms,senses,examples,source_metadata")
         .eq("source_id", source.id)
         .in("source_entry_id", batch.map((entry) => entry.sourceEntryId));
-      if (existingError) throw existingError;
+      throwImportError("讀取既有日文詞條", existingError);
       const existingBySourceEntry = new Map((existingEntries ?? []).map((entry) => [entry.source_entry_id, entry]));
       const dictionaryRows = batch.map((entry) => {
         const existing = existingBySourceEntry.get(entry.sourceEntryId);
@@ -228,25 +232,25 @@ async function importJapanese({ dryRun = false } = {}) {
         };
       });
       const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id,primary_translation"));
-      if (dictionaryError) throw dictionaryError;
+      throwImportError("寫入日文字典詞條", dictionaryError);
       const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
       const translations = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.primary_translation]));
       if (ids.size !== batch.length) throw new Error("Dictionary upsert 沒有回傳完整的詞條識別碼。");
       const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: entry.level, kana_group: entry.kanaGroup, sort_order: batchNumber * BATCH_SIZE + index }));
       const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
-      if (mappingError) throw mappingError;
+      throwImportError("寫入日文單字庫對應", mappingError);
       const catalogRows = batch.map((entry) => {
         const verified = japaneseTraditionalChineseEntries[entry.sourceEntryId] ?? null;
         return { source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: verified?.primaryMeaning || translations.get(entry.sourceEntryId) || entry.meanings.join("；") || "英文釋義待補", meanings_zh_tw: verified?.meanings ?? [], translation_senses_zh_tw: verified?.senses ?? [], english_definition: verified?.englishDefinition ?? (entry.meanings.join("；") || null), part_of_speech: verified?.partOfSpeech ?? null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: verified ? "OpenJLPT + Tomoshi（含 EDRDG／Tatoeba 歸屬）" : "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() };
       });
       const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
-      if (catalogError) throw catalogError;
+      throwImportError("寫入日文系統單字庫", catalogError);
       console.info(`[vocabulary-import] Japanese ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);
     }
     const { error: legacyError } = await admin.from("system_vocabulary").update({ is_active: false }).eq("language", "ja").eq("collection", "jlpt_common").is("source_id", null);
-    if (legacyError) throw legacyError;
+    throwImportError("停用舊版日文系統單字", legacyError);
     const { error: completeError } = await admin.from("vocabulary_dataset_imports").update({ status: "completed", item_counts: validation, validation: { valid: true, requiredLevels: ["N5", "N4", "N3", "N2", "N1"], source: "OpenJLPT" }, imported_at: new Date().toISOString() }).eq("id", job.id);
-    if (completeError) throw completeError;
+    throwImportError("完成日文資料集匯入紀錄", completeError);
     return validation;
   } catch (error) {
     await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: importErrorMessage(error) }).eq("id", job.id);
@@ -275,21 +279,21 @@ async function importEnglish({ dryRun = false } = {}) {
     for (const [batchNumber, batch] of chunks(entries).entries()) {
       const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "en", word: entry.word, reading: null, normalized_word: entry.normalizedWord, normalized_reading: null, primary_translation: entry.meaning || null, english_definition: null, part_of_speech: entry.partsOfSpeech.join(" / ") || null, kanji_forms: [], reading_forms: [], senses: [{ glosses: entry.meaning ? [entry.meaning] : [] }], examples: entry.examples, source_metadata: { wordForms: entry.forms, toeicScoreRange: entry.scoreRange, examTips: entry.tips } }));
       const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id"));
-      if (dictionaryError) throw dictionaryError;
+      throwImportError("寫入英文字典詞條", dictionaryError);
       const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
       if (ids.size !== batch.length) throw new Error("Dictionary upsert 沒有回傳完整的英文詞條識別碼。");
       const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: null, kana_group: null, topics: entry.topic ? [entry.topic] : [], importance: entry.importance, sort_order: batchNumber * BATCH_SIZE + index }));
       const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
-      if (mappingError) throw mappingError;
+      throwImportError("寫入英文單字庫對應", mappingError);
       const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "en", collection: "toeic_common", word: entry.word, reading: null, kana: null, romaji: entry.normalizedWord, ipa: null, meaning_zh_tw: entry.meaning || "中文釋義待補", english_definition: null, part_of_speech: entry.partsOfSpeech.join(" / ") || null, jlpt_level: null, topics: entry.topic ? [entry.topic] : [], frequency_rank: null, importance: entry.importance, sort_key: entry.normalizedWord, normalized_word: entry.normalizedWord, normalized_reading: null, kana_group: null, examples: entry.examples, source: "完整 TOEIC 單字庫（English–Traditional Chinese）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
       const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
-      if (catalogError) throw catalogError;
+      throwImportError("寫入英文系統單字庫", catalogError);
       console.info(`[vocabulary-import] English ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);
     }
     const { error: legacyError } = await admin.from("system_vocabulary").update({ is_active: false }).eq("language", "en").eq("collection", "toeic_common").is("source_id", null);
-    if (legacyError) throw legacyError;
+    throwImportError("停用舊版英文系統單字", legacyError);
     const { error: completeError } = await admin.from("vocabulary_dataset_imports").update({ status: "completed", item_counts: validation, validation: { valid: true, minimumEntries: 1000, source: "toeic-vocab-tw" }, imported_at: new Date().toISOString() }).eq("id", job.id);
-    if (completeError) throw completeError;
+    throwImportError("完成英文資料集匯入紀錄", completeError);
     return validation;
   } catch (error) {
     await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: importErrorMessage(error) }).eq("id", job.id);
