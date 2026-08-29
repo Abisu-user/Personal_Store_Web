@@ -4,6 +4,7 @@ import translationIndex from "@/data/vocabulary/openjlpt-tomoshi-zhtw.json";
 export type VerifiedJapaneseTranslation = {
   primaryMeaning: string;
   meanings: string[];
+  secondaryMeanings: string[];
   senses: Array<{
     index: number;
     glosses: string[];
@@ -14,6 +15,13 @@ export type VerifiedJapaneseTranslation = {
   }>;
   englishDefinition: string | null;
   partOfSpeech: string | null;
+  translationMetadata: {
+    source: string;
+    confidence: "reviewed" | "source-normalized";
+    primarySenseIndex: number | null;
+    cardMeaningLimit: number;
+    sensePolicy: string;
+  };
 };
 
 type TranslationIndex = {
@@ -82,7 +90,9 @@ export function applyVerifiedJapaneseSystemTranslation<T extends Record<string, 
     ...row,
     meaning_zh_tw: translation.primaryMeaning,
     meanings_zh_tw: translation.meanings,
+    secondary_meanings_zh_tw: translation.secondaryMeanings,
     translation_senses_zh_tw: translation.senses,
+    translation_metadata: translation.translationMetadata,
     english_definition: translation.englishDefinition ?? row.english_definition,
     part_of_speech: translation.partOfSpeech ?? row.part_of_speech,
   };

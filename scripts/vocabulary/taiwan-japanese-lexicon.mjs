@@ -6,8 +6,9 @@
  *
  * The list is intentionally small and reviewable.  It corrects source terms
  * whose literal wording is technically understandable but not the natural
- * phrasing a Taiwan Japanese learner would normally use.  Additions require a
- * dictionary-source review and a regression test.
+ * phrasing a Taiwan Japanese learner would normally use.  It is an editorial
+ * layer over the generic sense normalizer — never a replacement for it.
+ * Additions require a dictionary-source review and a regression test.
  */
 function normalizeJapanese(value) {
   return String(value ?? "")
@@ -29,9 +30,29 @@ const reviewedSenseOverrides = [
   {
     forms: ["遭う"],
     senses: [
-      { index: 0, meanings: ["相遇", "碰面", "見面"] },
-      { index: 1, meanings: ["遭遇", "遇到", "碰上不好的事情"] },
+      { index: 0, meanings: ["遭遇", "碰上", "遭到"] },
+      { index: 1, meanings: ["遭受", "遇到不好的事情"] },
     ],
+  },
+  {
+    forms: ["当たり前", "當たり前"],
+    senses: [{ index: 0, meanings: ["理所當然", "當然", "正常"] }],
+  },
+  {
+    forms: ["暴れる"],
+    senses: [{ index: 0, meanings: ["大鬧", "發狂", "撒野", "胡鬧"] }],
+  },
+  {
+    forms: ["あぶる", "炙る"],
+    senses: [{ index: 0, meanings: ["烤", "炙", "用火烘烤"] }],
+  },
+  {
+    forms: ["あふれる", "溢れる"],
+    senses: [{ index: 0, meanings: ["溢出", "滿溢", "充滿", "洋溢"] }],
+  },
+  {
+    forms: ["暖まる", "温まる"],
+    senses: [{ index: 0, meanings: ["變暖", "暖和起來", "變溫暖"] }],
   },
   {
     forms: ["扇ぐ"],
@@ -54,13 +75,17 @@ function formsFor({ headword, reading }) {
   return new Set([headword, reading].filter(Boolean).map(normalizeJapanese));
 }
 
+export function getTaiwanJapaneseTerminologyPolicy(identity = {}) {
+  const forms = formsFor(identity);
+  return reviewedSenseOverrides.find((candidate) => candidate.forms.some((form) => forms.has(normalizeJapanese(form)))) ?? null;
+}
+
 /**
  * Applies reviewed Taiwan-language wording without changing sense boundaries.
  * Unknown entries keep every meaning supplied by the verified dictionary.
  */
 export function applyTaiwanJapaneseTerminology(senses, identity = {}) {
-  const forms = formsFor(identity);
-  const override = reviewedSenseOverrides.find((candidate) => candidate.forms.some((form) => forms.has(normalizeJapanese(form))));
+  const override = getTaiwanJapaneseTerminologyPolicy(identity);
   if (!override) return senses;
   return senses.map((sense) => {
     const replacement = override.senses.find((item) => item.index === sense.index);

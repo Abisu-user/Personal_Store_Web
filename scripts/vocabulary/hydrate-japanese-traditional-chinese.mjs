@@ -140,8 +140,10 @@ export async function runJapaneseTraditionalChineseHydration({ dryRun = DRY_RUN 
       normalized_word: normalizeJapanese(entry.word),
       primary_meaning: translated.primaryMeaning,
       meanings_json: translated.meanings,
+      secondary_meanings_json: translated.secondaryMeanings,
       senses: translated.senses,
       translation_senses_zh_tw: translated.senses,
+      translation_metadata: translated.translationMetadata,
       english_definition: translated.englishDefinition,
       part_of_speech: translated.partOfSpeech,
     });
