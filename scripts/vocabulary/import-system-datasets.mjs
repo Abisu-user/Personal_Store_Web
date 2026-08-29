@@ -128,11 +128,15 @@ async function beginImport(sourceSlug, collectionSlug, version, dryRun) {
 function validateJapanese(entries) {
   const levels = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, 0]));
   const groups = Object.fromEntries(kanaRows.map(([group]) => [group, 0]));
+  // Japanese headwords practically never begin with を or ん.  They remain
+  // available as UI filter groups, but treating their absence as a failed
+  // source download prevents an otherwise valid OpenJLPT import from running.
+  const requiredKanaGroups = Object.keys(groups).filter((group) => !["を", "ん"].includes(group));
   for (const entry of entries) { levels[entry.level] += 1; groups[entry.kanaGroup] += 1; }
   const failures = [
     entries.length < 1_000 ? "總筆數過少" : null,
     ...Object.entries(levels).map(([level, count]) => count < 100 ? `${level} 資料不足` : null),
-    ...Object.entries(groups).map(([group, count]) => count === 0 ? `${group}行沒有資料` : null),
+    ...requiredKanaGroups.map((group) => groups[group] === 0 ? `${group}行沒有資料` : null),
   ].filter(Boolean);
   if (failures.length) throw new Error(`OpenJLPT validation failed: ${failures.join("、")}`);
   return { total: entries.length, levels, kanaGroups: groups };
