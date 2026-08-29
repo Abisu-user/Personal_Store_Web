@@ -51,6 +51,22 @@ const japaneseUrls = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((leve
 const englishUrl = "https://huggingface.co/datasets/kknono668/toeic-vocab-tw/resolve/main/data/toeic_vocabulary.json";
 const japaneseTraditionalChineseEntries = japaneseTraditionalChineseIndex.entries ?? {};
 
+function importErrorMessage(error) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object") {
+    const value = error;
+    const parts = [
+      value.code ? `code: ${value.code}` : null,
+      value.message ? `message: ${value.message}` : null,
+      value.details ? `details: ${value.details}` : null,
+      value.hint ? `hint: ${value.hint}` : null,
+    ].filter(Boolean);
+    if (parts.length) return parts.join(" | ");
+    try { return JSON.stringify(value); } catch { return "未知的結構化錯誤"; }
+  }
+  return String(error);
+}
+
 // Keep the catalogue at the same granularity as the UI: each modern
 // gojūon sound is independently filterable, while voiced/small variants stay
 // with their base sound (が → か, きゃ → き, etc.).
@@ -233,7 +249,7 @@ async function importJapanese({ dryRun = false } = {}) {
     if (completeError) throw completeError;
     return validation;
   } catch (error) {
-    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: error instanceof Error ? error.message : String(error) }).eq("id", job.id);
+    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: importErrorMessage(error) }).eq("id", job.id);
     throw error;
   }
 }
@@ -276,7 +292,7 @@ async function importEnglish({ dryRun = false } = {}) {
     if (completeError) throw completeError;
     return validation;
   } catch (error) {
-    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: error instanceof Error ? error.message : String(error) }).eq("id", job.id);
+    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: importErrorMessage(error) }).eq("id", job.id);
     throw error;
   }
 }
