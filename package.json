@@ -9,7 +9,10 @@
     "lint": "eslint",
     "vocabulary:import": "node scripts/vocabulary/import-system-datasets.mjs",
     "vocabulary:import:ja": "node scripts/vocabulary/import-system-datasets.mjs --language=ja",
-    "vocabulary:import:en": "node scripts/vocabulary/import-system-datasets.mjs --language=en"
+    "vocabulary:import:en": "node scripts/vocabulary/import-system-datasets.mjs --language=en",
+    "vocabulary:build:ja-zh-tw": "node scripts/vocabulary/build-openjlpt-tomoshi-zhtw.mjs",
+    "vocabulary:hydrate:ja-zh-tw": "node scripts/vocabulary/hydrate-japanese-traditional-chinese.mjs",
+    "test:vocabulary:translations": "node --test scripts/vocabulary/tomoshi-zhtw.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",
@@ -18,6 +21,7 @@
     "opencc-js": "^1.4.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "sql.js": "^1.14.2",
     "zod": "4.4.3"
   },
   "devDependencies": {

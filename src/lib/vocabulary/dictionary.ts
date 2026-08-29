@@ -208,9 +208,12 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
   if (memory && memory.expiresAt > Date.now()) return memory.value;
   const admin = createAdminClient();
   try {
-    const { data } = await admin.from("dictionary_translations").select("primary_meaning").eq("source_language", entry.language).eq("normalized_word", normalizedWord).eq("target_language", "zh-TW").maybeSingle();
+    const { data } = await admin.from("dictionary_translations").select("primary_meaning,verified").eq("source_language", entry.language).eq("normalized_word", normalizedWord).eq("target_language", "zh-TW").maybeSingle();
     const cachedMeaning = data?.primary_meaning ?? null;
-    if (isTraditionalChineseTranslation(cachedMeaning)) {
+    // Japanese dictionary facts must be sourced from a sense-aware dictionary,
+    // never from a one-word machine translation. Unverified old cache rows are
+    // deliberately ignored and will be replaced by the Tomoshi hydrator.
+    if (isTraditionalChineseTranslation(cachedMeaning) && (entry.language !== "ja" || data?.verified)) {
       const cleaned = cleanChineseTranslation(cachedMeaning);
       inMemoryTranslations.set(key, { value: cleaned, expiresAt: Date.now() + 30 * 60 * 1000 });
       if (cleaned !== cachedMeaning) {
@@ -221,6 +224,7 @@ export async function resolveChineseTranslation(entry: DictionaryEntry) {
   } catch {
     // The new shared table is optional until its migration is applied.
   }
+  if (entry.language === "ja") return null;
   const direct = await translateDictionaryText(entry.word, entry.language, "zh-TW");
   // Some public providers return English unchanged for a Japanese query. In that case,
   // translate the dictionary's English definition instead of rendering a misleading result.

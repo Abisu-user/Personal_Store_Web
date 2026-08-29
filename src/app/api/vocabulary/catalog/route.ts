@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { resolveChineseTranslation, type DictionaryEntry } from "@/lib/vocabulary/dictionary";
+import { applyVerifiedJapaneseSystemTranslation } from "@/lib/vocabulary/system-japanese-translations";
 
 export const dynamic = "force-dynamic";
 
@@ -14,62 +14,6 @@ const actionSchema = z.object({
 
 const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });
 const safeSearch = (value: string) => value.replace(/[%,().]/g, " ").trim().slice(0, 80);
-const hasChineseText = (value: unknown) => typeof value === "string" && /[\u3400-\u9fff]/.test(value);
-
-async function mapWithConcurrency<T>(values: T[], limit: number, mapper: (value: T) => Promise<void>) {
-  const queue = [...values];
-  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    while (queue.length) {
-      const value = queue.shift();
-      if (value !== undefined) await mapper(value);
-    }
-  }));
-}
-
-/**
- * OpenJLPT publishes English glosses, not zh-TW definitions.  Resolve Chinese
- * meaning lazily through the existing, durable dictionary translation cache so
- * the exact source word and English definition remain intact.
- */
-async function localizeJapaneseCatalogRows(admin: ReturnType<typeof createAdminClient>, rows: Record<string, unknown>[]) {
-  const localized = new Map<string, string>();
-  const candidates = rows.filter((row) => row.language === "ja" && !hasChineseText(row.meaning_zh_tw));
-  await mapWithConcurrency(candidates, 3, async (row) => {
-    const dictionaryEntry: DictionaryEntry = {
-      id: String(row.dictionary_entry_id ?? row.id),
-      language: "ja",
-      word: String(row.word ?? ""),
-      reading: typeof row.reading === "string" ? row.reading : null,
-      kana: typeof row.kana === "string" ? row.kana : null,
-      romaji: null,
-      ipa: null,
-      pronunciation: null,
-      partOfSpeech: typeof row.part_of_speech === "string" ? row.part_of_speech : null,
-      primaryTranslation: null,
-      englishDefinition: typeof row.english_definition === "string" ? row.english_definition : null,
-      meanings: typeof row.english_definition === "string" ? row.english_definition.split("；").filter(Boolean) : [],
-      examples: [],
-      synonyms: [],
-      antonyms: [],
-      source: "Jisho",
-    };
-    try {
-      const translation = await resolveChineseTranslation(dictionaryEntry);
-      if (!translation) return;
-      localized.set(String(row.id), translation);
-      await Promise.all([
-        admin.from("system_vocabulary").update({ meaning_zh_tw: translation, updated_at: new Date().toISOString() }).eq("id", row.id),
-        row.dictionary_entry_id
-          ? admin.from("dictionary_entries").update({ primary_translation: translation, updated_at: new Date().toISOString() }).eq("id", row.dictionary_entry_id)
-          : Promise.resolve({ error: null }),
-      ]);
-    } catch (error) {
-      console.warn("[vocabulary.catalog] translation unavailable", { word: row.word, message: error instanceof Error ? error.message : String(error) });
-    }
-  });
-  return rows.map((row) => localized.has(String(row.id)) ? { ...row, meaning_zh_tw: localized.get(String(row.id)) } : row);
-}
-
 function catalogCard(row: Record<string, unknown>, user: Record<string, unknown> | undefined) {
   const status = user?.learning_status as string | undefined;
   return {
@@ -82,6 +26,7 @@ function catalogCard(row: Record<string, unknown>, user: Record<string, unknown>
     romaji: row.romaji,
     ipa: row.ipa,
     meaningZhTw: row.meaning_zh_tw,
+    meaningsZhTw: row.meanings_zh_tw ?? [],
     englishDefinition: row.english_definition,
     partOfSpeech: row.part_of_speech,
     jlptLevel: row.jlpt_level,
@@ -153,7 +98,10 @@ export async function GET(request: NextRequest) {
       count = matching.length;
       data = matching.slice((page - 1) * limit, page * limit);
     }
-    const localizedRows = language === "ja" ? await localizeJapaneseCatalogRows(admin, (data ?? []) as Record<string, unknown>[]) : data ?? [];
+    // System vocabulary never invokes a public machine-translation service at
+    // read time. Japanese definitions are filled only by the trusted,
+    // sense-aware Tomoshi import pipeline.
+    const localizedRows = (data ?? []).map((row) => applyVerifiedJapaneseSystemTranslation(row));
     const ids = localizedRows.map((item) => item.id);
     const { data: userRows, error: userError } = ids.length ? await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status").eq("user_id", context.userId).is("deleted_at", null).in("system_word_id", ids) : { data: [], error: null };
     if (userError) throw userError;
@@ -175,7 +123,8 @@ export async function POST(request: NextRequest) {
     const { data: systemWords, error: catalogError } = await admin.from("system_vocabulary").select("*").eq("is_active", true).in("id", parsed.data.ids);
     if (catalogError) throw catalogError;
     if ((systemWords?.length ?? 0) !== parsed.data.ids.length) return jsonError("找不到指定的內建單字。", 404);
-    const catalogWords = (systemWords ?? []).map((word) => word.word);
+    const verifiedSystemWords = (systemWords ?? []).map((word) => applyVerifiedJapaneseSystemTranslation(word));
+    const catalogWords = verifiedSystemWords.map((word) => word.word);
     const { data: existing, error: existingError } = await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status,language,word").eq("user_id", context.userId).is("deleted_at", null).in("word", catalogWords);
     if (existingError) throw existingError;
     const current = new Map<string, (typeof existing extends (infer Row)[] | null ? Row : never)>();
@@ -184,7 +133,7 @@ export async function POST(request: NextRequest) {
     }
     const wantsLearning = parsed.data.action === "learn" || parsed.data.action === "batchLearn";
 
-    for (const word of systemWords ?? []) {
+    for (const word of verifiedSystemWords) {
       const row = current.get(word.id) ?? (existing ?? []).find((item) => item.language === word.language && item.word === word.word);
       if (parsed.data.action === "unfavorite") {
         if (row) {

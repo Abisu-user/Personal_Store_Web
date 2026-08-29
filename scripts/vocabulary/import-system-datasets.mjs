@@ -13,6 +13,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import japaneseTraditionalChineseIndex from "../../src/data/vocabulary/openjlpt-tomoshi-zhtw.json" with { type: "json" };
 
 const ROOT = process.cwd();
 const BATCH_SIZE = 500;
@@ -48,6 +49,7 @@ const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshTok
 
 const japaneseUrls = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, `https://raw.githubusercontent.com/evanclan/OpenJLPT/main/data/json/vocab/${level.toLowerCase()}.json`]));
 const englishUrl = "https://huggingface.co/datasets/kknono668/toeic-vocab-tw/resolve/main/data/toeic_vocabulary.json";
+const japaneseTraditionalChineseEntries = japaneseTraditionalChineseIndex.entries ?? {};
 
 // Keep the catalogue at the same granularity as the UI: each modern
 // gojūon sound is independently filterable, while voiced/small variants stay
@@ -172,8 +174,39 @@ async function importJapanese({ dryRun = false } = {}) {
   const { source, collection, job } = await beginImport("openjlpt", "jlpt_common", datasetVersion, dryRun);
   try {
     for (const [batchNumber, batch] of chunks(entries).entries()) {
-      // Do not overwrite already cached Chinese translations on re-import.
-      const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "ja", word: entry.word, reading: entry.reading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, english_definition: entry.meanings.join("；"), part_of_speech: null, kanji_forms: [entry.word], reading_forms: [entry.normalizedReading], senses: [{ glosses: entry.meanings }], examples: entry.examples, source_metadata: { jlptLevel: entry.level, kanaGroup: entry.kanaGroup } }));
+      // A verified JMdict/Tomoshi hydration enriches the entry with POS and
+      // source-aware zh-TW senses. Future OpenJLPT imports may refresh the
+      // collection membership, but must never flatten that richer dictionary
+      // record back into a single list of English glosses.
+      const { data: existingEntries, error: existingError } = await admin
+        .from("dictionary_entries")
+        .select("source_entry_id,primary_translation,english_definition,part_of_speech,kanji_forms,reading_forms,senses,examples,source_metadata")
+        .eq("source_id", source.id)
+        .in("source_entry_id", batch.map((entry) => entry.sourceEntryId));
+      if (existingError) throw existingError;
+      const existingBySourceEntry = new Map((existingEntries ?? []).map((entry) => [entry.source_entry_id, entry]));
+      const dictionaryRows = batch.map((entry) => {
+        const existing = existingBySourceEntry.get(entry.sourceEntryId);
+        const verified = japaneseTraditionalChineseEntries[entry.sourceEntryId] ?? null;
+        const verifiedTraditionalChinese = Boolean(verified || existing?.source_metadata?.traditionalChineseVerified);
+        return {
+          source_id: source.id,
+          source_entry_id: entry.sourceEntryId,
+          language: "ja",
+          word: entry.word,
+          reading: entry.reading,
+          normalized_word: entry.normalizedWord,
+          normalized_reading: entry.normalizedReading,
+          primary_translation: verified?.primaryMeaning ?? existing?.primary_translation ?? null,
+          english_definition: verified?.englishDefinition ?? (verifiedTraditionalChinese ? existing?.english_definition : entry.meanings.join("；")),
+          part_of_speech: verified?.partOfSpeech ?? (verifiedTraditionalChinese ? existing?.part_of_speech : null),
+          kanji_forms: verifiedTraditionalChinese ? existing?.kanji_forms : [entry.word],
+          reading_forms: verifiedTraditionalChinese ? existing?.reading_forms : [entry.normalizedReading],
+          senses: verified?.senses ?? (verifiedTraditionalChinese ? existing?.senses : [{ glosses: entry.meanings }]),
+          examples: verifiedTraditionalChinese ? existing?.examples : entry.examples,
+          source_metadata: { ...(existing?.source_metadata ?? {}), jlptLevel: entry.level, kanaGroup: entry.kanaGroup, ...(verified ? { traditionalChineseTranslationSource: "tomoshi-jmdict-zhtw", traditionalChineseVerified: true } : {}) },
+        };
+      });
       const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id,primary_translation"));
       if (dictionaryError) throw dictionaryError;
       const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
@@ -182,7 +215,10 @@ async function importJapanese({ dryRun = false } = {}) {
       const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: entry.level, kana_group: entry.kanaGroup, sort_order: batchNumber * BATCH_SIZE + index }));
       const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
       if (mappingError) throw mappingError;
-      const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: translations.get(entry.sourceEntryId) || entry.meanings.join("；") || "英文釋義待補", english_definition: entry.meanings.join("；") || null, part_of_speech: null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
+      const catalogRows = batch.map((entry) => {
+        const verified = japaneseTraditionalChineseEntries[entry.sourceEntryId] ?? null;
+        return { source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: verified?.primaryMeaning || translations.get(entry.sourceEntryId) || entry.meanings.join("；") || "英文釋義待補", meanings_zh_tw: verified?.meanings ?? [], english_definition: verified?.englishDefinition ?? (entry.meanings.join("；") || null), part_of_speech: verified?.partOfSpeech ?? null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: verified ? "OpenJLPT + Tomoshi（含 EDRDG／Tatoeba 歸屬）" : "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() };
+      });
       const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
       if (catalogError) throw catalogError;
       console.info(`[vocabulary-import] Japanese ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);
