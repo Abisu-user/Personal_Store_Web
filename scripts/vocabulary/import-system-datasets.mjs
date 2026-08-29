@@ -49,10 +49,20 @@ const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshTok
 const japaneseUrls = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, `https://raw.githubusercontent.com/evanclan/OpenJLPT/main/data/json/vocab/${level.toLowerCase()}.json`]));
 const englishUrl = "https://huggingface.co/datasets/kknono668/toeic-vocab-tw/resolve/main/data/toeic_vocabulary.json";
 
+// Keep the catalogue at the same granularity as the UI: each modern
+// gojūon sound is independently filterable, while voiced/small variants stay
+// with their base sound (が → か, きゃ → き, etc.).
 const kanaRows = [
-  ["あ", "あいうえおぁぃぅぇぉ"], ["か", "かきくけこがぎぐげごゔ"], ["さ", "さしすせそざじずぜぞ"],
-  ["た", "たちつてとだぢづでど"], ["な", "なにぬねの"], ["は", "はひふへほばびぶべぼぱぴぷぺぽ"],
-  ["ま", "まみむめも"], ["や", "やゆよゃゅょ"], ["ら", "らりるれろ"], ["わ", "わゐゑをん"],
+  ["あ", "あぁ"], ["い", "いぃ"], ["う", "うぅゔ"], ["え", "えぇ"], ["お", "おぉ"],
+  ["か", "かが"], ["き", "きぎ"], ["く", "くぐ"], ["け", "けげ"], ["こ", "こご"],
+  ["さ", "さざ"], ["し", "しじ"], ["す", "すず"], ["せ", "せぜ"], ["そ", "そぞ"],
+  ["た", "ただ"], ["ち", "ちぢ"], ["つ", "つづ"], ["て", "てで"], ["と", "とど"],
+  ["な", "な"], ["に", "に"], ["ぬ", "ぬ"], ["ね", "ね"], ["の", "の"],
+  ["は", "はばぱ"], ["ひ", "ひびぴ"], ["ふ", "ふぶぷ"], ["へ", "へべぺ"], ["ほ", "ほぼぽ"],
+  ["ま", "ま"], ["み", "み"], ["む", "む"], ["め", "め"], ["も", "も"],
+  ["や", "やゃ"], ["ゆ", "ゆゅ"], ["よ", "よょ"],
+  ["ら", "ら"], ["り", "り"], ["る", "る"], ["れ", "れ"], ["ろ", "ろ"],
+  ["わ", "わゐゑ"], ["を", "を"], ["ん", "ん"],
 ];
 
 function normalizeJapanese(value) {
@@ -65,7 +75,7 @@ function kanaGroup(value) {
     const match = kanaRows.find(([, characters]) => characters.includes(character));
     if (match) return match[0];
   }
-  return "わ";
+  return "其他";
 }
 
 function chunks(values, size = BATCH_SIZE) {
@@ -162,15 +172,17 @@ async function importJapanese({ dryRun = false } = {}) {
   const { source, collection, job } = await beginImport("openjlpt", "jlpt_common", datasetVersion, dryRun);
   try {
     for (const [batchNumber, batch] of chunks(entries).entries()) {
-      const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "ja", word: entry.word, reading: entry.reading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, primary_translation: null, english_definition: entry.meanings.join("；"), part_of_speech: null, kanji_forms: [entry.word], reading_forms: [entry.normalizedReading], senses: [{ glosses: entry.meanings }], examples: entry.examples, source_metadata: { jlptLevel: entry.level, kanaGroup: entry.kanaGroup } }));
-      const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id"));
+      // Do not overwrite already cached Chinese translations on re-import.
+      const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "ja", word: entry.word, reading: entry.reading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, english_definition: entry.meanings.join("；"), part_of_speech: null, kanji_forms: [entry.word], reading_forms: [entry.normalizedReading], senses: [{ glosses: entry.meanings }], examples: entry.examples, source_metadata: { jlptLevel: entry.level, kanaGroup: entry.kanaGroup } }));
+      const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id,primary_translation"));
       if (dictionaryError) throw dictionaryError;
       const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
+      const translations = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.primary_translation]));
       if (ids.size !== batch.length) throw new Error("Dictionary upsert 沒有回傳完整的詞條識別碼。");
       const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: entry.level, kana_group: entry.kanaGroup, sort_order: batchNumber * BATCH_SIZE + index }));
       const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
       if (mappingError) throw mappingError;
-      const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: entry.meanings.join("；") || "英文釋義待補", english_definition: entry.meanings.join("；") || null, part_of_speech: null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
+      const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: translations.get(entry.sourceEntryId) || entry.meanings.join("；") || "英文釋義待補", english_definition: entry.meanings.join("；") || null, part_of_speech: null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
       const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
       if (catalogError) throw catalogError;
       console.info(`[vocabulary-import] Japanese ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);

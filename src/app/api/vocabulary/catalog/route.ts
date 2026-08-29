@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveChineseTranslation, type DictionaryEntry } from "@/lib/vocabulary/dictionary";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,61 @@ const actionSchema = z.object({
 
 const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });
 const safeSearch = (value: string) => value.replace(/[%,().]/g, " ").trim().slice(0, 80);
+const hasChineseText = (value: unknown) => typeof value === "string" && /[\u3400-\u9fff]/.test(value);
+
+async function mapWithConcurrency<T>(values: T[], limit: number, mapper: (value: T) => Promise<void>) {
+  const queue = [...values];
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const value = queue.shift();
+      if (value !== undefined) await mapper(value);
+    }
+  }));
+}
+
+/**
+ * OpenJLPT publishes English glosses, not zh-TW definitions.  Resolve Chinese
+ * meaning lazily through the existing, durable dictionary translation cache so
+ * the exact source word and English definition remain intact.
+ */
+async function localizeJapaneseCatalogRows(admin: ReturnType<typeof createAdminClient>, rows: Record<string, unknown>[]) {
+  const localized = new Map<string, string>();
+  const candidates = rows.filter((row) => row.language === "ja" && !hasChineseText(row.meaning_zh_tw));
+  await mapWithConcurrency(candidates, 3, async (row) => {
+    const dictionaryEntry: DictionaryEntry = {
+      id: String(row.dictionary_entry_id ?? row.id),
+      language: "ja",
+      word: String(row.word ?? ""),
+      reading: typeof row.reading === "string" ? row.reading : null,
+      kana: typeof row.kana === "string" ? row.kana : null,
+      romaji: null,
+      ipa: null,
+      pronunciation: null,
+      partOfSpeech: typeof row.part_of_speech === "string" ? row.part_of_speech : null,
+      primaryTranslation: null,
+      englishDefinition: typeof row.english_definition === "string" ? row.english_definition : null,
+      meanings: typeof row.english_definition === "string" ? row.english_definition.split("；").filter(Boolean) : [],
+      examples: [],
+      synonyms: [],
+      antonyms: [],
+      source: "Jisho",
+    };
+    try {
+      const translation = await resolveChineseTranslation(dictionaryEntry);
+      if (!translation) return;
+      localized.set(String(row.id), translation);
+      await Promise.all([
+        admin.from("system_vocabulary").update({ meaning_zh_tw: translation, updated_at: new Date().toISOString() }).eq("id", row.id),
+        row.dictionary_entry_id
+          ? admin.from("dictionary_entries").update({ primary_translation: translation, updated_at: new Date().toISOString() }).eq("id", row.dictionary_entry_id)
+          : Promise.resolve({ error: null }),
+      ]);
+    } catch (error) {
+      console.warn("[vocabulary.catalog] translation unavailable", { word: row.word, message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+  return rows.map((row) => localized.has(String(row.id)) ? { ...row, meaning_zh_tw: localized.get(String(row.id)) } : row);
+}
 
 function catalogCard(row: Record<string, unknown>, user: Record<string, unknown> | undefined) {
   const status = user?.learning_status as string | undefined;
@@ -97,11 +153,12 @@ export async function GET(request: NextRequest) {
       count = matching.length;
       data = matching.slice((page - 1) * limit, page * limit);
     }
-    const ids = (data ?? []).map((item) => item.id);
+    const localizedRows = language === "ja" ? await localizeJapaneseCatalogRows(admin, (data ?? []) as Record<string, unknown>[]) : data ?? [];
+    const ids = localizedRows.map((item) => item.id);
     const { data: userRows, error: userError } = ids.length ? await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status").eq("user_id", context.userId).is("deleted_at", null).in("system_word_id", ids) : { data: [], error: null };
     if (userError) throw userError;
     const states = new Map((userRows ?? []).map((row) => [row.system_word_id, row]));
-    return NextResponse.json({ items: (data ?? []).map((row) => catalogCard(row, states.get(row.id))), page, limit, total: count ?? 0, hasNext: page * limit < (count ?? 0) }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ items: localizedRows.map((row) => catalogCard(row, states.get(row.id))), page, limit, total: count ?? 0, hasNext: page * limit < (count ?? 0) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("[vocabulary.catalog] list failed", { message: error instanceof Error ? error.message : String(error) });
     return jsonError("內建單字庫暫時無法讀取；若剛部署，請先套用資料庫 migration。", 503);
