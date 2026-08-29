@@ -12,7 +12,7 @@ function errorMessage(error: unknown) {
   }
 }
 
-export async function runVocabularyCatalogImport(userId: string) {
+export async function runVocabularyCatalogImport(userId: string, { language = "all" }: { language?: "ja" | "en" | "all" } = {}) {
   const admin = createAdminClient();
   const { data: catalogAdmin, error: catalogAdminError } = await admin
     .from("vocabulary_catalog_admins")
@@ -36,7 +36,7 @@ export async function runVocabularyCatalogImport(userId: string) {
 
   const { runVocabularyDatasetImport } = await import("../../../scripts/vocabulary/import-system-datasets.mjs");
   try {
-    return await runVocabularyDatasetImport();
+    return await runVocabularyDatasetImport({ language });
   } catch (importError) {
     const message = errorMessage(importError);
     console.error("[vocabulary.catalog.import] importer failed", { userId, message });

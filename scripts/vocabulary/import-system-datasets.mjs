@@ -16,7 +16,10 @@ import { createClient } from "@supabase/supabase-js";
 import japaneseTraditionalChineseIndex from "../../src/data/vocabulary/openjlpt-tomoshi-zhtw.json" with { type: "json" };
 
 const ROOT = process.cwd();
-const BATCH_SIZE = 500;
+// `source_entry_id` values are sent as an `in(...)` filter when looking up
+// existing dictionary rows.  Keeping the batch modest avoids gateway / URL
+// size failures for long Japanese headword + reading identifiers.
+const BATCH_SIZE = 150;
 const LANGUAGES = new Set(["ja", "en", "all"]);
 const cliLanguage = (process.argv.find((value) => value.startsWith("--language="))?.split("=")[1] ?? "all").toLowerCase();
 const cliDryRun = process.argv.includes("--dry-run");
@@ -147,7 +150,7 @@ async function beginImport(sourceSlug, collectionSlug, version, dryRun) {
 
 function validateJapanese(entries) {
   const levels = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, 0]));
-  const groups = Object.fromEntries(kanaRows.map(([group]) => [group, 0]));
+  const groups = { ...Object.fromEntries(kanaRows.map(([group]) => [group, 0])), "其他": 0 };
   // Japanese headwords practically never begin with を or ん.  They remain
   // available as UI filter groups, but treating their absence as a failed
   // source download prevents an otherwise valid OpenJLPT import from running.
