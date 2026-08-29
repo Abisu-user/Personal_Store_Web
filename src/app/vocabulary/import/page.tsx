@@ -18,7 +18,7 @@ export default async function VocabularyDatasetImportPage({ searchParams }: Impo
     try {
       await runVocabularyCatalogImport(currentSecurity.userId);
     } catch (error) {
-      console.error("[vocabulary.catalog.import] dataset import failed", { message: error instanceof Error ? error.message : String(error) });
+      console.error("[vocabulary.catalog.import] dataset import failed", { message: error instanceof Error ? error.message : JSON.stringify(error) });
       redirect("/vocabulary/import?status=failed");
     }
     redirect("/vocabulary/import?status=completed");

@@ -3,6 +3,15 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const COOLDOWN_MS = 60 * 60 * 1000;
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export async function runVocabularyCatalogImport(userId: string) {
   const admin = createAdminClient();
   const { data: catalogAdmin, error: catalogAdminError } = await admin
@@ -26,5 +35,11 @@ export async function runVocabularyCatalogImport(userId: string) {
   }
 
   const { runVocabularyDatasetImport } = await import("../../../scripts/vocabulary/import-system-datasets.mjs");
-  return runVocabularyDatasetImport();
+  try {
+    return await runVocabularyDatasetImport();
+  } catch (importError) {
+    const message = errorMessage(importError);
+    console.error("[vocabulary.catalog.import] importer failed", { userId, message });
+    throw new Error(message);
+  }
 }
