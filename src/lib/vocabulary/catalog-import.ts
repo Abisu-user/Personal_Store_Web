@@ -43,3 +43,23 @@ export async function runVocabularyCatalogImport(userId: string) {
     throw new Error(message);
   }
 }
+
+export async function getVocabularyCatalogImportStatus(userId: string) {
+  const admin = createAdminClient();
+  const { data: catalogAdmin, error: catalogAdminError } = await admin
+    .from("vocabulary_catalog_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (catalogAdminError) throw new Error(`資料集管理權限驗證失敗：${catalogAdminError.message}`);
+  if (!catalogAdmin) return null;
+
+  const { data, error } = await admin
+    .from("vocabulary_dataset_imports")
+    .select("status, created_at, imported_at, error_message")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`無法讀取資料集匯入狀態：${error.message}`);
+  return data;
+}

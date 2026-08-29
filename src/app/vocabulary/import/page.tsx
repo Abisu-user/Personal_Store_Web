@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getSecurityContext } from "@/lib/security/activity";
-import { runVocabularyCatalogImport } from "@/lib/vocabulary/catalog-import";
+import { getVocabularyCatalogImportStatus, runVocabularyCatalogImport } from "@/lib/vocabulary/catalog-import";
 
 export const maxDuration = 300;
 
@@ -10,6 +10,7 @@ export default async function VocabularyDatasetImportPage({ searchParams }: Impo
   const security = await getSecurityContext();
   if (!security) redirect("/login");
   const { status } = await searchParams;
+  const latestImport = await getVocabularyCatalogImportStatus(security.userId);
 
   async function importDatasetAction() {
     "use server";
@@ -32,7 +33,11 @@ export default async function VocabularyDatasetImportPage({ searchParams }: Impo
           <h1>匯入正式單字資料集</h1>
           <p className="muted">此作業會在 Vercel 的受信任伺服器端下載公開授權資料集，並保留你的既有單字、收藏與學習進度。</p>
           {status === "completed" ? <p role="status">已完成正式資料集匯入。</p> : null}
-          {status === "failed" ? <p role="alert">匯入失敗，請查看伺服器記錄後再試。</p> : null}
+          {status === "failed" ? (
+            <p role="alert">
+              匯入失敗：{latestImport?.status === "failed" && latestImport.error_message ? latestImport.error_message : "伺服器未回傳詳細原因，請稍後再試。"}
+            </p>
+          ) : null}
         </div>
         <ul className="muted">
           <li>OpenJLPT：日文 N5～N1，共約 8,334 筆</li>
