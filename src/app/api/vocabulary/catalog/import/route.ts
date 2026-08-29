@@ -13,6 +13,17 @@ export async function POST() {
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const admin = createAdminClient();
+  const { data: catalogAdmin, error: catalogAdminError } = await admin
+    .from("vocabulary_catalog_admins")
+    .select("user_id")
+    .eq("user_id", context.userId)
+    .maybeSingle();
+  if (catalogAdminError) {
+    console.error("[vocabulary.catalog.import] could not verify catalog administrator", { message: catalogAdminError.message });
+    return NextResponse.json({ error: "資料集管理權限尚未設定。" }, { status: 503 });
+  }
+  if (!catalogAdmin) return NextResponse.json({ error: "只有資料集管理者可以執行匯入。" }, { status: 403 });
+
   const { data: latest, error } = await admin
     .from("vocabulary_dataset_imports")
     .select("status,started_at,imported_at")
