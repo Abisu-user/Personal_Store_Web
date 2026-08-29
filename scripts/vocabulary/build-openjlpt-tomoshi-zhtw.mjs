@@ -102,7 +102,7 @@ async function main() {
   for (const entry of entries) {
     const match = bestCandidateFor(entry, candidatesByForm);
     if (!match) continue;
-    const translation = buildVerifiedJapaneseTranslation({ tomoshiDefinition: match.definition_data, tomoshiEntry: match.entry_data });
+    const translation = buildVerifiedJapaneseTranslation({ tomoshiDefinition: match.definition_data, tomoshiEntry: match.entry_data, headword: entry.word, reading: entry.reading });
     if (!translation.primaryMeaning) continue;
     translations[entry.sourceEntryId] = translation;
   }

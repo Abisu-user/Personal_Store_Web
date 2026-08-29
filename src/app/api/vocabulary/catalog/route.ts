@@ -27,6 +27,7 @@ function catalogCard(row: Record<string, unknown>, user: Record<string, unknown>
     ipa: row.ipa,
     meaningZhTw: row.meaning_zh_tw,
     meaningsZhTw: row.meanings_zh_tw ?? [],
+    translationSensesZhTw: row.translation_senses_zh_tw ?? [],
     englishDefinition: row.english_definition,
     partOfSpeech: row.part_of_speech,
     jlptLevel: row.jlpt_level,

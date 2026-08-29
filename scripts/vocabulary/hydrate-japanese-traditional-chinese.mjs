@@ -133,7 +133,7 @@ export async function runJapaneseTraditionalChineseHydration({ dryRun = DRY_RUN 
   for (const entry of importedEntries) {
     const matched = bestCandidateFor(entry, candidatesByForm);
     if (!matched) continue;
-    const translated = buildVerifiedJapaneseTranslation({ tomoshiDefinition: matched.definition_data, tomoshiEntry: matched.entry_data });
+    const translated = buildVerifiedJapaneseTranslation({ tomoshiDefinition: matched.definition_data, tomoshiEntry: matched.entry_data, headword: entry.word, reading: entry.reading });
     if (!translated.primaryMeaning || !translated.meanings.length) continue;
     updates.push({
       dictionary_entry_id: entry.id,
@@ -141,6 +141,7 @@ export async function runJapaneseTraditionalChineseHydration({ dryRun = DRY_RUN 
       primary_meaning: translated.primaryMeaning,
       meanings_json: translated.meanings,
       senses: translated.senses,
+      translation_senses_zh_tw: translated.senses,
       english_definition: translated.englishDefinition,
       part_of_speech: translated.partOfSpeech,
     });

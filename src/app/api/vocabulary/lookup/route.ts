@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { clearVocabularySearchHistory, detectLookupInputLanguage, DictionaryProviderError, getVocabularySearchHistory, recordVocabularySearch, resolveChineseTranslation, searchDictionary, translateLookupCandidate } from "@/lib/vocabulary/dictionary";
+import { getVerifiedJapaneseTranslationByForm } from "@/lib/vocabulary/system-japanese-translations";
 
 export const dynamic = "force-dynamic";
 const languageSchema = z.enum(["ja", "en"]);
@@ -19,7 +20,10 @@ function responseForDictionaryError(error: unknown) {
 
 async function localize(items: Awaited<ReturnType<typeof searchDictionary>>["exact"], originalChinese: string | null) {
   return Promise.all(items.map(async (item) => {
-    const chinese = originalChinese || await resolveChineseTranslation(item);
+    const verifiedJapanese = item.language === "ja"
+      ? getVerifiedJapaneseTranslationByForm(item.word, item.reading, item.kana)
+      : null;
+    const chinese = originalChinese || verifiedJapanese?.primaryMeaning || await resolveChineseTranslation(item);
     return {
       ...item,
       primaryTranslation: chinese || item.primaryTranslation,
@@ -28,6 +32,9 @@ async function localize(items: Awaited<ReturnType<typeof searchDictionary>>["exa
         japanese: item.language === "ja" ? item.word : null,
         english: item.language === "en" ? item.word : null,
       },
+      // Keep each Japanese dictionary sense separate for detail UIs.  This
+      // intentionally does not flatten English glosses into one Chinese line.
+      translationSensesZhTw: verifiedJapanese?.senses ?? [],
     };
   }));
 }

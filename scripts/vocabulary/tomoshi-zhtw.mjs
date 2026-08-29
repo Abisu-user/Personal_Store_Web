@@ -1,4 +1,5 @@
 import OpenCC from "opencc-js";
+import { applyTaiwanJapaneseTerminology } from "./taiwan-japanese-lexicon.mjs";
 
 const toTraditional = OpenCC.Converter({ from: "cn", to: "tw" });
 
@@ -56,8 +57,8 @@ export function parseTomoshiEntry(raw) {
   };
 }
 
-export function buildVerifiedJapaneseTranslation({ tomoshiDefinition, tomoshiEntry }) {
-  const chineseSenses = parseTraditionalChineseSenses(tomoshiDefinition);
+export function buildVerifiedJapaneseTranslation({ tomoshiDefinition, tomoshiEntry, headword = null, reading = null }) {
+  const chineseSenses = applyTaiwanJapaneseTerminology(parseTraditionalChineseSenses(tomoshiDefinition), { headword, reading });
   const entry = parseTomoshiEntry(tomoshiEntry);
   const senses = entry.senses.map((sense) => {
     const translated = chineseSenses.find((candidate) => candidate.index === sense.index);
