@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return jsonError("Unauthorized", 401);
   const params = request.nextUrl.searchParams;
+  const mode = params.get("mode");
   const language = params.get("language") === "en" ? "en" : "ja";
   const collection = language === "ja" ? "jlpt_common" : "toeic_common";
   const page = Math.max(1, Math.min(500, Number(params.get("page")) || 1));
@@ -58,18 +59,34 @@ export async function GET(request: NextRequest) {
 
   try {
     const admin = createAdminClient();
+    if (mode === "stats") {
+      const { data, error } = await admin
+        .from("vocabulary_dataset_imports")
+        .select("collection_id,item_counts,imported_at,collection:vocabulary_collections(slug,language)")
+        .eq("status", "completed")
+        .order("imported_at", { ascending: false });
+      if (error) throw error;
+      const collections: Record<string, { language: string; counts: Record<string, unknown>; importedAt: string | null }> = {};
+      for (const row of data ?? []) {
+        const collection = Array.isArray(row.collection) ? row.collection[0] : row.collection;
+        if (!collection || collections[collection.slug]) continue;
+        collections[collection.slug] = { language: collection.language, counts: row.item_counts ?? {}, importedAt: row.imported_at };
+      }
+      return NextResponse.json({ collections }, { headers: { "Cache-Control": "private, max-age=300" } });
+    }
     const applyBaseFilters = (query: ReturnType<typeof admin.from>) => {
       let filtered = query.select("*", { count: "exact" }).eq("language", language).eq("collection", collection).eq("is_active", true);
       if (topic) filtered = filtered.contains("topics", [topic]);
-      if (startsWith) filtered = filtered.ilike("sort_key", `${safeSearch(startsWith)}%`);
+      if (startsWith) filtered = language === "ja" ? filtered.eq("kana_group", safeSearch(startsWith)) : filtered.ilike("sort_key", `${safeSearch(startsWith)}%`);
       if (search) filtered = filtered.or(`word.ilike.%${search}%,reading.ilike.%${search}%,meaning_zh_tw.ilike.%${search}%,romaji.ilike.%${search}%`);
       return filtered;
     };
     const validLevel = language === "ja" && ["N5", "N4", "N3", "N2", "N1"].includes(level);
     let query = applyBaseFilters(admin.from("system_vocabulary"));
     if (validLevel) query = query.eq("jlpt_level", level);
-    let { data, error, count } = await query.order("sort_key", { ascending: true }).range((page - 1) * limit, page * limit - 1);
-    if (error) throw error;
+    const initial = await query.order("sort_key", { ascending: true }).range((page - 1) * limit, page * limit - 1);
+    let { data, count } = initial;
+    if (initial.error) throw initial.error;
     // Older manually-applied catalog migrations can contain level values with
     // inconsistent casing or whitespace. Fall back to a normalized comparison
     // so a valid JLPT filter never looks empty to the user.
@@ -120,13 +137,13 @@ export async function POST(request: NextRequest) {
         continue;
       }
       if (row) {
-        const patch = wantsLearning ? { system_word_id: word.id, source_kind: "catalog", learning_status: row.learning_status === "paused" ? "learning" : row.learning_status, next_review_at: new Date().toISOString() } : { system_word_id: word.id, source_kind: "catalog", is_favorite: true };
+        const patch = wantsLearning ? { system_word_id: word.id, dictionary_entry_id: word.dictionary_entry_id, source_kind: "catalog", learning_status: row.learning_status === "paused" ? "learning" : row.learning_status, next_review_at: new Date().toISOString() } : { system_word_id: word.id, dictionary_entry_id: word.dictionary_entry_id, source_kind: "catalog", is_favorite: true };
         const { error } = await admin.from("vocabulary_cards").update(patch).eq("id", row.id).eq("user_id", context.userId);
         if (error) throw error;
         continue;
       }
       const { data: created, error: createError } = await admin.from("vocabulary_cards").insert({
-        user_id: context.userId, system_word_id: word.id, source_kind: "catalog", language: word.language, word: word.word, reading: word.reading, kana: word.kana, romaji: word.romaji, ipa: word.ipa,
+        user_id: context.userId, system_word_id: word.id, dictionary_entry_id: word.dictionary_entry_id, source_kind: "catalog", language: word.language, word: word.word, reading: word.reading, kana: word.kana, romaji: word.romaji, ipa: word.ipa,
         primary_translation: word.meaning_zh_tw, english_definition: word.english_definition, part_of_speech: word.part_of_speech, jlpt_level: word.jlpt_level,
         language_details: { source: word.source, license: word.license, catalogVersion: word.dataset_version }, is_favorite: parsed.data.action === "favorite", learning_status: wantsLearning ? "learning" : "paused", next_review_at: new Date().toISOString(),
       }).select("id").single();

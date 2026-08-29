@@ -1,0 +1,249 @@
+#!/usr/bin/env node
+/*
+ * Imports only openly licensed source datasets into the server-only catalogue.
+ * It never runs in a request handler and never deletes user vocabulary_cards.
+ *
+ * Usage:
+ *   npm run vocabulary:import
+ *   npm run vocabulary:import -- --language=ja
+ *   npm run vocabulary:import -- --dry-run
+ */
+import { readFileSync, existsSync } from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { createClient } from "@supabase/supabase-js";
+
+const ROOT = process.cwd();
+const BATCH_SIZE = 500;
+const LANGUAGES = new Set(["ja", "en", "all"]);
+const cliLanguage = (process.argv.find((value) => value.startsWith("--language="))?.split("=")[1] ?? "all").toLowerCase();
+const cliDryRun = process.argv.includes("--dry-run");
+
+if (!LANGUAGES.has(cliLanguage)) throw new Error("--language 必須是 ja、en 或 all。");
+
+function loadLocalEnvironment() {
+  for (const filename of [".env.local", ".env"]) {
+    const fullPath = path.join(/* turbopackIgnore: true */ ROOT, filename);
+    if (!existsSync(/* turbopackIgnore: true */ fullPath)) continue;
+    for (const line of readFileSync(/* turbopackIgnore: true */ fullPath, "utf8").split(/\r?\n/u)) {
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/u);
+      if (!match || process.env[match[1]]) continue;
+      const value = match[2].replace(/^(['"])(.*)\1$/u, "$2");
+      process.env[match[1]] = value;
+    }
+  }
+}
+
+// Vercel injects trusted server-only variables directly. Local CLI runs may
+// optionally load .env.local without affecting the server bundle.
+if (!process.env.VERCEL) loadLocalEnvironment();
+const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+// Supabase renamed the server-only key from SERVICE_ROLE_KEY to SECRET_KEY.
+// Keep accepting the older name for existing CI installations.
+const serviceRoleKey = process.env.SUPABASE_SECRET_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseUrl || !serviceRoleKey) throw new Error("缺少 SUPABASE_URL（或 NEXT_PUBLIC_SUPABASE_URL）及 SUPABASE_SECRET_KEY／SUPABASE_SERVICE_ROLE_KEY；此匯入器只能在受信任的本機／CI 執行。");
+
+const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
+
+const japaneseUrls = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, `https://raw.githubusercontent.com/evanclan/OpenJLPT/main/data/json/vocab/${level.toLowerCase()}.json`]));
+const englishUrl = "https://huggingface.co/datasets/kknono668/toeic-vocab-tw/resolve/main/data/toeic_vocabulary.json";
+
+const kanaRows = [
+  ["あ", "あいうえおぁぃぅぇぉ"], ["か", "かきくけこがぎぐげごゔ"], ["さ", "さしすせそざじずぜぞ"],
+  ["た", "たちつてとだぢづでど"], ["な", "なにぬねの"], ["は", "はひふへほばびぶべぼぱぴぷぺぽ"],
+  ["ま", "まみむめも"], ["や", "やゆよゃゅょ"], ["ら", "らりるれろ"], ["わ", "わゐゑをん"],
+];
+
+function normalizeJapanese(value) {
+  return String(value ?? "").trim().normalize("NFKC").replace(/[ァ-ヶ]/gu, (character) => String.fromCodePoint(character.codePointAt(0) - 0x60)).replace(/\s+/gu, "");
+}
+
+function kanaGroup(value) {
+  const normalized = normalizeJapanese(value);
+  for (const character of normalized) {
+    const match = kanaRows.find(([, characters]) => characters.includes(character));
+    if (match) return match[0];
+  }
+  return "わ";
+}
+
+function chunks(values, size = BATCH_SIZE) {
+  return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
+}
+
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: { Accept: "application/json", "User-Agent": "Personal-Vault-vocabulary-importer/1.0 (+https://personal-store-web.vercel.app)" } });
+    if (!response.ok) throw new Error(`Dataset download failed: ${response.status} ${response.statusText} (${url})`);
+    return { json: await response.json(), lastModified: response.headers.get("last-modified") };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requireOne(table, filters) {
+  let query = admin.from(table).select("*");
+  for (const [key, value] of Object.entries(filters)) query = query.eq(key, value);
+  const { data, error } = await query.single();
+  if (error) throw error;
+  return data;
+}
+
+async function runWithRetries(label, task) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try { return await task(); }
+    catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 800));
+    }
+  }
+  throw new Error(`${label} failed after retries: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
+}
+
+async function beginImport(sourceSlug, collectionSlug, version, dryRun) {
+  const source = await requireOne("dictionary_sources", { slug: sourceSlug });
+  const collection = await requireOne("vocabulary_collections", { slug: collectionSlug });
+  if (dryRun) return { source, collection, job: null };
+  const { data: job, error } = await admin.from("vocabulary_dataset_imports").insert({ source_id: source.id, collection_id: collection.id, dataset_version: version, status: "running" }).select("*").single();
+  if (error) throw error;
+  return { source, collection, job };
+}
+
+function validateJapanese(entries) {
+  const levels = Object.fromEntries(["N5", "N4", "N3", "N2", "N1"].map((level) => [level, 0]));
+  const groups = Object.fromEntries(kanaRows.map(([group]) => [group, 0]));
+  for (const entry of entries) { levels[entry.level] += 1; groups[entry.kanaGroup] += 1; }
+  const failures = [
+    entries.length < 1_000 ? "總筆數過少" : null,
+    ...Object.entries(levels).map(([level, count]) => count < 100 ? `${level} 資料不足` : null),
+    ...Object.entries(groups).map(([group, count]) => count === 0 ? `${group}行沒有資料` : null),
+  ].filter(Boolean);
+  if (failures.length) throw new Error(`OpenJLPT validation failed: ${failures.join("、")}`);
+  return { total: entries.length, levels, kanaGroups: groups };
+}
+
+function validateEnglish(entries) {
+  const letters = Object.fromEntries("ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((letter) => [letter, 0]));
+  const topicCounts = {};
+  for (const entry of entries) {
+    const letter = entry.normalizedWord.charAt(0).toUpperCase();
+    if (letters[letter] !== undefined) letters[letter] += 1;
+    if (entry.topic) topicCounts[entry.topic] = (topicCounts[entry.topic] ?? 0) + 1;
+  }
+  if (entries.length < 1_000) throw new Error("英文資料集筆數過少，已中止匯入。");
+  return { total: entries.length, alphabet: letters, topicCounts };
+}
+
+async function importJapanese({ dryRun = false } = {}) {
+  console.info("[vocabulary-import] Downloading OpenJLPT N5–N1 datasets…");
+  const downloaded = await Promise.all(Object.entries(japaneseUrls).map(async ([level, url]) => ({ level, ...(await fetchJson(url)) })));
+  const unique = new Map();
+  for (const { level, json } of downloaded) {
+    if (!Array.isArray(json)) throw new Error(`OpenJLPT ${level} 不是預期的 JSON 陣列。`);
+    for (const raw of json) {
+      const word = String(raw.word ?? "").trim();
+      const reading = String(raw.reading ?? "").trim() || null;
+      const normalizedReading = normalizeJapanese(reading ?? word);
+      if (!word || !normalizedReading) continue;
+      const sourceEntryId = `${level}:${word}:${normalizedReading}`;
+      if (unique.has(sourceEntryId)) continue;
+      unique.set(sourceEntryId, { sourceEntryId, word, reading, normalizedReading, normalizedWord: normalizeJapanese(word), level, kanaGroup: kanaGroup(normalizedReading), meanings: Array.isArray(raw.meanings) ? raw.meanings.filter(Boolean).map(String) : [], examples: Array.isArray(raw.examples) ? raw.examples : [] });
+    }
+  }
+  const entries = [...unique.values()].sort((a, b) => a.normalizedReading.localeCompare(b.normalizedReading, "ja"));
+  const validation = validateJapanese(entries);
+  const datasetVersion = `openjlpt-main-${new Date().toISOString().slice(0, 10)}`;
+  console.info("[vocabulary-import] OpenJLPT validated", validation);
+  if (dryRun) return validation;
+  const { source, collection, job } = await beginImport("openjlpt", "jlpt_common", datasetVersion, dryRun);
+  try {
+    for (const [batchNumber, batch] of chunks(entries).entries()) {
+      const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "ja", word: entry.word, reading: entry.reading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, primary_translation: null, english_definition: entry.meanings.join("；"), part_of_speech: null, kanji_forms: [entry.word], reading_forms: [entry.normalizedReading], senses: [{ glosses: entry.meanings }], examples: entry.examples, source_metadata: { jlptLevel: entry.level, kanaGroup: entry.kanaGroup } }));
+      const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id"));
+      if (dictionaryError) throw dictionaryError;
+      const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
+      if (ids.size !== batch.length) throw new Error("Dictionary upsert 沒有回傳完整的詞條識別碼。");
+      const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: entry.level, kana_group: entry.kanaGroup, sort_order: batchNumber * BATCH_SIZE + index }));
+      const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
+      if (mappingError) throw mappingError;
+      const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "ja", collection: "jlpt_common", word: entry.word, reading: entry.reading, kana: entry.normalizedReading, romaji: null, ipa: null, meaning_zh_tw: entry.meanings.join("；") || "英文釋義待補", english_definition: entry.meanings.join("；") || null, part_of_speech: null, jlpt_level: entry.level, topics: [], frequency_rank: null, importance: 3, sort_key: entry.normalizedReading, normalized_word: entry.normalizedWord, normalized_reading: entry.normalizedReading, kana_group: entry.kanaGroup, examples: entry.examples, source: "OpenJLPT（含 EDRDG／Tatoeba 歸屬）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
+      const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
+      if (catalogError) throw catalogError;
+      console.info(`[vocabulary-import] Japanese ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);
+    }
+    const { error: legacyError } = await admin.from("system_vocabulary").update({ is_active: false }).eq("language", "ja").eq("collection", "jlpt_common").is("source_id", null);
+    if (legacyError) throw legacyError;
+    const { error: completeError } = await admin.from("vocabulary_dataset_imports").update({ status: "completed", item_counts: validation, validation: { valid: true, requiredLevels: ["N5", "N4", "N3", "N2", "N1"], source: "OpenJLPT" }, imported_at: new Date().toISOString() }).eq("id", job.id);
+    if (completeError) throw completeError;
+    return validation;
+  } catch (error) {
+    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: error instanceof Error ? error.message : String(error) }).eq("id", job.id);
+    throw error;
+  }
+}
+
+async function importEnglish({ dryRun = false } = {}) {
+  console.info("[vocabulary-import] Downloading English–Traditional Chinese dataset…");
+  const { json } = await fetchJson(englishUrl);
+  if (!Array.isArray(json)) throw new Error("英文資料集不是預期的 JSON 陣列。");
+  const unique = new Map();
+  for (const raw of json) {
+    const word = String(raw.english_word ?? "").trim();
+    const normalizedWord = word.normalize("NFKC").toLocaleLowerCase("en-US").replace(/\s+/gu, " ");
+    if (!word || !/^[a-z]/iu.test(normalizedWord) || unique.has(normalizedWord)) continue;
+    unique.set(normalizedWord, { sourceEntryId: `toeic:${normalizedWord}`, word, normalizedWord, meaning: String(raw.chinese_definition ?? "").trim(), importance: Math.max(1, Math.min(5, Number(raw.star_rating) || 3)), topic: String(raw.category ?? "").trim(), partsOfSpeech: Array.isArray(raw.parts_of_speech) ? raw.parts_of_speech.map(String) : [], forms: Array.isArray(raw.word_forms) ? raw.word_forms : [], examples: Array.isArray(raw.examples) ? raw.examples : [], scoreRange: String(raw.toeic_score_range ?? "").trim(), tips: Array.isArray(raw.exam_tips) ? raw.exam_tips : [] });
+  }
+  const entries = [...unique.values()].sort((a, b) => a.normalizedWord.localeCompare(b.normalizedWord, "en"));
+  const validation = validateEnglish(entries);
+  const datasetVersion = `toeic-vocab-tw-112.0-${new Date().toISOString().slice(0, 10)}`;
+  console.info("[vocabulary-import] English dataset validated", { total: validation.total, topics: Object.keys(validation.topicCounts).length });
+  if (dryRun) return validation;
+  const { source, collection, job } = await beginImport("toeic-vocab-tw", "toeic_common", datasetVersion, dryRun);
+  try {
+    for (const [batchNumber, batch] of chunks(entries).entries()) {
+      const dictionaryRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, language: "en", word: entry.word, reading: null, normalized_word: entry.normalizedWord, normalized_reading: null, primary_translation: entry.meaning || null, english_definition: null, part_of_speech: entry.partsOfSpeech.join(" / ") || null, kanji_forms: [], reading_forms: [], senses: [{ glosses: entry.meaning ? [entry.meaning] : [] }], examples: entry.examples, source_metadata: { wordForms: entry.forms, toeicScoreRange: entry.scoreRange, examTips: entry.tips } }));
+      const { data: savedEntries, error: dictionaryError } = await runWithRetries("dictionary upsert", () => admin.from("dictionary_entries").upsert(dictionaryRows, { onConflict: "source_id,source_entry_id" }).select("id,source_entry_id"));
+      if (dictionaryError) throw dictionaryError;
+      const ids = new Map((savedEntries ?? []).map((entry) => [entry.source_entry_id, entry.id]));
+      if (ids.size !== batch.length) throw new Error("Dictionary upsert 沒有回傳完整的英文詞條識別碼。");
+      const mappingRows = batch.map((entry, index) => ({ collection_id: collection.id, dictionary_entry_id: ids.get(entry.sourceEntryId), level: null, kana_group: null, topics: entry.topic ? [entry.topic] : [], importance: entry.importance, sort_order: batchNumber * BATCH_SIZE + index }));
+      const { error: mappingError } = await runWithRetries("collection mapping upsert", () => admin.from("vocabulary_collection_entries").upsert(mappingRows, { onConflict: "collection_id,dictionary_entry_id" }));
+      if (mappingError) throw mappingError;
+      const catalogRows = batch.map((entry) => ({ source_id: source.id, source_entry_id: entry.sourceEntryId, dictionary_entry_id: ids.get(entry.sourceEntryId), language: "en", collection: "toeic_common", word: entry.word, reading: null, kana: null, romaji: entry.normalizedWord, ipa: null, meaning_zh_tw: entry.meaning || "中文釋義待補", english_definition: null, part_of_speech: entry.partsOfSpeech.join(" / ") || null, jlpt_level: null, topics: entry.topic ? [entry.topic] : [], frequency_rank: null, importance: entry.importance, sort_key: entry.normalizedWord, normalized_word: entry.normalizedWord, normalized_reading: null, kana_group: null, examples: entry.examples, source: "完整 TOEIC 單字庫（English–Traditional Chinese）", license: "CC BY-SA 4.0", dataset_version: datasetVersion, is_active: true, updated_at: new Date().toISOString() }));
+      const { error: catalogError } = await runWithRetries("catalog upsert", () => admin.from("system_vocabulary").upsert(catalogRows, { onConflict: "source_id,source_entry_id" }));
+      if (catalogError) throw catalogError;
+      console.info(`[vocabulary-import] English ${Math.min((batchNumber + 1) * BATCH_SIZE, entries.length)}/${entries.length}`);
+    }
+    const { error: legacyError } = await admin.from("system_vocabulary").update({ is_active: false }).eq("language", "en").eq("collection", "toeic_common").is("source_id", null);
+    if (legacyError) throw legacyError;
+    const { error: completeError } = await admin.from("vocabulary_dataset_imports").update({ status: "completed", item_counts: validation, validation: { valid: true, minimumEntries: 1000, source: "toeic-vocab-tw" }, imported_at: new Date().toISOString() }).eq("id", job.id);
+    if (completeError) throw completeError;
+    return validation;
+  } catch (error) {
+    await admin.from("vocabulary_dataset_imports").update({ status: "failed", error_message: error instanceof Error ? error.message : String(error) }).eq("id", job.id);
+    throw error;
+  }
+}
+
+export async function runVocabularyDatasetImport({ language = cliLanguage, dryRun = cliDryRun } = {}) {
+  if (!LANGUAGES.has(language)) throw new Error("language 必須是 ja、en 或 all。");
+  const report = {};
+  if (language === "all" || language === "ja") report.japanese = await importJapanese({ dryRun });
+  if (language === "all" || language === "en") report.english = await importEnglish({ dryRun });
+  console.info("[vocabulary-import] complete", JSON.stringify(report, null, 2));
+  return report;
+}
+
+const isCli = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isCli) {
+  try {
+    await runVocabularyDatasetImport();
+  } catch (error) {
+    console.error("[vocabulary-import] failed", error);
+    process.exitCode = 1;
+  }
+}
