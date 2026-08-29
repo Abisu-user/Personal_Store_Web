@@ -4,7 +4,7 @@ import { getSecurityContext } from "@/lib/security/activity";
 import { runVocabularyAssistant } from "@/lib/vocabulary/ai-assistant";
 
 export const dynamic = "force-dynamic";
-const schema = z.object({ action: z.enum(["explain", "compare", "translate", "autocomplete"]), language: z.enum(["ja", "en", "auto"]).default("auto"), prompt: z.string().trim().min(1).max(2000) });
+const schema = z.object({ action: z.enum(["explain", "compare", "translate", "autocomplete", "examples"]), language: z.enum(["ja", "en", "auto"]).default("auto"), prompt: z.string().trim().min(1).max(2000) });
 
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext();

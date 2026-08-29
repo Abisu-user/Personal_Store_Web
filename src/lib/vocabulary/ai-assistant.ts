@@ -1,14 +1,14 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-export type VocabularyAiAction = "explain" | "compare" | "translate" | "autocomplete";
+export type VocabularyAiAction = "explain" | "compare" | "translate" | "autocomplete" | "examples";
 export type VocabularyAiResult = { answer: string; examples: { sentence: string; translation: string }[]; notes: string[]; suggestedCard?: Record<string, unknown> };
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase();
 const maxDuration = 12_000;
 
 function instruction(action: VocabularyAiAction, language: "ja" | "en" | "auto") {
-  const task = action === "compare" ? "比較字詞差異、語感、典型使用時機與對照例句" : action === "translate" ? "翻譯，並說明關鍵語法與可加入單字庫的重點字" : action === "autocomplete" ? "補全單字卡欄位；詞性、讀音、JLPT／CEFR 等無法確認時必須填「未確認」" : "解釋單字的核心意思、語感、常見搭配與使用時機";
+  const task = action === "compare" ? "比較字詞差異、語感、典型使用時機與對照例句" : action === "translate" ? "翻譯，並說明關鍵語法與可加入單字庫的重點字" : action === "autocomplete" ? "補全單字卡欄位；詞性、讀音、JLPT／CEFR 等無法確認時必須填「未確認」" : action === "examples" ? "只產生 2 至 4 個不同情境、能對應指定詞義的學習例句；每句提供自然繁體中文翻譯，讀音或難度不確定時明確說明未確認" : "解釋單字的核心意思、語感、常見搭配與使用時機";
   return `你是 Personal Vault 的語言教學助手。使用繁體中文，目標語言為 ${language === "ja" ? "日文" : language === "en" ? "英文" : "依使用者輸入判斷"}。${task}。字典資料才是事實來源；你不可把不確定的讀音、級別、詞性偽裝成確定事實。請輸出 JSON，格式為 {"answer":"...","examples":[{"sentence":"...","translation":"..."}],"notes":["..."],"suggestedCard":{}}。answer 請精簡清楚；提供最多四句不同情境例句。`;
 }
 

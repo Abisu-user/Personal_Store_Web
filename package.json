@@ -12,7 +12,8 @@
     "vocabulary:import:en": "node scripts/vocabulary/import-system-datasets.mjs --language=en",
     "vocabulary:build:ja-zh-tw": "node scripts/vocabulary/build-openjlpt-tomoshi-zhtw.mjs",
     "vocabulary:hydrate:ja-zh-tw": "node scripts/vocabulary/hydrate-japanese-traditional-chinese.mjs",
-    "test:vocabulary:translations": "node --test scripts/vocabulary/tomoshi-zhtw.test.mjs"
+    "test:vocabulary:translations": "node --test scripts/vocabulary/tomoshi-zhtw.test.mjs",
+    "test:vocabulary:examples": "node --test scripts/vocabulary/system-examples-regression.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.4",
