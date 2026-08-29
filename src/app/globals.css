@@ -722,6 +722,24 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   min-height: 100%;
 }
 
+/* On desktop, keep the navigation fixed while the vocabulary route owns its
+   vertical scrolling. This lets a longer catalog remain reachable instead of
+   relying on the document scroll container. */
+@media (min-width: 701px) {
+  .app-main > .vocabulary-page {
+    height: 100vh;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .app-main > .vocabulary-page > .vocabulary-workspace {
+    min-height: 100%;
+    padding-bottom: 56px;
+  }
+}
+
 @media (max-width: 700px) {
   .vocabulary-page {
     min-height: 100dvh;

@@ -51,20 +51,35 @@ export async function GET(request: NextRequest) {
   const collection = language === "ja" ? "jlpt_common" : "toeic_common";
   const page = Math.max(1, Math.min(500, Number(params.get("page")) || 1));
   const limit = Math.max(5, Math.min(30, Number(params.get("limit")) || 12));
-  const level = params.get("level");
+  const level = (params.get("level") || "").trim().toUpperCase();
   const topic = params.get("topic");
   const startsWith = params.get("startsWith");
   const search = safeSearch(params.get("q") || "");
 
   try {
     const admin = createAdminClient();
-    let query = admin.from("system_vocabulary").select("*", { count: "exact" }).eq("language", language).eq("collection", collection).eq("is_active", true);
-    if (language === "ja" && level && ["N5", "N4", "N3", "N2", "N1"].includes(level)) query = query.eq("jlpt_level", level);
-    if (topic) query = query.contains("topics", [topic]);
-    if (startsWith) query = query.ilike("sort_key", `${safeSearch(startsWith)}%`);
-    if (search) query = query.or(`word.ilike.%${search}%,reading.ilike.%${search}%,meaning_zh_tw.ilike.%${search}%,romaji.ilike.%${search}%`);
-    const { data, error, count } = await query.order("sort_key", { ascending: true }).range((page - 1) * limit, page * limit - 1);
+    const applyBaseFilters = (query: ReturnType<typeof admin.from>) => {
+      let filtered = query.select("*", { count: "exact" }).eq("language", language).eq("collection", collection).eq("is_active", true);
+      if (topic) filtered = filtered.contains("topics", [topic]);
+      if (startsWith) filtered = filtered.ilike("sort_key", `${safeSearch(startsWith)}%`);
+      if (search) filtered = filtered.or(`word.ilike.%${search}%,reading.ilike.%${search}%,meaning_zh_tw.ilike.%${search}%,romaji.ilike.%${search}%`);
+      return filtered;
+    };
+    const validLevel = language === "ja" && ["N5", "N4", "N3", "N2", "N1"].includes(level);
+    let query = applyBaseFilters(admin.from("system_vocabulary"));
+    if (validLevel) query = query.eq("jlpt_level", level);
+    let { data, error, count } = await query.order("sort_key", { ascending: true }).range((page - 1) * limit, page * limit - 1);
     if (error) throw error;
+    // Older manually-applied catalog migrations can contain level values with
+    // inconsistent casing or whitespace. Fall back to a normalized comparison
+    // so a valid JLPT filter never looks empty to the user.
+    if (validLevel && !data?.length) {
+      const fallback = await applyBaseFilters(admin.from("system_vocabulary")).order("sort_key", { ascending: true }).range(0, 999);
+      if (fallback.error) throw fallback.error;
+      const matching = (fallback.data ?? []).filter((row) => String(row.jlpt_level ?? "").trim().toUpperCase() === level);
+      count = matching.length;
+      data = matching.slice((page - 1) * limit, page * limit);
+    }
     const ids = (data ?? []).map((item) => item.id);
     const { data: userRows, error: userError } = ids.length ? await admin.from("vocabulary_cards").select("id,system_word_id,is_favorite,learning_status").eq("user_id", context.userId).is("deleted_at", null).in("system_word_id", ids) : { data: [], error: null };
     if (userError) throw userError;
