@@ -26,8 +26,8 @@ export async function POST() {
 
   const { data: latest, error } = await admin
     .from("vocabulary_dataset_imports")
-    .select("status,started_at,imported_at")
-    .order("started_at", { ascending: false })
+    .select("status,created_at,imported_at")
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
