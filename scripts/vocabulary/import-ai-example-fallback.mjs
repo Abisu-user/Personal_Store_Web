@@ -20,7 +20,7 @@ async function getAllEntries(admin, sourceId) {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
       .from("dictionary_entries")
-      .select("id,word,reading,primary_translation,part_of_speech,jlpt_level")
+      .select("id,word,reading,primary_translation,part_of_speech")
       .eq("source_id", sourceId)
       .eq("language", "ja")
       .order("id")
@@ -55,7 +55,7 @@ async function requestExamples(entries) {
     reading: entry.reading || null,
     meaningZhTw: entry.primary_translation || null,
     partOfSpeech: entry.part_of_speech || null,
-    level: entry.jlpt_level || "unknown",
+    level: "unknown",
   }));
   const instruction = `你是日文教材編輯。請為每個單字產生兩個自然、短、適合台灣學習者的日文例句與繁體中文翻譯。必須保持詞性和指定核心意思；沒有足夠資訊時寧可跳過該項目。不要使用英文字、Markdown 或讀音標記。回傳純 JSON：{"entries":[{"key":"0","examples":[{"sentence":"...","translationZhTw":"..."}]}]}。例句不可與其他項目重複。`;
   const body = { model, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: instruction }, { role: "user", content: JSON.stringify({ entries: promptEntries }) }] };
@@ -133,7 +133,7 @@ export async function runAiMissingExamplesImport({ admin } = {}) {
         if (!sentence || !translationZhTw || unique.has(sentence)) continue;
         unique.add(sentence);
         rows.push({ card_id: null, dictionary_entry_id: entry.id, sense_id: null, language: "ja", sentence, reading: null,
-          translation: translationZhTw, translation_zh_tw: translationZhTw, difficulty_level: entry.jlpt_level || "unknown",
+          translation: translationZhTw, translation_zh_tw: translationZhTw, difficulty_level: "unknown",
           source: "AI 產生例句（未校對）", source_id: `ai-system-example-v1:${entry.id}:${index + 1}`,
           // The existing database constraint reserves `ai` for personal-card
           // drafts.  These rows are catalog-level supplements: retain the
