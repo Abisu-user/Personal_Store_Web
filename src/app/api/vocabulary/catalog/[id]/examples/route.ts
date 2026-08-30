@@ -27,7 +27,7 @@ const toExample = (row: any) => ({
   source: row.source ?? "manual",
   sourceId: row.source_id ?? null,
   isVerified: Boolean(row.is_verified),
-  kind: row.example_kind ?? "user",
+  kind: !row.is_verified && String(row.source ?? "").includes("AI") ? "ai" : row.example_kind ?? "user",
   createdAt: row.created_at,
 });
 const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });

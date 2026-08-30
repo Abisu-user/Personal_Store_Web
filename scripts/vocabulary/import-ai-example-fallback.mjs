@@ -135,7 +135,10 @@ export async function runAiMissingExamplesImport({ admin } = {}) {
         rows.push({ card_id: null, dictionary_entry_id: entry.id, sense_id: null, language: "ja", sentence, reading: null,
           translation: translationZhTw, translation_zh_tw: translationZhTw, difficulty_level: entry.jlpt_level || "unknown",
           source: "AI 產生例句（未校對）", source_id: `ai-system-example-v1:${entry.id}:${index + 1}`,
-          is_verified: false, example_kind: "ai", is_favorite: false });
+          // The existing database constraint reserves `ai` for personal-card
+          // drafts.  These rows are catalog-level supplements: retain the
+          // explicit unverified AI source, while using the catalog-safe shape.
+          is_verified: false, example_kind: "system", is_favorite: false });
       }
       if (unique.size) report.generatedEntries += 1;
     }
