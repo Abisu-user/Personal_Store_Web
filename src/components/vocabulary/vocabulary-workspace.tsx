@@ -62,6 +62,26 @@ const vocabularyDensityCss = `
 @media(max-width:700px){.vocabulary-workspace{gap:12px;padding:14px 12px calc(92px + env(safe-area-inset-bottom))}.vocabulary-header{min-height:44px;padding-bottom:0}.vocabulary-header h1{font-size:1.28rem}.vocabulary-tabs{padding-bottom:5px}.vocabulary-tabs button{padding:8px 3px 9px}.vocabulary-catalog{gap:10px}.vocabulary-catalog-header{gap:10px;padding:13px 14px}.vocabulary-catalog-header h2{font-size:1.08rem}.vocabulary-catalog-header p{font-size:.84rem}.vocabulary-catalog-header-actions{gap:6px}.vocabulary-catalog-header-actions>span{padding:6px 8px}.vocabulary-catalog-switch button{min-height:36px}.vocabulary-catalog-search input{min-height:42px}.vocabulary-kana-grid{padding:7px}.vocabulary-kana-row button{min-height:32px}.vocabulary-catalog-grid{gap:8px}.vocabulary-catalog-card{padding:12px}.vocabulary-catalog-card footer{margin-top:2px}.vocabulary-lookup{gap:10px}.vocabulary-lookup-intro,.vocabulary-history,.vocabulary-lookup-results section,.vocabulary-ai-panel{padding:12px}.flashcard-session{width:100%;max-width:none;gap:12px}.flashcard{min-height:clamp(390px,55dvh,500px)}.flashcard>span{gap:16px;padding:26px 20px}.flashcard strong{font-size:clamp(2.5rem,12vw,4rem)}.vocabulary-taxonomy,.vocabulary-transfer{gap:10px}.vocabulary-taxonomy>div,.vocabulary-transfer>div,.vocabulary-settings,.vocabulary-quiz,.vocabulary-chart{padding:13px}.vocabulary-quiz-card{padding:15px}.vocabulary-stat-grid{gap:8px}.vocabulary-stat-grid>div{padding:11px}}
 `;
 
+// The desktop catalogue keeps its full kana index. On phones the same index is
+// available on demand, so the first screen is reserved for search and results.
+const vocabularyCatalogCompactMobileCss = `
+.vocabulary-kana-filter{display:grid;gap:6px}.vocabulary-kana-toggle{display:none}
+@media(max-width:700px){
+  .vocabulary-catalog-header{align-items:stretch;padding:12px 13px}
+  .vocabulary-catalog-header .eyebrow{display:none}
+  .vocabulary-catalog-header h2{margin:0;font-size:1.04rem}
+  .vocabulary-catalog-description{display:-webkit-box!important;overflow:hidden;margin:0!important;line-height:1.38!important;-webkit-box-orient:vertical;-webkit-line-clamp:1}
+  .vocabulary-catalog-header-actions{width:100%;flex-wrap:nowrap;overflow-x:auto;padding-bottom:1px;scrollbar-width:none}
+  .vocabulary-catalog-header-actions::-webkit-scrollbar{display:none}
+  .vocabulary-catalog-header-actions>span,.vocabulary-catalog-header-actions button{flex:0 0 auto;min-height:34px}
+  .vocabulary-catalog-header-actions button{padding-inline:9px;font-size:.72rem}
+  .vocabulary-kana-toggle{display:flex;align-items:center;justify-content:space-between;min-height:38px;padding:0 11px;border:1px solid color-mix(in srgb,var(--line) 86%,transparent);border-radius:10px;background:color-mix(in srgb,var(--surface) 93%,transparent);color:var(--ink);font-size:.84rem;font-weight:800}
+  .vocabulary-kana-toggle>span:last-child{color:var(--brand);font-size:.78rem}
+  .vocabulary-kana-grid{display:none}
+  .vocabulary-kana-grid.open{display:grid}
+}
+`;
+
 const primaryTabs: { id: Tab; label: string; mobileLabel?: string }[] = [
   { id: "overview", label: "單字總覽", mobileLabel: "總覽" },
   { id: "catalog", label: "探索", mobileLabel: "探索" },
@@ -103,7 +123,7 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
   const [quizMessage, setQuizMessage] = useState<string | null>(null);
   const trash = tab === "trash";
 
-  useEffect(() => { const node = document.createElement("style"); node.dataset.vocabularyStyles = "true"; node.textContent = `${vocabularyCss}${vocabularyButtonCss}${vocabularyDashboardCss}${vocabularyMobileSelectionCss}${vocabularyCatalogCss}${vocabularyExamplesCss}${vocabularyDensityCss}`; document.head.appendChild(node); return () => node.remove(); }, []);
+  useEffect(() => { const node = document.createElement("style"); node.dataset.vocabularyStyles = "true"; node.textContent = `${vocabularyCss}${vocabularyButtonCss}${vocabularyDashboardCss}${vocabularyMobileSelectionCss}${vocabularyCatalogCss}${vocabularyExamplesCss}${vocabularyDensityCss}${vocabularyCatalogCompactMobileCss}`; document.head.appendChild(node); return () => node.remove(); }, []);
   useEffect(() => {
     let active = true;
     const cached = readClientResource<VocabularyWorkspaceData>("vocabulary:standard");
