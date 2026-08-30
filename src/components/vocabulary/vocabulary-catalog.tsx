@@ -122,7 +122,12 @@ export function VocabularyCatalog({ onChanged }: { onChanged: () => Promise<void
       if (!response.ok) throw new Error(result.error || "AI 例句補齊失敗。");
       const inserted = Number(result?.report?.inserted ?? 0);
       const remaining = Number(result?.report?.remaining ?? 0);
-      setNotice(remaining > 0 ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 例句，另有 ${remaining} 個單字待補。` : inserted > 0 ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 補充例句。` : "所有日文單字都已有例句。 ");
+      const rateLimited = Boolean(result?.report?.rateLimited);
+      setNotice(rateLimited
+        ? `已安全寫入 ${inserted.toLocaleString("zh-TW")} 筆 AI 例句；AI 服務暫時限流，約一分鐘後可再次按此按鈕繼續補齊（尚餘 ${remaining} 個）。`
+        : remaining > 0
+          ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 例句，另有 ${remaining} 個單字待補。`
+          : inserted > 0 ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 補充例句。` : "所有日文單字都已有例句。 ");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "AI 例句補齊失敗，請稍後再試。");
     } finally {
