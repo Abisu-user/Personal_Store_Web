@@ -15,7 +15,21 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("saveAi"), cardId: uuid, examples: z.array(exampleInput).min(1).max(4) }),
 ]);
 
-const toExample = (row: any) => ({ id: row.id, senseId: row.sense_id ?? null, language: row.language ?? null, sentence: row.sentence, reading: row.reading ?? null, translationZhTw: row.translation_zh_tw ?? row.translation ?? null, difficultyLevel: row.difficulty_level ?? "unknown", source: row.source ?? "manual", sourceId: row.source_id ?? null, isVerified: Boolean(row.is_verified), kind: row.example_kind ?? "user", createdAt: row.created_at });
+const toExample = (row: any) => ({
+  id: row.id,
+  senseId: row.sense_id ?? null,
+  language: row.language ?? null,
+  sentence: row.sentence,
+  reading: row.reading ?? null,
+  translationZhTw: row.translation_zh_tw ?? null,
+  originalTranslation: row.translation ?? null,
+  difficultyLevel: row.difficulty_level ?? "unknown",
+  source: row.source ?? "manual",
+  sourceId: row.source_id ?? null,
+  isVerified: Boolean(row.is_verified),
+  kind: row.example_kind ?? "user",
+  createdAt: row.created_at,
+});
 const jsonError = (error: string, status: number) => NextResponse.json({ error }, { status });
 
 async function getCatalogWord(id: string) {
