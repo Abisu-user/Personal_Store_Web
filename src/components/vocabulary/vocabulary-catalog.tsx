@@ -41,6 +41,7 @@ export function VocabularyCatalog({ onChanged }: { onChanged: () => Promise<void
   const [batchMode, setBatchMode] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [syncingExamples, setSyncingExamples] = useState(false);
+  const [syncingAiExamples, setSyncingAiExamples] = useState(false);
   const [detailItem, setDetailItem] = useState<CatalogItem | null>(null);
   const latestRequest = useRef(0);
 
@@ -112,8 +113,25 @@ export function VocabularyCatalog({ onChanged }: { onChanged: () => Promise<void
     }
   }
 
+  async function syncAiExamples() {
+    setSyncingAiExamples(true);
+    setNotice("正在以 AI 補齊尚無例句的日文單字，這需要幾分鐘…");
+    try {
+      const response = await fetch("/api/vocabulary/catalog/examples/sync-ai", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "AI 例句補齊失敗。");
+      const inserted = Number(result?.report?.inserted ?? 0);
+      const remaining = Number(result?.report?.remaining ?? 0);
+      setNotice(remaining > 0 ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 例句，另有 ${remaining} 個單字待補。` : inserted > 0 ? `已新增 ${inserted.toLocaleString("zh-TW")} 筆 AI 補充例句。` : "所有日文單字都已有例句。 ");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "AI 例句補齊失敗，請稍後再試。");
+    } finally {
+      setSyncingAiExamples(false);
+    }
+  }
+
   return <><section className="vocabulary-catalog" aria-busy={loading}>
-    <header className="vocabulary-catalog-header"><div><p className="eyebrow">BUILT-IN VOCABULARY</p><h2>探索單字庫</h2><p>系統目錄不會計入你的學習統計；只有按「加入學習」後才會建立個人複習資料。</p></div><div className="vocabulary-catalog-header-actions"><span>{statusLabel}</span><button className="secondary-button compact" disabled={syncingExamples} onClick={() => void syncSystemExamples()} type="button">{syncingExamples ? "同步中…" : "補齊系統例句"}</button></div></header>
+    <header className="vocabulary-catalog-header"><div><p className="eyebrow">BUILT-IN VOCABULARY</p><h2>探索單字庫</h2><p>系統目錄不會計入你的學習統計；只有按「加入學習」後才會建立個人複習資料。</p></div><div className="vocabulary-catalog-header-actions"><span>{statusLabel}</span><button className="secondary-button compact" disabled={syncingExamples || syncingAiExamples} onClick={() => void syncSystemExamples()} type="button">{syncingExamples ? "同步中…" : "補齊系統例句"}</button>{language === "ja" && <button className="secondary-button compact" disabled={syncingExamples || syncingAiExamples} onClick={() => void syncAiExamples()} type="button">{syncingAiExamples ? "AI 補齊中…" : "AI 補齊缺少例句"}</button>}</div></header>
     {notice && <p className="notice success" role="status">{notice}</p>}
     <div className="vocabulary-catalog-switch" role="tablist" aria-label="單字庫語言"><button aria-selected={language === "ja"} className={language === "ja" ? "active" : ""} onClick={() => setLanguage("ja")} role="tab" type="button">日文 · JLPT</button><button aria-selected={language === "en"} className={language === "en" ? "active" : ""} onClick={() => setLanguage("en")} role="tab" type="button">英文 · TOEIC</button></div>
     <form className="vocabulary-catalog-search" onSubmit={(event) => { event.preventDefault(); setSubmittedQuery(query.trim()); }}><input aria-label="搜尋內建單字庫" onChange={(event) => setQuery(event.target.value)} placeholder={language === "ja" ? "搜尋日文、讀音或中文意思" : "搜尋英文、音標或中文意思"} value={query} /><button className="button" type="submit">搜尋</button></form>
