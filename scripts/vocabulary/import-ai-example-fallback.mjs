@@ -20,7 +20,7 @@ async function getAllEntries(admin, sourceId) {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin
       .from("dictionary_entries")
-      .select("id,word,reading,meaning_zh_tw,part_of_speech,jlpt_level")
+      .select("id,word,reading,primary_translation,part_of_speech,jlpt_level")
       .eq("source_id", sourceId)
       .eq("language", "ja")
       .order("id")
@@ -53,7 +53,7 @@ async function requestExamples(entries) {
     key: String(index),
     word: entry.word,
     reading: entry.reading || null,
-    meaningZhTw: entry.meaning_zh_tw || null,
+    meaningZhTw: entry.primary_translation || null,
     partOfSpeech: entry.part_of_speech || null,
     level: entry.jlpt_level || "unknown",
   }));
