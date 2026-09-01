@@ -154,6 +154,7 @@ function AnimeFolderNavigation({
   scope,
   selectedId,
   inline = false,
+  compactOnMobile = false,
   trashCount = 0,
   trashSelected = false,
 }: {
@@ -164,6 +165,8 @@ function AnimeFolderNavigation({
   scope: CategoryScope;
   selectedId: string | null;
   inline?: boolean;
+  /** The standard library shares its rail with watch-status shortcuts. */
+  compactOnMobile?: boolean;
   trashCount?: number;
   trashSelected?: boolean;
 }) {
@@ -187,12 +190,12 @@ function AnimeFolderNavigation({
     const updateLimit = () => {
       const width = window.innerWidth;
       // Preserve room for 更多、管理、新增與垃圾桶 instead of wrapping.
-      setInlineFolderLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
+      setInlineFolderLimit(width >= 1240 ? 2 : width >= 700 ? 1 : compactOnMobile ? 0 : 1);
     };
     updateLimit();
     window.addEventListener("resize", updateLimit);
     return () => window.removeEventListener("resize", updateLimit);
-  }, [inline]);
+  }, [compactOnMobile, inline]);
   const inlineFolders = !inline
     ? visible
     : (() => {
@@ -200,8 +203,11 @@ function AnimeFolderNavigation({
         const selected = visible.find((folder) => folder.id === selectedId);
         if (!selected || first.some((folder) => folder.id === selected.id)) return first;
         return [...first.slice(0, Math.max(0, inlineFolderLimit - 1)), selected];
-      })();
+  })();
   const hasFolderOverflow = inline && inlineFolders.length < visible.length;
+  // On a compact phone rail, folders are selected through 「更多」 so the
+  // status shortcuts and folder controls never spill into an invisible area.
+  const showFolderPicker = hasFolderOverflow || (inline && compactOnMobile && Boolean(onTrash));
   const openManager = () => {
     setDraftFolders(sortedFolders(folders));
     setRemovedIds([]);
@@ -300,9 +306,9 @@ function AnimeFolderNavigation({
             {folder.name}
           </button>
         ))}
-        {hasFolderOverflow && <button
-          aria-label="管理資料夾"
-          className="anime-category-utility"
+        {showFolderPicker && <button
+          aria-label="更多動漫資料夾"
+          className={selectedId || trashSelected ? "anime-category-utility active" : "anime-category-utility"}
           onClick={() => { setError(null); setMoreOpen(true); }}
           type="button"
         >
@@ -328,7 +334,7 @@ function AnimeFolderNavigation({
           <button
             aria-label="動漫垃圾桶"
             aria-pressed={trashSelected}
-            className={trashSelected ? "anime-category-utility active" : "anime-category-utility"}
+            className={trashSelected ? "anime-category-utility anime-folder-trash-button active" : "anime-category-utility anime-folder-trash-button"}
             onClick={(event) => {
               // This control only changes the active collection view.  Keep
               // its click isolated from any nearby editor/form controls.
@@ -390,6 +396,7 @@ function AnimeFolderNavigation({
           <p>此處僅可選擇資料夾；新增、修改、排序與刪除請使用資料夾列的管理按鈕。</p>
           <input aria-label="搜尋動漫資料夾" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋資料夾" value={query} />
           <div className="collection-category-manager-list">
+            {onTrash && <button className={trashSelected ? "active" : ""} onClick={() => { onTrash(); setMoreOpen(false); }} type="button">垃圾桶 <span>{trashCount}</span></button>}
             {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(folder.id); setMoreOpen(false); }} type="button">{folder.name}</button>)}
             {!folders.length && <p className="manager-empty">尚未建立資料夾。</p>}
           </div>
@@ -1064,7 +1071,9 @@ export function AnimeWorkspace({
   useEffect(() => {
     const updateLimit = () => {
       const width = window.innerWidth;
-      setInlineCategoryLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
+      // Keep one real category visible on phones. Only the remainder belongs
+      // in 「更多」; a zero limit made even a single fitting category disappear.
+      setInlineCategoryLimit(width >= 1240 ? 2 : 1);
     };
     updateLimit();
     window.addEventListener("resize", updateLimit);
@@ -1588,11 +1597,7 @@ export function AnimeWorkspace({
               {visibleFilters.map((value) => (
                 <button
                   className={
-                    libraryView === "library" &&
-                    !folderFilter &&
-                    filter === value
-                      ? "active"
-                      : ""
+                    `${value !== "all" && value !== "planning" ? "anime-status-filter-extra " : ""}${libraryView === "library" && !folderFilter && filter === value ? "active" : ""}`
                   }
                   key={value}
                   onClick={() => selectLibraryStatus(value)}
@@ -1604,6 +1609,7 @@ export function AnimeWorkspace({
               <AnimeFolderNavigation
                 folders={data.folders}
                 inline
+                compactOnMobile
                 onChange={(folderId) => {
                   setLibraryView("library");
                   setFilter("all");

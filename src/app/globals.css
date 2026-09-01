@@ -829,6 +829,13 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   .collection-navigation-section .collection-category-strip > button {
     max-width: 108px;
   }
+  /* The library rail shares one line with folders. Keep the two highest-value
+     watch shortcuts visible; the remaining statuses stay available from 篩選,
+     while folders and trash are reachable through 更多. */
+  .anime-filter-scroll > .anime-status-filter-extra,
+  .anime-filter-scroll .anime-folder-bar-inline .anime-folder-trash-button {
+    display: none;
+  }
   .anime-workspace .anime-category-scroll > button:not(.anime-category-utility),
   .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button:not(.anime-category-utility) {
     max-width: 92px;
