@@ -31,7 +31,11 @@ export async function getVocabularyWorkspaceData(userId: string, includeTrash = 
   ]) : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }, { data: [] }];
   if (meaningsResult.error || examplesResult.error || (systemExamplesResult as { error?: unknown }).error || cardTagsResult.error || deckCardsResult.error) throw new Error("Vocabulary relationships unavailable");
   const meanings = (meaningsResult.data ?? []).map((row: any): VocabularyMeaning => ({ id: row.id, cardId: row.card_id, meaning: row.meaning, language: row.language, description: row.description, partOfSpeech: row.part_of_speech, usageContext: row.usage_context, isPrimary: row.is_primary, sortOrder: row.sort_order }));
-  const mapExample = (row: any): VocabularyExample => ({ id: row.id, cardId: row.card_id, dictionaryEntryId: row.dictionary_entry_id ?? null, meaningId: row.meaning_id, senseId: row.sense_id ?? null, language: row.language ?? null, sentence: row.sentence, reading: row.reading, translation: row.translation, translationZhTw: row.translation_zh_tw ?? row.translation ?? null, difficultyLevel: row.difficulty_level ?? null, source: row.source, sourceId: row.source_id ?? null, isVerified: Boolean(row.is_verified), exampleKind: row.example_kind === "system" || row.example_kind === "ai" ? row.example_kind : "user", notes: row.notes, isFavorite: row.is_favorite });
+  const mapExample = (row: any): VocabularyExample => {
+    const fallbackTranslation = typeof row.translation === "string" && /[\u3400-\u9fff]/.test(row.translation) ? row.translation : null;
+    const translationZhTw = row.translation_zh_tw ?? fallbackTranslation;
+    return { id: row.id, cardId: row.card_id, dictionaryEntryId: row.dictionary_entry_id ?? null, meaningId: row.meaning_id, senseId: row.sense_id ?? null, language: row.language ?? null, sentence: row.sentence, reading: row.reading, translation: translationZhTw, translationZhTw, difficultyLevel: row.difficulty_level ?? null, source: row.source, sourceId: row.source_id ?? null, isVerified: Boolean(row.is_verified), exampleKind: row.example_kind === "system" || row.example_kind === "ai" ? row.example_kind : "user", notes: row.notes, isFavorite: row.is_favorite };
+  };
   const examples = (examplesResult.data ?? []).map(mapExample);
   const systemExamples = (systemExamplesResult.data ?? []).map(mapExample);
   const tagById = new Map((tagRows ?? []).map((row: any) => [row.id, { id: row.id, name: row.name, color: row.color } satisfies VocabularyTag]));
