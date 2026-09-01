@@ -2,7 +2,6 @@ import "server-only";
 
 import { cache } from "react";
 import { redirect } from "next/navigation";
-import { ensureUserProfile } from "@/lib/profile/data";
 import { createClient } from "@/lib/supabase/server";
 
 /** Verifies the session with Supabase Auth; never trust a client-supplied user id. */
@@ -13,7 +12,6 @@ export const requireUser = cache(async () => {
   if (error || !user || !user.email_confirmed_at) {
     redirect("/login");
   }
-  await ensureUserProfile(user);
 
   return user;
 });

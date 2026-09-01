@@ -47,12 +47,25 @@ export async function ensureUserProfile(user: AuthUser) {
 }
 
 export async function getUserProfile(user: AuthUser): Promise<UserProfile> {
-  await ensureUserProfile(user);
-  const { data, error } = await createAdminClient()
+  const admin = createAdminClient();
+  let { data, error } = await admin
     .from("profiles")
     .select("username, display_name, avatar_path")
     .eq("id", user.id)
     .single();
+
+  // The normal account-creation trigger creates this row. Keep the legacy
+  // repair path, but only pay for its two upserts when an older account really
+  // is missing its profile instead of on every protected page render.
+  if (!data && error?.code === "PGRST116") {
+    await ensureUserProfile(user);
+    ({ data, error } = await admin
+      .from("profiles")
+      .select("username, display_name, avatar_path")
+      .eq("id", user.id)
+      .single());
+  }
+
   if (error || !data) throw error ?? new Error("Unable to load profile.");
 
   return {

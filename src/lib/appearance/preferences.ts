@@ -122,23 +122,40 @@ export async function removeBackgroundImage(reference: string) {
 }
 export function getBackgroundImageUrl(reference: string | undefined) { return !reference ? undefined : isStoredImage(reference) ? imageCache.get(reference) : reference; }
 async function convertLegacyImage(dataUrl: string) { const response = await fetch(dataUrl); return storeBackgroundImage(await response.blob()); }
-/** Resolves stored image references and performs a one-time conversion of prior localStorage images. */
-export async function hydrateAppearanceImages(appearance: Appearance): Promise<Appearance> {
-  const normalized = normalizeAppearance(appearance); let changed = false;
-  const refs = await Promise.all(normalized.backgroundImages.map(async (reference) => {
+/**
+ * Resolves stored image references and performs a one-time conversion of prior
+ * localStorage images. Startup only needs the active background: loading all
+ * ten full-size images from IndexedDB delays both PWA and desktop launch.
+ * Settings requests the complete playlist so its thumbnails remain available.
+ */
+export async function hydrateAppearanceImages(appearance: Appearance, options: { all?: boolean } = {}): Promise<Appearance> {
+  const normalized = normalizeAppearance(appearance);
+  const activeIndex = Math.min(normalized.backgroundActiveIndex, Math.max(0, normalized.backgroundImages.length - 1));
+  const imageIndexes = options.all ? normalized.backgroundImages.map((_, index) => index) : normalized.backgroundImages[activeIndex] ? [activeIndex] : [];
+  const backgroundImages = [...normalized.backgroundImages];
+  let changed = false;
+
+  await Promise.all(imageIndexes.map(async (index) => {
+    const reference = backgroundImages[index];
+    if (!reference) return;
     if (isLegacyImage(reference)) {
-      try { const converted = await convertLegacyImage(reference); changed ||= converted !== reference; return converted; }
-      catch { return reference; }
+      try {
+        const converted = await convertLegacyImage(reference);
+        if (converted !== reference) { backgroundImages[index] = converted; changed = true; }
+      } catch {
+        // Keep the legacy data URL as a compatibility fallback.
+      }
+      return;
     }
-    if (!isStoredImage(reference)) return reference;
-    if (imageCache.has(reference)) return reference;
-    const db = await imageDb(); const transaction = db.transaction("images", "readonly"); const blob = await requestResult(transaction.objectStore("images").get(reference)) as Blob | undefined;
+    if (!isStoredImage(reference) || imageCache.has(reference)) return;
+    const db = await imageDb();
+    const transaction = db.transaction("images", "readonly");
+    const blob = await requestResult(transaction.objectStore("images").get(reference)) as Blob | undefined;
     if (blob) imageCache.set(reference, URL.createObjectURL(blob));
-    return blob ? reference : "";
   }));
-  const backgroundImages = refs.filter(Boolean);
-  const next = { ...normalized, backgroundImages, backgroundActiveIndex: Math.min(normalized.backgroundActiveIndex, Math.max(0, backgroundImages.length - 1)), backgroundImage: backgroundImages[Math.min(normalized.backgroundActiveIndex, Math.max(0, backgroundImages.length - 1))] };
-  if (changed || backgroundImages.length !== normalized.backgroundImages.length) saveAppearance(next);
+
+  const next = { ...normalized, backgroundImages, backgroundActiveIndex: activeIndex, backgroundImage: backgroundImages[activeIndex] };
+  if (changed) saveAppearance(next);
   return next;
 }
 

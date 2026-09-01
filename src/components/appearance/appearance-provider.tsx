@@ -7,6 +7,11 @@ import { applyAppearance, hasScopedAppearance, hydrateAppearanceImages, migrateA
 export function AppearanceProvider() {
   useEffect(() => {
     let timer: number | undefined; let cancelled = false;
+    const rotateBackground = async () => {
+      let rotated = nextBackground(readAppearance());
+      try { rotated = await hydrateAppearanceImages(rotated); } catch { /* Keep the last available appearance. */ }
+      if (!cancelled) saveAppearance(rotated);
+    };
     const applySaved = async (rotateForLogin = false) => {
       window.clearInterval(timer); let appearance = readAppearance();
       // On iOS PWA, localStorage may briefly be unavailable while the shell is
@@ -15,11 +20,14 @@ export function AppearanceProvider() {
         const backup = await readAppearanceBackup();
         if (backup) appearance = backup;
       }
+      // Choose the next image before hydrating so only the image that will be
+      // shown is read from IndexedDB.
+      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) appearance = nextBackground(appearance);
       try { appearance = await hydrateAppearanceImages(appearance); } catch { /* Keep non-image preferences even when browser storage is unavailable. */ }
       if (cancelled) return;
       migrateAppearanceForCurrentDevice(appearance);
-      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) { appearance = nextBackground(appearance); saveAppearance(appearance); } else applyAppearance(appearance);
-      if (appearance.backgroundRotation === "interval" && appearance.backgroundImages.length > 1) timer = window.setInterval(() => saveAppearance(nextBackground(readAppearance())), appearance.backgroundRotationMinutes * 60_000);
+      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) saveAppearance(appearance); else applyAppearance(appearance);
+      if (appearance.backgroundRotation === "interval" && appearance.backgroundImages.length > 1) timer = window.setInterval(() => { void rotateBackground(); }, appearance.backgroundRotationMinutes * 60_000);
     };
     void applySaved(true); const onAppearanceChange = () => { void applySaved(); }; window.addEventListener("personal-vault:appearance", onAppearanceChange);
     return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("personal-vault:appearance", onAppearanceChange); };

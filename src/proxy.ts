@@ -5,6 +5,16 @@ import { authCookieOptions } from "@/lib/supabase/cookie-options";
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
+
+  // Route handlers verify the session again with getSecurityContext(). Avoid a
+  // second Auth/claims pass in front of every workspace API call; it adds up
+  // during application startup when the lock provider and page data load in
+  // parallel. Keep the private no-store header for sensitive JSON responses.
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,

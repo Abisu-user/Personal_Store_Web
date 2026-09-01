@@ -47,7 +47,7 @@ export function AppearanceSettings() {
       if (!active) return;
       applyAppearance(stored); setMobileNavigation(readMobileNavigationPreferences());
       try {
-        const hydrated = await hydrateAppearanceImages(stored);
+        const hydrated = await hydrateAppearanceImages(stored, { all: true });
         if (!active) return;
         applyAppearance(hydrated); setAppearance(hydrated); setReady(true);
       } catch {
