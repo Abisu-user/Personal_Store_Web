@@ -25,6 +25,7 @@ const commonFields = z.object({
   notes: z.string().trim().max(12000).nullable().optional(),
   categoryIds: z.array(id).max(30).default([]),
   folderId: id.nullable().optional(),
+  folderIds: z.array(id).max(30).optional(),
   isAdult: z.boolean().optional(),
   contentRating: z.string().trim().max(80).nullable().optional(),
   adultSource: z.string().trim().max(120).nullable().optional(),
@@ -40,15 +41,45 @@ const batchSchema = z.object({
   ids: z.array(id).min(1).max(100),
   scope: z.enum(["standard", "adult"]).default("standard"),
   folderId: id.nullable().optional(),
+  folderIds: z.array(id).max(30).optional(),
   categoryIds: z.array(id).max(30).optional(),
 });
 const error = (message: string, statusCode: number) => NextResponse.json({ error: message }, { status: statusCode });
 
-async function replaceCategories(userId: string, animeId: string, categoryIds: string[], scope: "standard" | "adult", folderId: string | null) {
+function normalizedFolderIds(input: { folderId?: string | null; folderIds?: string[] }, fallback: string[] = []) {
+  if (input.folderIds !== undefined) return [...new Set(input.folderIds)];
+  if (input.folderId !== undefined) return input.folderId ? [input.folderId] : [];
+  return fallback;
+}
+
+async function validateFolderIds(userId: string, scope: "standard" | "adult", folderIds: string[]) {
+  if (!folderIds.length) return [];
+  const { data, error: folderError } = await createAdminClient().from("anime_folders").select("id").eq("user_id", userId).eq("scope", scope).in("id", folderIds);
+  if (folderError || (data?.length ?? 0) !== folderIds.length) throw new Error("Invalid anime folder");
+  return folderIds;
+}
+
+async function listFolderIds(animeId: string, fallbackFolderId: string | null) {
+  const { data, error: linkError } = await createAdminClient().from("anime_library_folders").select("folder_id").eq("anime_id", animeId);
+  if (linkError) return fallbackFolderId ? [fallbackFolderId] : [];
+  const linked = [...new Set((data ?? []).map((link) => link.folder_id))];
+  return linked.length ? linked : fallbackFolderId ? [fallbackFolderId] : [];
+}
+
+async function replaceFolders(animeId: string, folderIds: string[]) {
+  const admin = createAdminClient();
+  const { error: deleteError } = await admin.from("anime_library_folders").delete().eq("anime_id", animeId);
+  if (deleteError) throw deleteError;
+  if (!folderIds.length) return;
+  const { error: insertError } = await admin.from("anime_library_folders").insert(folderIds.map((folderId) => ({ anime_id: animeId, folder_id: folderId })));
+  if (insertError) throw insertError;
+}
+
+async function replaceCategories(userId: string, animeId: string, categoryIds: string[], scope: "standard" | "adult", folderIds: string[]) {
   const admin = createAdminClient();
   if (categoryIds.length) {
     let query = admin.from("anime_tags").select("id").eq("user_id", userId).eq("scope", scope).in("id", categoryIds);
-    query = folderId ? query.eq("folder_id", folderId) : query.is("folder_id", null);
+    query = folderIds.length ? query.in("folder_id", folderIds) : query.is("folder_id", null);
     const { data, error: categoryError } = await query;
     if (categoryError || (data?.length ?? 0) !== categoryIds.length) throw new Error("Invalid anime category");
   }
@@ -81,11 +112,14 @@ export async function POST(request: NextRequest) {
   try {
     if (parsed.data.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
     const scope = parsed.data.isAdult ? "adult" : "standard" as const;
-    const admin = createAdminClient(); if (parsed.data.folderId) { const { data: folder } = await admin.from("anime_folders").select("id").eq("id", parsed.data.folderId).eq("user_id", context.userId).eq("scope", scope).maybeSingle(); if (!folder) return error("請選擇目前清單內的資料夾。", 400); }
-    const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, coverPath), folder_id: parsed.data.folderId ?? null }).select("id").single();
-    if (insertError) throw insertError; await replaceCategories(context.userId, data.id, parsed.data.categoryIds, scope, parsed.data.folderId ?? null);
+    const folderIds = await validateFolderIds(context.userId, scope, normalizedFolderIds(parsed.data));
+    const admin = createAdminClient();
+    const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, coverPath), folder_id: folderIds[0] ?? null }).select("id").single();
+    if (insertError) throw insertError;
+    await replaceFolders(data.id, folderIds);
+    await replaceCategories(context.userId, data.id, parsed.data.categoryIds, scope, folderIds);
     return NextResponse.json({ id: data.id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
-  } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error("無法新增動漫，請稍後再試。", 503); }
+  } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); return error("無法新增動漫，請稍後再試。", 503); }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -93,7 +127,7 @@ export async function PATCH(request: NextRequest) {
   const input = await request.json().catch(() => null);
   const batch = batchSchema.safeParse(input);
   if (batch.success) {
-    const { action, ids, scope, folderId, categoryIds = [] } = batch.data;
+    const { action, ids, scope, categoryIds = [] } = batch.data;
     if (scope === "adult" && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
     const admin = createAdminClient();
     let target = admin.from("anime_library").select("id,cover_url").eq("user_id", context.userId).in("id", ids);
@@ -105,10 +139,13 @@ export async function PATCH(request: NextRequest) {
     if (!targetIds.length) return error("找不到可處理的動漫。", 404);
     try {
       if (action === "organize") {
-        if (folderId) { const { data: folder } = await admin.from("anime_folders").select("id").eq("id", folderId).eq("user_id", context.userId).eq("scope", scope).maybeSingle(); if (!folder) return error("請選擇目前清單內的資料夾。", 400); }
-        const { error: folderError } = await admin.from("anime_library").update({ folder_id: folderId ?? null }).eq("user_id", context.userId).in("id", targetIds);
+        const folderIds = await validateFolderIds(context.userId, scope, normalizedFolderIds(batch.data));
+        const { error: folderError } = await admin.from("anime_library").update({ folder_id: folderIds[0] ?? null }).eq("user_id", context.userId).in("id", targetIds);
         if (folderError) throw folderError;
-        await Promise.all(targetIds.map((animeId) => replaceCategories(context.userId, animeId, categoryIds, scope, folderId ?? null)));
+        await Promise.all(targetIds.map(async (animeId) => {
+          await replaceFolders(animeId, folderIds);
+          await replaceCategories(context.userId, animeId, categoryIds, scope, folderIds);
+        }));
       } else if (action === "permanent") {
         const { error: removeError } = await admin.from("anime_library").delete().eq("user_id", context.userId).in("id", targetIds);
         if (removeError) throw removeError;
@@ -118,7 +155,7 @@ export async function PATCH(request: NextRequest) {
         if (updateError) throw updateError;
       }
       return NextResponse.json({ ok: true, count: targetIds.length }, { headers: { "Cache-Control": "private, no-store" } });
-    } catch { return error(action === "permanent" ? "無法永久刪除動漫。" : action === "restore" ? "無法還原動漫。" : action === "organize" ? "無法整理動漫。" : "無法移除動漫。", 503); }
+    } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error(action === "permanent" ? "無法永久刪除動漫。" : action === "restore" ? "無法還原動漫。" : action === "organize" ? "無法整理動漫。" : "無法移除動漫。", 503); }
   }
   const parsed = updateSchema.safeParse(input); if (!parsed.success) return error("請檢查動漫資料。", 400);
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
@@ -142,14 +179,22 @@ export async function PATCH(request: NextRequest) {
     if (changes.externalUrl !== undefined) updates.external_url = changes.externalUrl || null;
     const effectiveAdult = changes.isAdult ?? current.is_adult;
     const effectiveScope = effectiveAdult ? "adult" : "standard" as const;
-    const effectiveFolderId = changes.folderId === undefined ? current.folder_id : changes.folderId;
-    if (changes.folderId !== undefined) { if (changes.folderId) { const { data: folder } = await admin.from("anime_folders").select("id").eq("id", changes.folderId).eq("user_id", context.userId).eq("scope", effectiveScope).maybeSingle(); if (!folder) return error("請選擇目前清單內的資料夾。", 400); } updates.folder_id = changes.folderId; }
+    const scopeChanged = effectiveAdult !== current.is_adult;
+    const folderAssignmentChanged = changes.folderIds !== undefined || changes.folderId !== undefined;
+    const currentFolderIds = await listFolderIds(animeId, current.folder_id ?? null);
+    const effectiveFolderIds = scopeChanged && !folderAssignmentChanged
+      ? []
+      : folderAssignmentChanged
+        ? await validateFolderIds(context.userId, effectiveScope, normalizedFolderIds(changes))
+        : currentFolderIds;
+    if (folderAssignmentChanged || scopeChanged) updates.folder_id = effectiveFolderIds[0] ?? null;
     if (coverPath) updates.cover_url = coverPath;
     if (Object.keys(updates).length) { const { error: updateError } = await admin.from("anime_library").update(updates).eq("id", animeId).eq("user_id", context.userId); if (updateError) throw updateError; }
+    if (folderAssignmentChanged || scopeChanged) await replaceFolders(animeId, effectiveFolderIds);
     if (coverPath && coverPath !== current.cover_url && current.cover_url?.startsWith(`${context.userId}/covers/`)) await deleteCover(current.cover_url);
-    if (categoryIds !== undefined) await replaceCategories(context.userId, animeId, categoryIds, effectiveScope, effectiveFolderId ?? null);
+    if (categoryIds !== undefined || scopeChanged) await replaceCategories(context.userId, animeId, categoryIds ?? [], effectiveScope, effectiveFolderIds);
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
-  } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error("無法儲存動漫資料，請稍後再試。", 503); }
+  } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); return error("無法儲存動漫資料，請稍後再試。", 503); }
 }
 
 export async function DELETE(request: NextRequest) {

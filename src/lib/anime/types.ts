@@ -15,7 +15,9 @@ export type AnimeLibraryItem = {
   watchStatus: AnimeWatchStatus; watchedEpisodes: number; rating: number | null; favorite: boolean; personalRank: AnimePersonalRank | null; notes: string | null;
   startedWatchingAt: string | null; completedAt: string | null; lastWatchedAt: string | null; createdAt: string; updatedAt: string; tags: AnimeTag[];
   sourceUrl: string | null;
-  isAdult: boolean; contentRating: string | null; adultSource: string | null; externalUrl: string | null; folderId: string | null;
+  isAdult: boolean; contentRating: string | null; adultSource: string | null; externalUrl: string | null;
+  /** `folderId` remains the legacy primary folder; `folderIds` is authoritative. */
+  folderId: string | null; folderIds: string[];
 };
 
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };

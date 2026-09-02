@@ -84,6 +84,26 @@ function coverUrl(anime: AnimeLibraryItem) {
       : null;
 }
 
+function categoriesForFolders(categories: AnimeTag[], folderIds: string[]) {
+  return categories.filter((category) =>
+    folderIds.length
+      ? category.folderId !== null && folderIds.includes(category.folderId)
+      : category.folderId === null,
+  );
+}
+
+function toggledFolderIds(folderIds: string[], folderId: string) {
+  return folderIds.includes(folderId)
+    ? folderIds.filter((id) => id !== folderId)
+    : [...folderIds, folderId];
+}
+
+function categoryLabelInFolderSelection(category: AnimeTag, folders: AnimeWorkspaceData["folders"], folderIds: string[]) {
+  if (folderIds.length < 2 || !category.folderId) return category.name;
+  const folderName = folders.find((folder) => folder.id === category.folderId)?.name;
+  return folderName ? `${category.name}（${folderName}）` : category.name;
+}
+
 function Cover({
   anime,
   className = "anime-cover",
@@ -527,13 +547,21 @@ function AnimeCollectionList({
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [organizeOpen, setOrganizeOpen] = useState(false);
-  const [folderId, setFolderId] = useState("");
+  const [folderIds, setFolderIds] = useState<string[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [confirmPermanent, setConfirmPermanent] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const selected = new Set(selectedIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const scopedCategories = useMemo(
+    () => categoriesForFolders(categories, folderIds),
+    [categories, folderIds],
+  );
+  useEffect(() => {
+    const available = new Set(scopedCategories.map((category) => category.id));
+    setCategoryIds((current) => current.filter((id) => available.has(id)));
+  }, [scopedCategories]);
   const toggle = (animeId: string) =>
     setSelectedIds((ids) =>
       ids.includes(animeId)
@@ -554,7 +582,7 @@ function AnimeCollectionList({
           ids: selectedIds,
           scope,
           ...(action === "organize"
-            ? { folderId: folderId || null, categoryIds }
+            ? { folderIds, categoryIds }
             : {}),
         }),
       });
@@ -695,35 +723,29 @@ function AnimeCollectionList({
         title="批量整理動漫"
       >
         <div className="anime-category-dialog">
-          <label>
-            移至資料夾
-            <select
-              onChange={(event) => {
-                setFolderId(event.target.value);
-                setCategoryIds([]);
-              }}
-              value={folderId}
-            >
-              <option value="">不指定資料夾</option>
-              {folders
-                .filter((folder) => folder.isVisible || folder.id === folderId)
+          <fieldset>
+            <legend>資料夾（可複選）</legend>
+            <div className="anime-tag-picker">
+              {folders.length ? folders
+                .filter((folder) => folder.isVisible || folderIds.includes(folder.id))
                 .map((folder) => (
-                  <option key={folder.id} value={folder.id}>
+                  <label key={folder.id}>
+                    <input
+                      checked={folderIds.includes(folder.id)}
+                      onChange={() => setFolderIds((current) => toggledFolderIds(current, folder.id))}
+                      type="checkbox"
+                    />{" "}
                     {folder.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+                  </label>
+                )) : <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
+            </div>
+            <p className="anime-field-hint">未勾選任何資料夾時，會移至未整理。</p>
+          </fieldset>
           <fieldset>
             <legend>類別（可複選）</legend>
             <div className="anime-tag-picker">
-              {categories.filter(
-                (category) => category.folderId === (folderId || null),
-              ).length ? (
-                categories
-                  .filter(
-                    (category) => category.folderId === (folderId || null),
-                  )
+              {scopedCategories.length ? (
+                scopedCategories
                   .map((category) => (
                     <label key={category.id}>
                       <input
@@ -737,7 +759,7 @@ function AnimeCollectionList({
                         }
                         type="checkbox"
                       />{" "}
-                      {category.name}
+                      {categoryLabelInFolderSelection(category, folders, folderIds)}
                     </label>
                   ))
               ) : (
@@ -1029,7 +1051,7 @@ export function AnimeWorkspace({
       data.library.filter((anime) => {
         const matchesFilter = filter === "all" || anime.watchStatus === filter;
         const matchesFolder =
-          !folderFilter || anime.folderId === folderFilter;
+          !folderFilter || anime.folderIds.includes(folderFilter);
         const matchesCategory =
           !categoryFilter ||
           anime.tags.some((category) => category.id === categoryFilter);
@@ -1379,7 +1401,7 @@ export function AnimeWorkspace({
                     items={adultData.library.filter(
                       (anime) =>
                         (!adultFolderFilter ||
-                          anime.folderId === adultFolderFilter) &&
+                          anime.folderIds.includes(adultFolderFilter)) &&
                         (!adultCategoryFilter ||
                           anime.tags.some(
                             (category) => category.id === adultCategoryFilter,
@@ -2302,8 +2324,8 @@ function AnimeEditor({
   const [categoryIds, setCategoryIds] = useState(
     anime?.tags.map((category) => category.id) ?? [],
   );
-  const [folderId, setFolderId] = useState<string | null>(
-    anime?.folderId ?? defaultFolderId,
+  const [folderIds, setFolderIds] = useState<string[]>(
+    anime?.folderIds ?? (anime?.folderId ? [anime.folderId] : defaultFolderId ? [defaultFolderId] : []),
   );
   const [cover, setCover] = useState<CoverSelection>(null);
   const [pending, setPending] = useState(false);
@@ -2317,6 +2339,14 @@ function AnimeEditor({
   const [adultSource, setAdultSource] = useState(
     anime?.adultSource ?? "manual",
   );
+  const scopedCategories = useMemo(
+    () => categoriesForFolders(categories, folderIds),
+    [categories, folderIds],
+  );
+  useEffect(() => {
+    const available = new Set(scopedCategories.map((category) => category.id));
+    setCategoryIds((current) => current.filter((id) => available.has(id)));
+  }, [scopedCategories]);
   const save = async () => {
     if (!title.trim()) {
       setMessage("請輸入動漫名稱。");
@@ -2342,7 +2372,7 @@ function AnimeEditor({
         watchStatus,
         rating,
         notes,
-        folderId,
+        folderIds,
         categoryIds,
       };
       await api("/api/anime/library", {
@@ -2430,32 +2460,29 @@ function AnimeEditor({
             {rating === null ? "尚未評分" : `${rating} / 10`}
           </small>
         </fieldset>
-        <label>
-          資料夾
-          <select
-            onChange={(event) => {
-              setFolderId(event.target.value || null);
-              setCategoryIds([]);
-            }}
-            value={folderId ?? ""}
-          >
-            <option value="">不指定資料夾</option>
-            {folders
-              .filter((folder) => folder.isVisible || folder.id === folderId)
+        <fieldset>
+          <legend>資料夾（可複選）</legend>
+          <div className="anime-tag-picker">
+            {folders.length ? folders
+              .filter((folder) => folder.isVisible || folderIds.includes(folder.id))
               .map((folder) => (
-                <option key={folder.id} value={folder.id}>
+                <label key={folder.id}>
+                  <input
+                    checked={folderIds.includes(folder.id)}
+                    onChange={() => setFolderIds((current) => toggledFolderIds(current, folder.id))}
+                    type="checkbox"
+                  />{" "}
                   {folder.name}
-                </option>
-              ))}
-          </select>
-        </label>
+                </label>
+              )) : <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
+          </div>
+          <p className="anime-field-hint">可同時加入多個資料夾；未勾選代表未整理。</p>
+        </fieldset>
         <fieldset>
           <legend>類別（可複選）</legend>
           <div className="anime-tag-picker">
-            {categories.filter((category) => category.folderId === folderId)
-              .length ? (
-              categories
-                .filter((category) => category.folderId === folderId)
+            {scopedCategories.length ? (
+              scopedCategories
                 .map((category) => (
                   <label key={category.id}>
                     <input
@@ -2469,7 +2496,7 @@ function AnimeEditor({
                       }
                       type="checkbox"
                     />{" "}
-                    {category.name}
+                    {categoryLabelInFolderSelection(category, folders, folderIds)}
                   </label>
                 ))
             ) : (
