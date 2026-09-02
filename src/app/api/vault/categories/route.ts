@@ -15,9 +15,9 @@ async function ensureDefaults(ownerId: string) {
   const admin = createAdminClient();
   const { data: existing, error } = await admin.from("categories").select("name").eq("owner_id", ownerId).eq("content_kind", "vault_item");
   if (error) throw error;
-  const names = new Set((existing ?? []).map((category) => category.name));
-  const missing = defaultCategories.filter((name) => !names.has(name)).map((name, sortOrder) => ({ owner_id: ownerId, content_kind: "vault_item", folder_id: null, name, sort_order: sortOrder }));
-  if (missing.length) { const { error: insertError } = await admin.from("categories").insert(missing); if (insertError && insertError.code !== "23505") throw insertError; }
+  // Defaults are a first-run convenience only. Re-adding every missing name here
+  // would make a deliberately deleted category appear again after a refresh.
+  if ((existing ?? []).length === 0) { const { error: insertError } = await admin.from("categories").insert(defaultCategories.map((name, sortOrder) => ({ owner_id: ownerId, content_kind: "vault_item", folder_id: null, name, sort_order: sortOrder }))); if (insertError && insertError.code !== "23505") throw insertError; }
 }
 
 async function listCategories(ownerId: string) {
