@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export type VocabularyAiAction = "explain" | "compare" | "translate" | "autocomplete" | "examples";
 export type VocabularyAiResult = { answer: string; examples: { sentence: string; translation: string }[]; notes: string[]; suggestedCard?: Record<string, unknown> };
+export type JapaneseExamplePresentation = { id: string; reading: string; translationZhTw: string };
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase();
 const maxDuration = 12_000;
@@ -43,4 +44,49 @@ export async function runVocabularyAssistant(userId: string, action: VocabularyA
     await admin.from("vocabulary_ai_cache").upsert({ user_id: userId, action, language, normalized_prompt: normalizedPrompt, payload, expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: "user_id,action,language,normalized_prompt" });
   } catch { /* cache optional */ }
   return payload;
+}
+
+/**
+ * Source-backed Japanese examples may legally include only the original
+ * English translation.  Enrich the exact existing sentence once, then the
+ * caller persists the zh-TW translation and reading for future requests.
+ */
+export async function localizeJapaneseExamplePresentations(examples: Array<{ id: string; sentence: string; originalTranslation?: string | null }>): Promise<JapaneseExamplePresentation[]> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || !examples.length) return [];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), maxDuration);
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.OPENAI_VOCABULARY_MODEL || "gpt-4.1-mini",
+        temperature: 0.1,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: "你是日文教材編輯。請針對輸入的每一個既有日文例句，提供完整讀音與自然台灣繁體中文翻譯。reading 必須是整句的平假名讀音（保留標點）；translationZhTw 必須是繁體中文，不可使用英文。不可更改 sentence，不可新增、刪除或猜測其他句子。只輸出 JSON：{\\\"items\\\":[{\\\"id\\\":\\\"...\\\",\\\"reading\\\":\\\"...\\\",\\\"translationZhTw\\\":\\\"...\\\"}]}。" },
+          { role: "user", content: JSON.stringify({ examples }) },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`AI_UPSTREAM_${response.status}`);
+    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const content = body.choices?.[0]?.message?.content;
+    const parsed = content ? JSON.parse(content) as { items?: unknown } : null;
+    if (!Array.isArray(parsed?.items)) return [];
+    const validIds = new Set(examples.map((example) => example.id));
+    return parsed.items.flatMap((item): JapaneseExamplePresentation[] => {
+      if (!item || typeof item !== "object") return [];
+      const value = item as Record<string, unknown>;
+      const id = typeof value.id === "string" ? value.id : "";
+      const reading = typeof value.reading === "string" ? value.reading.trim() : "";
+      const translationZhTw = typeof value.translationZhTw === "string" ? value.translationZhTw.trim() : "";
+      return validIds.has(id) && reading && translationZhTw ? [{ id, reading, translationZhTw }] : [];
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw new Error("AI_TIMEOUT");
+    throw error;
+  } finally { clearTimeout(timeout); }
 }

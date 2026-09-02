@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { runVocabularyAssistant } from "@/lib/vocabulary/ai-assistant";
+import { localizeJapaneseExamplePresentations, runVocabularyAssistant } from "@/lib/vocabulary/ai-assistant";
 
 export const dynamic = "force-dynamic";
 
@@ -65,11 +65,28 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ownedCardId(context.userId, id),
     ]);
     if (systemResult.error || countResult.error) throw systemResult.error ?? countResult.error;
+    const sourceExamples = systemResult.data ?? [];
+    const incompleteJapaneseExamples = sourceExamples.filter((row: any) => row.language === "ja" && (!row.translation_zh_tw || !row.reading));
+    if (incompleteJapaneseExamples.length) {
+      try {
+        const localized = await localizeJapaneseExamplePresentations(incompleteJapaneseExamples.map((row: any) => ({ id: row.id, sentence: row.sentence, originalTranslation: row.translation })));
+        if (localized.length) {
+          const byId = new Map(localized.map((example) => [example.id, example]));
+          await Promise.all(localized.map((example) => admin.from("vocabulary_examples").update({ reading: example.reading, translation_zh_tw: example.translationZhTw }).eq("id", example.id)));
+          sourceExamples.forEach((row: any) => {
+            const example = byId.get(row.id);
+            if (example) { row.reading = example.reading; row.translation_zh_tw = example.translationZhTw; }
+          });
+        }
+      } catch (error) {
+        console.warn("[vocabulary.examples] Japanese presentation hydration skipped", { id, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
     const { data: userRows, error: userError } = cardId ? await admin.from("vocabulary_examples").select("*").eq("card_id", cardId).order("created_at", { ascending: false }).limit(50) : { data: [], error: null };
     if (userError) throw userError;
     return NextResponse.json({
       word: { id: catalog.id, language: catalog.language, word: catalog.word, reading: catalog.reading, meaningZhTw: catalog.meaning_zh_tw, senses: catalog.translation_senses_zh_tw ?? [] },
-      cardId, examples: (systemResult.data ?? []).map(toExample), userExamples: (userRows ?? []).map(toExample), total: countResult.count ?? 0, hasMore: offset + limit < (countResult.count ?? 0), nextOffset: offset + limit,
+      cardId, examples: sourceExamples.map(toExample), userExamples: (userRows ?? []).map(toExample), total: countResult.count ?? 0, hasMore: offset + limit < (countResult.count ?? 0), nextOffset: offset + limit,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("[vocabulary.examples] read failed", { id, message: error instanceof Error ? error.message : String(error) });
