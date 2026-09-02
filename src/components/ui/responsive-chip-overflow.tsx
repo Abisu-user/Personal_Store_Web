@@ -21,60 +21,49 @@ type ResponsiveChipOverflowProps<T> = {
 
 /**
  * A single-line chip rail that measures the real DOM width of every chip.
- * The first pass renders every item within the bounded rail; after measuring,
- * only the largest prefix that fits beside a real "更多" control remains.
+ * A permanently hidden measurement row keeps every chip available for
+ * calculation, so changing the visible row can never lose the dimensions that
+ * are needed to decide whether the "更多" button is required.
  */
 export function ResponsiveChipOverflow<T>({ activeId, className, leading, leadingCount = 0, items, itemId, itemMeasureKey, renderItem, renderMore, rowClassName, trailing, trailingCount = 0 }: ResponsiveChipOverflowProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const moreMeasureRef = useRef<HTMLDivElement>(null);
-  const widthRef = useRef(0);
+  const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(items.length);
   const signature = items.map((item) => `${itemId(item)}:${itemMeasureKey?.(item) ?? ""}`).join("|");
   const hidden = items.slice(visibleCount);
-  const reset = () => setVisibleCount(items.length);
 
-  useLayoutEffect(reset, [items, signature]);
   useLayoutEffect(() => {
-    const root = rootRef.current; if (!root) return;
+    const root = rootRef.current;
+    const measure = measureRef.current;
+    if (!root || !measure) return;
     const scope = root.closest<HTMLElement>("[data-chip-overflow-container]") ?? root.parentElement;
     const actions = scope?.querySelector<HTMLElement>("[data-chip-overflow-actions]") ?? null;
-    const observer = new ResizeObserver((entries) => {
-      const width = Math.round(root.getBoundingClientRect().width);
-      if (entries.some((entry) => entry.target === actions) || width !== widthRef.current) {
-        widthRef.current = width;
-        reset();
-      }
-    });
-    widthRef.current = Math.round(root.getBoundingClientRect().width);
-    observer.observe(root); if (actions) observer.observe(actions);
-    void document.fonts?.ready.then(reset);
-    return () => observer.disconnect();
-  }, [items, signature]);
-  useLayoutEffect(() => {
-    // A complete first pass is required to measure every possible chip.
-    if (visibleCount !== items.length) return;
-    const root = rootRef.current; const row = rowRef.current; const more = moreMeasureRef.current;
-    if (!root || !row || !more) return;
-    const frame = requestAnimationFrame(() => {
-      const scope = root.closest<HTMLElement>("[data-chip-overflow-container]") ?? root.parentElement;
-      const actions = scope?.querySelector<HTMLElement>("[data-chip-overflow-actions]");
-      const actionWidth = actions?.getBoundingClientRect().width ?? 0;
-      const actionGap = actions?.parentElement ? Number.parseFloat(getComputedStyle(actions.parentElement).gap) || 0 : 0;
-      const availableWidth = Math.max(0, root.getBoundingClientRect().width - actionWidth - actionGap);
-      const children = Array.from(row.children) as HTMLElement[];
+    const recalculate = () => {
+      const rootBox = root.getBoundingClientRect();
+      const sharesRailWithActions = Boolean(actions && actions.parentElement === root.parentElement);
+      const actionWidth = sharesRailWithActions ? actions?.getBoundingClientRect().width ?? 0 : 0;
+      const actionGap = sharesRailWithActions && actions?.parentElement
+        ? Number.parseFloat(getComputedStyle(actions.parentElement).gap) || 0
+        : 0;
+      const availableWidth = Math.max(0, rootBox.width - actionWidth - actionGap);
+      const children = Array.from(measure.children) as HTMLElement[];
       const fixedLeading = children.slice(0, leadingCount);
       const itemElements = children.slice(leadingCount, leadingCount + items.length);
+      const more = children[leadingCount + items.length];
       const fixedTrailing = trailingCount ? children.slice(-trailingCount) : [];
       if (itemElements.length !== items.length) return;
-      const gap = Number.parseFloat(getComputedStyle(row).gap) || 0;
+      const gap = Number.parseFloat(getComputedStyle(measure).gap) || 0;
       const widthOf = (elements: HTMLElement[]) => elements.reduce((total, element) => total + element.getBoundingClientRect().width, 0);
       const leadingWidth = widthOf(fixedLeading);
       const trailingWidth = widthOf(fixedTrailing);
       const itemWidths = itemElements.map((element) => element.getBoundingClientRect().width);
-      const allWidth = leadingWidth + widthOf(itemElements) + trailingWidth + Math.max(0, children.length - 1) * gap;
-      if (allWidth <= availableWidth + 1) return;
-      const moreWidth = more.getBoundingClientRect().width;
+      const allVisibleElements = leadingCount + items.length + trailingCount;
+      const allWidth = leadingWidth + widthOf(itemElements) + trailingWidth + Math.max(0, allVisibleElements - 1) * gap;
+      if (allWidth <= availableWidth + 1) {
+        setVisibleCount((current) => current === items.length ? current : items.length);
+        return;
+      }
+      const moreWidth = more?.getBoundingClientRect().width ?? 0;
       let retainedWidth = leadingWidth;
       let nextVisibleCount = 0;
       for (const width of itemWidths) {
@@ -85,18 +74,30 @@ export function ResponsiveChipOverflow<T>({ activeId, className, leading, leadin
         retainedWidth += width;
         nextVisibleCount = candidateCount;
       }
-      setVisibleCount(nextVisibleCount);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [items, leadingCount, signature, trailingCount, visibleCount]);
+      setVisibleCount((current) => current === nextVisibleCount ? current : nextVisibleCount);
+    };
+    recalculate();
+    const observer = new ResizeObserver(recalculate);
+    observer.observe(root);
+    if (scope) observer.observe(scope);
+    if (actions) observer.observe(actions);
+    let active = true;
+    void document.fonts?.ready.then(() => { if (active) recalculate(); });
+    return () => { active = false; observer.disconnect(); };
+  }, [leadingCount, items.length, signature, trailingCount]);
 
   return <div className={`responsive-chip-overflow${className ? ` ${className}` : ""}`} ref={rootRef}>
-    <div className={`responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`} ref={rowRef}>
+    <div className={`responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`}>
       {leading}
       {items.slice(0, visibleCount).map(renderItem)}
       {hidden.length > 0 && renderMore(hidden.some((item) => itemId(item) === activeId))}
       {trailing}
     </div>
-    <div aria-hidden="true" className={`responsive-chip-overflow-measure responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`} ref={moreMeasureRef}>{renderMore(false)}</div>
+    <div aria-hidden="true" className={`responsive-chip-overflow-measure responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`} ref={measureRef}>
+      {leading}
+      {items.map(renderItem)}
+      {renderMore(false)}
+      {trailing}
+    </div>
   </div>;
 }
