@@ -965,3 +965,162 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
     max-width: 92px;
   }
 }
+
+/* Anime Library mobile keeps every control, but treats the first viewport as
+   a compact working surface instead of stacking a column of large panels. */
+@media (max-width: 700px) {
+  .anime-dashboard > .dashboard-card {
+    position: relative;
+  }
+
+  .anime-page-heading {
+    min-height: 72px;
+    padding-top: 2px;
+  }
+
+  .anime-page-heading h1 {
+    padding-right: 116px;
+  }
+
+  .anime-workspace {
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .anime-toolbar {
+    display: block;
+  }
+
+  /* The existing create action stays connected to its current dialog/state;
+     it is simply placed beside the page title on small screens. */
+  .anime-toolbar-actions {
+    position: absolute;
+    top: 64px;
+    right: 28px;
+    width: auto !important;
+    justify-content: flex-end;
+  }
+
+  .anime-toolbar-actions > .anime-create-button {
+    width: auto !important;
+    min-height: 38px !important;
+    flex: 0 0 auto;
+    padding-inline: 11px;
+    font-size: .78rem;
+  }
+
+  .anime-workspace .anime-tabs {
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    padding: 1px 1px 4px;
+    scrollbar-width: none;
+  }
+
+  .anime-workspace .anime-tabs::-webkit-scrollbar,
+  .anime-workspace .anime-filter-scroll::-webkit-scrollbar,
+  .anime-workspace .anime-folder-navigation .anime-category-scroll::-webkit-scrollbar,
+  .anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
+  .anime-workspace .anime-tabs button {
+    min-height: 36px;
+    flex: 0 0 auto;
+    padding-inline: 10px;
+    font-size: .78rem;
+  }
+
+  /* Watch states are a single scrollable rail. The search and the compact
+     filter trigger share the next row instead of becoming two tall panels. */
+  .anime-workspace > .anime-filter-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .anime-workspace > .anime-filter-bar > .anime-filter-scroll {
+    display: flex;
+    grid-column: 1 / -1;
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    padding: 1px 1px 4px;
+    scrollbar-width: none;
+  }
+
+  .anime-workspace > .anime-filter-bar > .anime-filter-scroll > .anime-status-filter-extra {
+    display: inline-flex;
+  }
+
+  .anime-workspace > .anime-filter-bar > input {
+    grid-column: 1;
+    width: 100%;
+    min-height: 40px;
+  }
+
+  .anime-workspace > .anime-filter-bar > .anime-mobile-filter {
+    display: inline-grid;
+    grid-column: 2;
+    min-height: 40px;
+    padding-inline: 12px;
+    font-size: .78rem;
+  }
+
+  /* Folder and category controls use the same compact two-row pattern:
+     labelled actions first, then a horizontally scrollable chip rail. */
+  .anime-workspace .anime-folder-navigation,
+  .anime-workspace .anime-category-bar.collection-navigation-section {
+    gap: 6px;
+    padding: 8px 0 6px;
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .anime-workspace .collection-navigation-section > header {
+    min-height: 36px;
+  }
+
+  .anime-workspace .collection-navigation-section > header > strong {
+    font-size: .8rem;
+  }
+
+  .anime-workspace .collection-navigation-action {
+    min-height: 36px;
+    padding-inline: 10px;
+    font-size: .76rem;
+  }
+
+  .anime-workspace .anime-folder-navigation .anime-category-scroll,
+  .anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll {
+    width: 100%;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    padding: 1px 1px 4px;
+    scrollbar-width: none;
+  }
+
+  .anime-workspace .anime-folder-navigation .anime-category-scroll::after,
+  .anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll::after {
+    display: none;
+  }
+
+  .anime-workspace .anime-folder-navigation .anime-category-scroll > button,
+  .anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll > button {
+    max-width: none;
+    min-height: 36px;
+    padding-inline: 10px;
+    font-size: .78rem;
+  }
+}
