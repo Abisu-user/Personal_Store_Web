@@ -154,6 +154,7 @@ function AnimeFolderNavigation({
   scope,
   selectedId,
   inline = false,
+  collectionLayout = false,
   compactOnMobile = false,
   trashCount = 0,
   trashSelected = false,
@@ -165,6 +166,8 @@ function AnimeFolderNavigation({
   scope: CategoryScope;
   selectedId: string | null;
   inline?: boolean;
+  /** Use the same labelled left-rail/right-actions layout as 收藏與整理. */
+  collectionLayout?: boolean;
   /** The standard library shares its rail with watch-status shortcuts. */
   compactOnMobile?: boolean;
   trashCount?: number;
@@ -189,13 +192,30 @@ function AnimeFolderNavigation({
     if (!inline) return;
     const updateLimit = () => {
       const width = window.innerWidth;
-      // Preserve room for 更多、管理、新增與垃圾桶 instead of wrapping.
-      setInlineFolderLimit(width >= 1240 ? 2 : width >= 700 ? 1 : compactOnMobile ? 0 : 1);
+      // The dedicated collection rail can use more of the desktop width,
+      // while narrow screens retain room for 更多與垃圾桶.
+      setInlineFolderLimit(
+        collectionLayout
+          ? width >= 1440
+            ? 6
+            : width >= 1080
+              ? 4
+              : width >= 700
+                ? 2
+                : 1
+          : width >= 1240
+            ? 2
+            : width >= 700
+              ? 1
+              : compactOnMobile
+                ? 0
+                : 1,
+      );
     };
     updateLimit();
     window.addEventListener("resize", updateLimit);
     return () => window.removeEventListener("resize", updateLimit);
-  }, [compactOnMobile, inline]);
+  }, [collectionLayout, compactOnMobile, inline]);
   const inlineFolders = !inline
     ? visible
     : (() => {
@@ -292,10 +312,33 @@ function AnimeFolderNavigation({
   };
   return (
     <section
-      className={inline ? "anime-folder-bar anime-folder-bar-inline" : "anime-folder-bar"}
+      className={`${inline ? "anime-folder-bar anime-folder-bar-inline" : "anime-folder-bar"}${collectionLayout ? " collection-navigation-section anime-folder-navigation" : ""}`}
       aria-label="動漫資料夾"
     >
-      <div className="anime-category-scroll">
+      {collectionLayout && (
+        <header>
+          <strong>資料夾</strong>
+          <div>
+            <button
+              aria-label="管理動漫資料夾"
+              className="collection-navigation-action"
+              onClick={openManager}
+              type="button"
+            >
+              管理
+            </button>
+            <button
+              aria-label="新增動漫資料夾"
+              className="collection-navigation-action primary"
+              onClick={() => { setError(null); setAdding(true); }}
+              type="button"
+            >
+              ＋ 新增
+            </button>
+          </div>
+        </header>
+      )}
+      <div className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}>
         {inlineFolders.map((folder) => (
           <button
             className={selectedId === folder.id ? "active" : ""}
@@ -314,22 +357,24 @@ function AnimeFolderNavigation({
         >
           更多
         </button>}
-        <button
-          aria-label="修改資料夾"
-          className="anime-category-utility"
-          onClick={openManager}
-          type="button"
-        >
-          🔧
-        </button>
-        <button
-          aria-label="新增資料夾"
-          className="anime-category-utility anime-category-add-button"
-          onClick={() => { setError(null); setAdding(true); }}
-          type="button"
-        >
-          ＋
-        </button>
+        {!collectionLayout && <>
+          <button
+            aria-label="修改資料夾"
+            className="anime-category-utility"
+            onClick={openManager}
+            type="button"
+          >
+            🔧
+          </button>
+          <button
+            aria-label="新增資料夾"
+            className="anime-category-utility anime-category-add-button"
+            onClick={() => { setError(null); setAdding(true); }}
+            type="button"
+          >
+            ＋
+          </button>
+        </>}
         {onTrash && (
           <button
             aria-label="動漫垃圾桶"
@@ -1318,31 +1363,6 @@ export function AnimeWorkspace({
                   搜尋／探索
                 </button>
               </div>
-              <AnimeFolderNavigation
-                folders={adultData.folders}
-                inline
-                onChange={(folderId) => {
-                  setAdultView("library");
-                  setAdultLibraryView("library");
-                  setAdultFolderFilter(folderId);
-                  setAdultCategoryFilter(null);
-                }}
-                onFoldersChange={(folders) =>
-                  setAdultData((current) =>
-                    current ? { ...current, folders } : current,
-                  )
-                }
-                onTrash={() => {
-                  setAdultView("library");
-                  setAdultFolderFilter(null);
-                  setAdultCategoryFilter(null);
-                  void openTrash("adult");
-                }}
-                scope="adult"
-                selectedId={adultFolderFilter}
-                trashCount={adultTrashData?.library.length ?? 0}
-                trashSelected={adultLibraryView === "trash"}
-              />
             </div>
             {adultView === "library" && (
                 <input
@@ -1353,6 +1373,32 @@ export function AnimeWorkspace({
                 />
             )}
           </div>
+          <AnimeFolderNavigation
+            collectionLayout
+            folders={adultData.folders}
+            inline
+            onChange={(folderId) => {
+              setAdultView("library");
+              setAdultLibraryView("library");
+              setAdultFolderFilter(folderId);
+              setAdultCategoryFilter(null);
+            }}
+            onFoldersChange={(folders) =>
+              setAdultData((current) =>
+                current ? { ...current, folders } : current,
+              )
+            }
+            onTrash={() => {
+              setAdultView("library");
+              setAdultFolderFilter(null);
+              setAdultCategoryFilter(null);
+              void openTrash("adult");
+            }}
+            scope="adult"
+            selectedId={adultFolderFilter}
+            trashCount={adultTrashData?.library.length ?? 0}
+            trashSelected={adultLibraryView === "trash"}
+          />
           {adultView === "library" ? (
             <>
               {adultLibraryView === "library" ? (
@@ -1611,30 +1657,6 @@ export function AnimeWorkspace({
                   {value === "all" ? "全部" : animeStatusLabels[value]}
                 </button>
               ))}
-              <AnimeFolderNavigation
-                folders={data.folders}
-                inline
-                compactOnMobile
-                onChange={(folderId) => {
-                  setLibraryView("library");
-                  setFilter("all");
-                  setFolderFilter(folderId);
-                  setCategoryFilter(null);
-                }}
-                onFoldersChange={(folders) =>
-                  setData((current) => ({ ...current, folders }))
-                }
-                onTrash={() => {
-                  setFilter("all");
-                  setFolderFilter(null);
-                  setCategoryFilter(null);
-                  void openTrash("standard");
-                }}
-                scope="standard"
-                selectedId={folderFilter}
-                trashCount={trashData?.library.length ?? 0}
-                trashSelected={libraryView === "trash"}
-              />
             </div>
             <input
               aria-label="搜尋自己的動漫"
@@ -1651,6 +1673,30 @@ export function AnimeWorkspace({
               篩選{filter === "all" ? "" : `：${animeStatusLabels[filter]}`}
             </button>
           </div>
+          <AnimeFolderNavigation
+            collectionLayout
+            folders={data.folders}
+            inline
+            onChange={(folderId) => {
+              setLibraryView("library");
+              setFilter("all");
+              setFolderFilter(folderId);
+              setCategoryFilter(null);
+            }}
+            onFoldersChange={(folders) =>
+              setData((current) => ({ ...current, folders }))
+            }
+            onTrash={() => {
+              setFilter("all");
+              setFolderFilter(null);
+              setCategoryFilter(null);
+              void openTrash("standard");
+            }}
+            scope="standard"
+            selectedId={folderFilter}
+            trashCount={trashData?.library.length ?? 0}
+            trashSelected={libraryView === "trash"}
+          />
           {libraryView === "library" ? (
             <>
               <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別">
