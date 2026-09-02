@@ -1628,6 +1628,21 @@ export function BookmarksWorkspace({
     data.bookmarks.filter(
       (item) => !item.deletedAt && !item.archived && item.folder?.id === id,
     ).length;
+  const selectBookmarkFolder = (folderId: string | null) => {
+    const nextView: View = folderId ? `folder:${folderId}` : "all";
+    if (folderId && view === nextView) {
+      setView("all");
+      setCategory("all");
+      return;
+    }
+    setView(nextView);
+    setCategory("all");
+  };
+  const selectBookmarkCategory = (next: string) => {
+    setCategory((current) =>
+      current === next && next !== "all" ? "all" : next,
+    );
+  };
   return (
     <section className="bookmarks-workspace">
       {pending && <OperationStatus label="正在處理收藏資料…" />}
@@ -1668,8 +1683,8 @@ export function BookmarksWorkspace({
           items={visibleBookmarkFolders}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
-          leading={<button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => { setView("all"); setCategory("all"); }} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
-          renderItem={(item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => { setView(`folder:${item.id}`); setCategory("all"); }} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
+          leading={<button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
+          renderItem={(item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
           trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
@@ -1703,8 +1718,8 @@ export function BookmarksWorkspace({
           items={scopedCategories}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => item.name}
-          leading={<><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => setCategory("unclassified")} type="button">未分類</button></>}
-          renderItem={(item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)} type="button">{item.name}</button>}
+          leading={<><button className={category === "all" ? "active" : ""} onClick={() => selectBookmarkCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => selectBookmarkCategory("unclassified")} type="button">未分類</button></>}
+          renderItem={(item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => selectBookmarkCategory(item.id)} type="button">{item.name}</button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏類別" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
         />
@@ -1855,8 +1870,7 @@ export function BookmarksWorkspace({
             <button
               className={view === "all" ? "active" : ""}
               onClick={() => {
-                setView("all");
-                setCategory("all");
+                selectBookmarkFolder(null);
                 setFolderMoreOpen(false);
                 setFolderQuery("");
               }}
@@ -1875,8 +1889,7 @@ export function BookmarksWorkspace({
                   className={view === `folder:${item.id}` ? "active" : ""}
                   key={item.id}
                   onClick={() => {
-                    setView(`folder:${item.id}`);
-                    setCategory("all");
+                    selectBookmarkFolder(item.id);
                     setFolderMoreOpen(false);
                     setFolderQuery("");
                   }}
@@ -2111,7 +2124,7 @@ export function BookmarksWorkspace({
             <button
               className={category === "all" ? "active" : ""}
               onClick={() => {
-                setCategory("all");
+                selectBookmarkCategory("all");
                 setCategoryMoreOpen(false);
               }}
               type="button"
@@ -2121,7 +2134,7 @@ export function BookmarksWorkspace({
             <button
               className={category === "unclassified" ? "active" : ""}
               onClick={() => {
-                setCategory("unclassified");
+                selectBookmarkCategory("unclassified");
                 setCategoryMoreOpen(false);
               }}
               type="button"
@@ -2139,7 +2152,7 @@ export function BookmarksWorkspace({
                   className={category === item.id ? "active" : ""}
                   key={item.id}
                   onClick={() => {
-                    setCategory(item.id);
+                    selectBookmarkCategory(item.id);
                     setCategoryMoreOpen(false);
                   }}
                   type="button"

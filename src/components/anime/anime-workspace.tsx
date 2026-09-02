@@ -306,7 +306,7 @@ function AnimeFolderNavigation({
         trailingCount={onTrash ? (collectionLayout ? 1 : 3) : (collectionLayout ? 0 : 2)}
         itemId={(folder) => folder.id}
         itemMeasureKey={(folder) => folder.name}
-        renderItem={(folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => onChange(folder.id)} type="button">{folder.name}</button>}
+        renderItem={(folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => onChange(selectedId === folder.id ? null : folder.id)} type="button">{folder.name}</button>}
         renderMore={(hasHiddenActive) => <button aria-label="更多動漫資料夾" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => { setError(null); setMoreOpen(true); }} type="button">更多</button>}
         rowClassName="anime-category-scroll-row"
         trailing={<>{!collectionLayout && <>
@@ -395,7 +395,7 @@ function AnimeFolderNavigation({
           <input aria-label="搜尋動漫資料夾" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋資料夾" value={query} />
           <div className="collection-category-manager-list">
             {onTrash && <button className={trashSelected ? "active" : ""} onClick={() => { onTrash(); setMoreOpen(false); }} type="button">垃圾桶 <span>{trashCount}</span></button>}
-            {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(folder.id); setMoreOpen(false); }} type="button">{folder.name}</button>)}
+            {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(selectedId === folder.id ? null : folder.id); setMoreOpen(false); }} type="button">{folder.name}</button>)}
             {!folders.length && <p className="manager-empty">尚未建立資料夾。</p>}
           </div>
         </div>
@@ -1366,7 +1366,7 @@ export function AnimeWorkspace({
                       itemId={(category) => category.id}
                       itemMeasureKey={(category) => `${category.name}|${adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
                       leading={<button className={!adultCategoryFilter ? "active" : ""} onClick={() => setAdultCategoryFilter(null)} type="button">所有類別</button>}
-                      renderItem={(category) => <button className={adultCategoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setAdultCategoryFilter(category.id)} type="button">{category.name} <small>{adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                      renderItem={(category) => <button className={adultCategoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setAdultCategoryFilter((current) => current === category.id ? null : category.id)} type="button">{category.name} <small>{adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
                       renderMore={(hasHiddenActive) => <button aria-label="查看更多成人動漫類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
                       rowClassName="anime-category-scroll-row"
                     />
@@ -1521,7 +1521,7 @@ export function AnimeWorkspace({
                       }
                       key={item.id}
                       onClick={() => {
-                        setAdultCategoryFilter(item.id);
+                        setAdultCategoryFilter((current) => current === item.id ? null : item.id);
                         setCategoryMoreOpen(false);
                       }}
                       type="button"
@@ -1629,7 +1629,7 @@ export function AnimeWorkspace({
                   itemId={(category) => category.id}
                   itemMeasureKey={(category) => `${category.name}|${data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
                   leading={<button className={!categoryFilter ? "active" : ""} onClick={() => setCategoryFilter(null)} type="button">所有類別</button>}
-                  renderItem={(category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter(category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                  renderItem={(category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter((current) => current === category.id ? null : category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
                   renderMore={(hasHiddenActive) => <button aria-label="查看更多類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
                   rowClassName="anime-category-scroll-row"
                 />
@@ -1845,7 +1845,7 @@ export function AnimeWorkspace({
                       className={categoryFilter === item.id ? "active" : ""}
                       key={item.id}
                       onClick={() => {
-                        setCategoryFilter(item.id);
+                        setCategoryFilter((current) => current === item.id ? null : item.id);
                         setCategoryMoreOpen(false);
                       }}
                       type="button"
