@@ -6,5 +6,5 @@ export default async function VocabularyPage() {
   const context = await getSecurityContext();
   if (!context) redirect("/login");
 
-  return <main className="vocabulary-page"><VocabularyWorkspace /></main>;
+  return <main className="dashboard vocabulary-page"><section className="dashboard-card vocabulary-dashboard-card"><VocabularyWorkspace /></section></main>;
 }

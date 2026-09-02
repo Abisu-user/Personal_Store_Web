@@ -764,48 +764,6 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   min-width: 0;
 }
 
-/* On desktop, keep the navigation fixed while the vocabulary route owns its
-   vertical scrolling. This lets a longer catalog remain reachable instead of
-   relying on the document scroll container. */
-@media (min-width: 701px) {
-  .app-main > .vocabulary-page {
-    height: 100vh;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
-  }
-
-  .app-main > .vocabulary-page > .vocabulary-workspace {
-    min-height: 0;
-    padding-bottom: 32px;
-  }
-}
-
-@media (max-width: 700px) {
-  .vocabulary-page {
-    min-height: 0;
-  }
-
-  /* Vocabulary deliberately does not use the generic .dashboard wrapper.
-     The PWA shell itself is fixed, therefore the route main must own scrolling
-     or dictionary cards below the fold become unreachable. */
-  .app-main > .vocabulary-page {
-    display: block;
-    height: 100%;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-gutter: stable;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .app-main > .vocabulary-page > .vocabulary-workspace {
-    min-height: 0;
-    padding-bottom: calc(92px + env(safe-area-inset-bottom));
-  }
-}
-
 /* Anime Library deliberately reuses the nearby collection navigation system.
    The data and handlers remain Anime-specific; these rules only align its
    controls with 收藏與整理 instead of creating a competing button language. */
