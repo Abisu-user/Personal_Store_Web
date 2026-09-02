@@ -10,6 +10,7 @@ import {
 import { AnimeDiscovery } from "@/components/anime/anime-discovery";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { PinPad } from "@/components/security/pin-pad";
 import {
   animeStatusLabels,
@@ -184,50 +185,9 @@ function AnimeFolderNavigation({
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [rename, setRename] = useState<{ id: string; value: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [inlineFolderLimit, setInlineFolderLimit] = useState(2);
   const longPressTimer = useRef<number | null>(null);
   const sortedFolders = (values: AnimeWorkspaceData["folders"]) => [...values].sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-TW"));
   const visible = sortedFolders(folders).filter((folder) => folder.isVisible);
-  useEffect(() => {
-    if (!inline) return;
-    const updateLimit = () => {
-      const width = window.innerWidth;
-      // The dedicated collection rail can use more of the desktop width,
-      // while narrow screens retain room for 更多與垃圾桶.
-      setInlineFolderLimit(
-        collectionLayout
-          ? width >= 1440
-            ? 6
-            : width >= 1080
-              ? 4
-              : width >= 700
-                ? 2
-                : 1
-          : width >= 1240
-            ? 2
-            : width >= 700
-              ? 1
-              : compactOnMobile
-                ? 0
-                : 1,
-      );
-    };
-    updateLimit();
-    window.addEventListener("resize", updateLimit);
-    return () => window.removeEventListener("resize", updateLimit);
-  }, [collectionLayout, compactOnMobile, inline]);
-  const inlineFolders = !inline
-    ? visible
-    : (() => {
-        const first = visible.slice(0, inlineFolderLimit);
-        const selected = visible.find((folder) => folder.id === selectedId);
-        if (!selected || first.some((folder) => folder.id === selected.id)) return first;
-        return [...first.slice(0, Math.max(0, inlineFolderLimit - 1)), selected];
-  })();
-  const hasFolderOverflow = inline && inlineFolders.length < visible.length;
-  // On a compact phone rail, folders are selected through 「更多」 so the
-  // status shortcuts and folder controls never spill into an invisible area.
-  const showFolderPicker = hasFolderOverflow || (inline && compactOnMobile && Boolean(onTrash));
   const openManager = () => {
     setDraftFolders(sortedFolders(folders));
     setRemovedIds([]);
@@ -338,26 +298,16 @@ function AnimeFolderNavigation({
           </div>
         </header>
       )}
-      <div className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}>
-        {inlineFolders.map((folder) => (
-          <button
-            className={selectedId === folder.id ? "active" : ""}
-            key={folder.id}
-            onClick={() => onChange(folder.id)}
-            type="button"
-          >
-            {folder.name}
-          </button>
-        ))}
-        {showFolderPicker && <button
-          aria-label="更多動漫資料夾"
-          className={selectedId || trashSelected ? "anime-category-utility active" : "anime-category-utility"}
-          onClick={() => { setError(null); setMoreOpen(true); }}
-          type="button"
-        >
-          更多
-        </button>}
-        {!collectionLayout && <>
+      <ResponsiveChipOverflow
+        activeId={selectedId}
+        className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}
+        items={visible}
+        itemId={(folder) => folder.id}
+        itemMeasureKey={(folder) => folder.name}
+        renderItem={(folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => onChange(folder.id)} type="button">{folder.name}</button>}
+        renderMore={(hasHiddenActive) => <button aria-label="更多動漫資料夾" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => { setError(null); setMoreOpen(true); }} type="button">更多</button>}
+        rowClassName="anime-category-scroll-row"
+        trailing={<>{!collectionLayout && <>
           <button
             aria-label="修改資料夾"
             className="anime-category-utility"
@@ -373,7 +323,7 @@ function AnimeFolderNavigation({
             type="button"
           >
             ＋
-          </button>
+            </button>
         </>}
         {onTrash && (
           <button
@@ -392,7 +342,8 @@ function AnimeFolderNavigation({
             垃圾桶 <span>{trashCount}</span>
           </button>
         )}
-      </div>
+        </>}
+      />
       <ModalDialog
         className="mobile-sheet-dialog"
         onClose={() => setAdding(false)}
@@ -856,7 +807,6 @@ export function AnimeWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
-  const [inlineCategoryLimit, setInlineCategoryLimit] = useState(2);
   const [categoryManageScope, setCategoryManageScope] =
     useState<CategoryScope | null>(null);
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
@@ -1113,18 +1063,6 @@ export function AnimeWorkspace({
   useEffect(() => {
     setLibraryPage(1);
   }, [filter, categoryFilter, folderFilter, query]);
-  useEffect(() => {
-    const updateLimit = () => {
-      const width = window.innerWidth;
-      // Keep one real category visible on phones. Only the remainder belongs
-      // in 「更多」; a zero limit made even a single fitting category disappear.
-      setInlineCategoryLimit(width >= 1240 ? 2 : 1);
-    };
-    updateLimit();
-    window.addEventListener("resize", updateLimit);
-    return () => window.removeEventListener("resize", updateLimit);
-  }, []);
-
   const createCategory = async (scope: CategoryScope) => {
     const name = categoryName.trim();
     if (!name) return;
@@ -1204,35 +1142,12 @@ export function AnimeWorkspace({
       setPending(null);
     }
   };
-  const keepActiveTaxonomyVisible = <T extends { id: string }>(
-    items: T[],
-    selectedId: string | null,
-  ) => {
-    const first = items.slice(0, inlineCategoryLimit);
-    const selectedItem = selectedId
-      ? items.find((item) => item.id === selectedId)
-      : null;
-    if (!selectedItem || first.some((item) => item.id === selectedItem.id))
-      return first;
-    return [...first.slice(0, Math.max(0, inlineCategoryLimit - 1)), selectedItem];
-  };
   const standardScopedTags = data.tags.filter(
     (item) => !folderFilter || item.folderId === folderFilter,
   );
   const adultScopedTags = (adultData?.tags ?? []).filter(
     (item) => !adultFolderFilter || item.folderId === adultFolderFilter,
   );
-  const standardInlineTags = keepActiveTaxonomyVisible(
-    standardScopedTags,
-    categoryFilter,
-  );
-  const adultInlineTags = keepActiveTaxonomyVisible(
-    adultScopedTags,
-    adultCategoryFilter,
-  );
-  const standardHasMoreTags = standardInlineTags.length < standardScopedTags.length;
-  const adultHasMoreTags = adultInlineTags.length < adultScopedTags.length;
-
   return (
     <section className="anime-workspace">
       {pending && (
@@ -1440,48 +1355,17 @@ export function AnimeWorkspace({
                         </button>
                       </div>
                     </header>
-                    <div className="anime-category-scroll bookmark-view-tabs collection-category-strip">
-                      <button
-                        className={!adultCategoryFilter ? "active" : ""}
-                        onClick={() => setAdultCategoryFilter(null)}
-                        type="button"
-                      >
-                        所有類別
-                      </button>
-                      {adultInlineTags.map((category) => (
-                          <button
-                            className={
-                              adultCategoryFilter === category.id
-                                ? "active"
-                                : ""
-                            }
-                            key={category.id}
-                            onClick={() => setAdultCategoryFilter(category.id)}
-                            type="button"
-                          >
-                            {category.name}{" "}
-                            <small>
-                              {
-                                adultData.library.filter((anime) =>
-                                  anime.tags.some(
-                                    (item) => item.id === category.id,
-                                  ),
-                                ).length
-                              }
-                            </small>
-                          </button>
-                        ))}
-                      {adultHasMoreTags && (
-                        <button
-                          aria-label="查看更多成人動漫類別"
-                          className="anime-category-utility"
-                          onClick={() => setCategoryMoreOpen(true)}
-                          type="button"
-                        >
-                          更多
-                        </button>
-                      )}
-                    </div>
+                    <ResponsiveChipOverflow
+                      activeId={adultCategoryFilter}
+                      className="anime-category-scroll bookmark-view-tabs collection-category-strip"
+                      items={adultScopedTags}
+                      itemId={(category) => category.id}
+                      itemMeasureKey={(category) => `${category.name}|${adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
+                      leading={<button className={!adultCategoryFilter ? "active" : ""} onClick={() => setAdultCategoryFilter(null)} type="button">所有類別</button>}
+                      renderItem={(category) => <button className={adultCategoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setAdultCategoryFilter(category.id)} type="button">{category.name} <small>{adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                      renderMore={(hasHiddenActive) => <button aria-label="查看更多成人動漫類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
+                      rowClassName="anime-category-scroll-row"
+                    />
                   </section>
                   <AnimeCollectionList
                     adult
@@ -1733,46 +1617,17 @@ export function AnimeWorkspace({
                     </button>
                   </div>
                 </header>
-                <div className="anime-category-scroll bookmark-view-tabs collection-category-strip">
-                  <button
-                    className={!categoryFilter ? "active" : ""}
-                    onClick={() => setCategoryFilter(null)}
-                    type="button"
-                  >
-                    所有類別
-                  </button>
-                  {standardInlineTags.map((category) => (
-                      <button
-                        className={
-                          categoryFilter === category.id ? "active" : ""
-                        }
-                        key={category.id}
-                        onClick={() => setCategoryFilter(category.id)}
-                        type="button"
-                      >
-                        {category.name}{" "}
-                        <small>
-                          {
-                            data.library.filter((anime) =>
-                              anime.tags.some(
-                                (item) => item.id === category.id,
-                              ),
-                            ).length
-                          }
-                        </small>
-                      </button>
-                    ))}
-                  {standardHasMoreTags && (
-                    <button
-                      aria-label="查看更多類別"
-                      className="anime-category-utility"
-                      onClick={() => setCategoryMoreOpen(true)}
-                      type="button"
-                    >
-                      更多
-                    </button>
-                  )}
-                </div>
+                <ResponsiveChipOverflow
+                  activeId={categoryFilter}
+                  className="anime-category-scroll bookmark-view-tabs collection-category-strip"
+                  items={standardScopedTags}
+                  itemId={(category) => category.id}
+                  itemMeasureKey={(category) => `${category.name}|${data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
+                  leading={<button className={!categoryFilter ? "active" : ""} onClick={() => setCategoryFilter(null)} type="button">所有類別</button>}
+                  renderItem={(category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter(category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                  renderMore={(hasHiddenActive) => <button aria-label="查看更多類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
+                  rowClassName="anime-category-scroll-row"
+                />
               </section>
               {!loaded ? (
                 <AnimeGridSkeleton />

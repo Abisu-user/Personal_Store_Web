@@ -13,6 +13,7 @@ import {
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import {
   CoverImageField,
@@ -457,7 +458,6 @@ export function BookmarksWorkspace({
   const [folderManagerOpen, setFolderManagerOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState("");
   const [folderQuery, setFolderQuery] = useState("");
-  const [inlineLimit, setInlineLimit] = useState(2);
   const [dragging, setDragging] = useState<{
     kind: "category" | "folder";
     id: string;
@@ -542,16 +542,6 @@ export function BookmarksWorkspace({
     const timer = window.setTimeout(() => setSuccess(null), 3000);
     return () => window.clearTimeout(timer);
   }, [success]);
-  useEffect(() => {
-    const updateLimit = () => {
-      const width = window.innerWidth;
-      // Keep room for the fixed 「更多」與垃圾桶 chips on a single line.
-      setInlineLimit(width >= 1240 ? 2 : width >= 700 ? 1 : 0);
-    };
-    updateLimit();
-    window.addEventListener("resize", updateLimit);
-    return () => window.removeEventListener("resize", updateLimit);
-  }, []);
   const activeFolderId = view.startsWith("folder:") ? view.slice(7) : null;
   const scopedCategories = useMemo(
     () =>
@@ -614,30 +604,6 @@ export function BookmarksWorkspace({
         left.sort_order - right.sort_order ||
         left.name.localeCompare(right.name, "zh-Hant"),
     );
-  const keepSelectedVisible = <T extends { id: string }>(
-    source: T[],
-    selectedId: string | null,
-  ) => {
-    const first = source.slice(0, inlineLimit);
-    const selectedItem = selectedId
-      ? source.find((item) => item.id === selectedId)
-      : null;
-    if (!selectedItem || first.some((item) => item.id === selectedItem.id))
-      return first;
-    return [...first.slice(0, Math.max(0, inlineLimit - 1)), selectedItem];
-  };
-  const displayBookmarkFolders = keepSelectedVisible(
-    visibleBookmarkFolders,
-    activeFolderId,
-  );
-  const displayCategories = keepSelectedVisible(
-    scopedCategories,
-    category === "all" || category === "unclassified" ? null : category,
-  );
-  const hasMoreBookmarkFolders =
-    displayBookmarkFolders.length < visibleBookmarkFolders.length;
-  const hasMoreCategories = displayCategories.length < scopedCategories.length;
-
   async function onPreview() {
     const url = draftUrl.trim();
     previewRequest.current?.abort();
@@ -1695,62 +1661,18 @@ export function BookmarksWorkspace({
             </button>
           </div>
         </header>
-        <div className="bookmark-view-tabs" role="tablist">
-          <div className="bookmark-view-tabs-scroll">
-            <button
-              aria-selected={view === "all"}
-              className={view === "all" ? "active" : ""}
-              onClick={() => {
-                setView("all");
-                setCategory("all");
-              }}
-              role="tab"
-              type="button"
-            >
-              未整理 <span>{counts.all}</span>
-            </button>
-            {displayBookmarkFolders.map((item) => (
-              <button
-                aria-selected={view === `folder:${item.id}`}
-                className={view === `folder:${item.id}` ? "active" : ""}
-                key={`folder-${item.id}`}
-                onClick={() => {
-                  setView(`folder:${item.id}`);
-                  setCategory("all");
-                }}
-                role="tab"
-                type="button"
-              >
-                {item.is_locked ? "🔒 " : ""}
-                {item.name} <span>{quickCount(item.id)}</span>
-              </button>
-            ))}
-            {hasMoreBookmarkFolders && (
-              <button
-                aria-label="查看更多收藏資料夾"
-                className="collection-category-utility"
-                onClick={() => setFolderMoreOpen(true)}
-                type="button"
-              >
-                更多
-              </button>
-            )}
-            {folders.trash.visible && (
-              <button
-                aria-selected={view === "trash"}
-                className={view === "trash" ? "active trash-tab" : "trash-tab"}
-                onClick={() => {
-                  setView("trash");
-                  setCategory("all");
-                }}
-                role="tab"
-                type="button"
-              >
-                {folders.trash.label} <span>{counts.trash}</span>
-              </button>
-            )}
-          </div>
-        </div>
+        <ResponsiveChipOverflow
+          activeId={activeFolderId}
+          className="bookmark-view-tabs"
+          items={visibleBookmarkFolders}
+          itemId={(item) => item.id}
+          itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
+          leading={<button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => { setView("all"); setCategory("all"); }} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
+          renderItem={(item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => { setView(`folder:${item.id}`); setCategory("all"); }} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
+          renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
+          rowClassName="bookmark-view-tabs-scroll"
+          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
+        />
       </section>
       <section aria-label="類別" className="collection-navigation-section">
         <header>
@@ -1772,42 +1694,17 @@ export function BookmarksWorkspace({
             </button>
           </div>
         </header>
-        <div className="category-strip collection-category-strip">
-          <button
-            className={category === "all" ? "active" : ""}
-            onClick={() => setCategory("all")}
-            type="button"
-          >
-            所有類別
-          </button>
-          <button
-            className={category === "unclassified" ? "active" : ""}
-            onClick={() => setCategory("unclassified")}
-            type="button"
-          >
-            未分類
-          </button>
-          {displayCategories.map((item) => (
-            <button
-              className={category === item.id ? "active" : ""}
-              key={item.id}
-              onClick={() => setCategory(item.id)}
-              type="button"
-            >
-              {item.name}
-            </button>
-          ))}
-          {hasMoreCategories && (
-            <button
-              aria-label="查看更多收藏類別"
-              className="collection-category-utility"
-              onClick={() => setCategoryMoreOpen(true)}
-              type="button"
-            >
-              更多
-            </button>
-          )}
-        </div>
+        <ResponsiveChipOverflow
+          activeId={category === "all" || category === "unclassified" ? null : category}
+          className="category-strip collection-category-strip"
+          items={scopedCategories}
+          itemId={(item) => item.id}
+          itemMeasureKey={(item) => item.name}
+          leading={<><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => setCategory("unclassified")} type="button">未分類</button></>}
+          renderItem={(item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)} type="button">{item.name}</button>}
+          renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏類別" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
+          rowClassName="bookmark-view-tabs-scroll"
+        />
       </section>
       <div className="bookmark-toolbar">
         <input
