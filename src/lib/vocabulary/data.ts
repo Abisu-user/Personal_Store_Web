@@ -1,12 +1,12 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { VocabularyCard, VocabularyDeck, VocabularyExample, VocabularyMeaning, VocabularyReviewLog, VocabularySettings, VocabularyTag, VocabularyWorkspaceData } from "@/lib/vocabulary/types";
+import type { VocabularyAttemptResult, VocabularyCard, VocabularyDeck, VocabularyExample, VocabularyMeaning, VocabularyReviewLog, VocabularySettings, VocabularyTag, VocabularyWorkspaceData } from "@/lib/vocabulary/types";
 
 const toCard = (row: any): VocabularyCard => ({
   id: row.id, language: row.language, word: row.word, reading: row.reading, kana: row.kana, romaji: row.romaji, pronunciation: row.pronunciation, ipa: row.ipa,
   primaryTranslation: row.primary_translation, englishDefinition: row.english_definition, partOfSpeech: row.part_of_speech, jlptLevel: row.jlpt_level, cefrLevel: row.cefr_level, frequency: row.frequency,
   languageDetails: row.language_details ?? {}, notes: row.notes, isFavorite: row.is_favorite, masteryLevel: row.mastery_level, learningStatus: row.learning_status, sourceKind: row.source_kind ?? "custom", systemWordId: row.system_word_id ?? null, dictionaryEntryId: row.dictionary_entry_id ?? null,
-  reviewCount: row.review_count, correctCount: row.correct_count, wrongCount: row.wrong_count, consecutiveCorrect: row.consecutive_correct, currentIntervalDays: row.current_interval_days,
+  reviewCount: row.review_count, totalAttempts: row.total_attempts ?? row.review_count ?? 0, correctCount: row.correct_count, wrongCount: row.wrong_count, correctRate: Number(row.correct_rate ?? 0), currentLevel: row.current_level ?? row.mastery_level ?? 0, consecutiveCorrect: row.consecutive_correct, consecutiveWrong: row.consecutive_wrong ?? 0, recentResults: Array.isArray(row.recent_results) ? row.recent_results as VocabularyAttemptResult[] : [], lastAnswerCorrect: typeof row.last_answer_correct === "boolean" ? row.last_answer_correct : null, lastAnsweredAt: row.last_answered_at ?? row.last_reviewed_at ?? null, currentIntervalDays: row.current_interval_days,
   lastReviewedAt: row.last_reviewed_at, nextReviewAt: row.next_review_at, deletedAt: row.deleted_at, createdAt: row.created_at, updatedAt: row.updated_at, meanings: [], examples: [], tags: [], deckIds: [],
 });
 
@@ -16,7 +16,7 @@ export async function getVocabularyWorkspaceData(userId: string, includeTrash = 
   cardsQuery = includeTrash ? cardsQuery.not("deleted_at", "is", null) : cardsQuery.is("deleted_at", null);
   if (language) cardsQuery = cardsQuery.eq("language", language);
   const [{ data: cardRows, error: cardError }, { data: tagRows, error: tagError }, { data: deckRows, error: deckError }, { data: settingRow, error: settingsError }, { data: logRows, error: logsError }] = await Promise.all([
-    cardsQuery, admin.from("vocabulary_tags").select("id,name,color").eq("user_id", userId).order("name").limit(100), admin.from("vocabulary_decks").select("id,name,description,language").eq("user_id", userId).order("updated_at", { ascending: false }).limit(100), admin.from("vocabulary_settings").select("*").eq("user_id", userId).maybeSingle(), admin.from("vocabulary_review_logs").select("id,card_id,rating,answer_result,old_mastery,new_mastery,old_interval,new_interval,reviewed_at").eq("user_id", userId).order("reviewed_at", { ascending: false }).limit(200),
+    cardsQuery, admin.from("vocabulary_tags").select("id,name,color").eq("user_id", userId).order("name").limit(100), admin.from("vocabulary_decks").select("id,name,description,language").eq("user_id", userId).order("updated_at", { ascending: false }).limit(100), admin.from("vocabulary_settings").select("*").eq("user_id", userId).maybeSingle(), admin.from("vocabulary_review_logs").select("id,card_id,rating,answer_result,old_mastery,new_mastery,old_interval,new_interval,answer_duration_ms,occurrence_index,study_mode,reviewed_at").eq("user_id", userId).order("reviewed_at", { ascending: false }).limit(200),
   ]);
   if (cardError || tagError || deckError || settingsError || logsError) throw new Error("Vocabulary data unavailable");
   const cards = (cardRows ?? []).map(toCard);
@@ -45,6 +45,6 @@ export async function getVocabularyWorkspaceData(userId: string, includeTrash = 
   (deckCardsResult.data ?? []).forEach((row: any) => cardById.get(row.card_id)?.deckIds.push(row.deck_id));
   const decks: VocabularyDeck[] = (deckRows ?? []).map((row: any) => ({ id: row.id, name: row.name, description: row.description, language: row.language, cardIds: (deckCardsResult.data ?? []).filter((link: any) => link.deck_id === row.id).map((link: any) => link.card_id) }));
   const settings: VocabularySettings = settingRow ? { dailyNewGoal: settingRow.daily_new_goal, dailyReviewGoal: settingRow.daily_review_goal, flashcardPreferences: settingRow.flashcard_preferences ?? {} } : { dailyNewGoal: 10, dailyReviewGoal: 30, flashcardPreferences: {} };
-  const reviewLogs: VocabularyReviewLog[] = (logRows ?? []).map((row: any) => ({ id: row.id, cardId: row.card_id, rating: row.rating, answerResult: row.answer_result, oldMastery: row.old_mastery, newMastery: row.new_mastery, oldInterval: row.old_interval, newInterval: row.new_interval, reviewedAt: row.reviewed_at }));
+  const reviewLogs: VocabularyReviewLog[] = (logRows ?? []).map((row: any) => ({ id: row.id, cardId: row.card_id, rating: row.rating, answerResult: row.answer_result, oldMastery: row.old_mastery, newMastery: row.new_mastery, oldInterval: row.old_interval, newInterval: row.new_interval, answerDurationMs: row.answer_duration_ms ?? null, occurrenceIndex: row.occurrence_index ?? null, studyMode: row.study_mode === "review" || row.study_mode === "quiz" ? row.study_mode : null, reviewedAt: row.reviewed_at }));
   return { cards, tags: [...tagById.values()], decks, settings, reviewLogs };
 }

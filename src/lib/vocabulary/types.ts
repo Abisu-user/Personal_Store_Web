@@ -10,10 +10,12 @@ export type VocabularyCard = {
   id: string; language: VocabularyLanguage; word: string; reading: string | null; kana: string | null; romaji: string | null; pronunciation: string | null; ipa: string | null;
   primaryTranslation: string | null; englishDefinition: string | null; partOfSpeech: string | null; jlptLevel: string | null; cefrLevel: string | null; frequency: number | null;
   languageDetails: Record<string, unknown>; notes: string | null; isFavorite: boolean; masteryLevel: number; learningStatus: VocabularyStatus; sourceKind?: "custom" | "catalog"; systemWordId?: string | null; dictionaryEntryId?: string | null;
-  reviewCount: number; correctCount: number; wrongCount: number; consecutiveCorrect: number; currentIntervalDays: number; lastReviewedAt: string | null; nextReviewAt: string | null; deletedAt: string | null; createdAt: string; updatedAt: string;
+  reviewCount: number; totalAttempts: number; correctCount: number; wrongCount: number; correctRate: number; currentLevel: number; consecutiveCorrect: number; consecutiveWrong: number; recentResults: VocabularyAttemptResult[]; lastAnswerCorrect: boolean | null; lastAnsweredAt: string | null; currentIntervalDays: number; lastReviewedAt: string | null; nextReviewAt: string | null; deletedAt: string | null; createdAt: string; updatedAt: string;
   meanings: VocabularyMeaning[]; examples: VocabularyExample[]; tags: VocabularyTag[]; deckIds: string[];
 };
 
+export type VocabularyAttemptResult = { correct: boolean; answeredAt: string; durationMs: number | null; occurrenceIndex: number | null; mode: "review" | "quiz" | null };
+
 export type VocabularySettings = { dailyNewGoal: number; dailyReviewGoal: number; flashcardPreferences: Record<string, unknown> };
-export type VocabularyReviewLog = { id: string; cardId: string; rating: ReviewRating; answerResult: boolean; oldMastery: number; newMastery: number; oldInterval: number; newInterval: number; reviewedAt: string };
+export type VocabularyReviewLog = { id: string; cardId: string; rating: ReviewRating; answerResult: boolean; oldMastery: number; newMastery: number; oldInterval: number; newInterval: number; answerDurationMs: number | null; occurrenceIndex: number | null; studyMode: "review" | "quiz" | null; reviewedAt: string };
 export type VocabularyWorkspaceData = { cards: VocabularyCard[]; decks: VocabularyDeck[]; tags: VocabularyTag[]; settings: VocabularySettings; reviewLogs: VocabularyReviewLog[] };
