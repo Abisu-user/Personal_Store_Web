@@ -1248,6 +1248,18 @@ export function AnimeWorkspace({
           }
         />
       )}
+      <div className="anime-mobile-heading">
+        <h1>動漫收藏</h1>
+        {tab !== "adult" && (
+          <button
+            className="button compact page-create-button anime-mobile-create-button"
+            onClick={() => setAdding(true)}
+            type="button"
+          >
+            ＋ 新增動漫
+          </button>
+        )}
+      </div>
       <div className="anime-toolbar">
         <div className="anime-tabs bookmark-view-tabs" role="tablist" aria-label="動漫功能">
           <button

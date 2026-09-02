@@ -968,45 +968,53 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 
 /* Anime Library mobile keeps every control, but treats the first viewport as
    a compact working surface instead of stacking a column of large panels. */
+.anime-mobile-heading {
+  display: none;
+}
+
 @media (max-width: 700px) {
   .anime-dashboard > .dashboard-card {
     position: relative;
   }
 
   .anime-page-heading {
-    min-height: 72px;
-    padding-top: 2px;
-  }
-
-  .anime-page-heading h1 {
-    padding-right: 116px;
+    display: none;
   }
 
   .anime-workspace {
     gap: 10px;
-    margin-top: 12px;
+    margin-top: 0;
+  }
+
+  .anime-mobile-heading {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .anime-mobile-heading h1 {
+    min-width: 0;
+    margin: 0;
+    color: var(--ink);
+    font-size: 1.42rem;
+    letter-spacing: -.035em;
+  }
+
+  .anime-mobile-create-button {
+    min-height: 38px !important;
+    flex: 0 0 auto;
+    padding-inline: 11px;
+    font-size: .78rem;
   }
 
   .anime-toolbar {
     display: block;
   }
 
-  /* The existing create action stays connected to its current dialog/state;
-     it is simply placed beside the page title on small screens. */
   .anime-toolbar-actions {
-    position: absolute;
-    top: 64px;
-    right: 28px;
-    width: auto !important;
-    justify-content: flex-end;
-  }
-
-  .anime-toolbar-actions > .anime-create-button {
-    width: auto !important;
-    min-height: 38px !important;
-    flex: 0 0 auto;
-    padding-inline: 11px;
-    font-size: .78rem;
+    display: none !important;
   }
 
   .anime-workspace .anime-tabs {
@@ -1058,18 +1066,21 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
     display: inline-flex;
   }
 
+  .anime-workspace > .anime-filter-bar > .anime-filter-scroll > button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
   .anime-workspace > .anime-filter-bar > input {
-    grid-column: 1;
+    grid-column: 1 / -1;
     width: 100%;
     min-height: 40px;
   }
 
   .anime-workspace > .anime-filter-bar > .anime-mobile-filter {
-    display: inline-grid;
-    grid-column: 2;
-    min-height: 40px;
-    padding-inline: 12px;
-    font-size: .78rem;
+    display: none !important;
   }
 
   /* Folder and category controls use the same compact two-row pattern:
