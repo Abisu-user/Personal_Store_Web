@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -15,6 +16,8 @@ type ConfirmDialogProps = {
 
 export function ConfirmDialog({ open, title, description, confirmLabel = "確認刪除", pending = false, error, onConfirm, onCancel }: ConfirmDialogProps) {
   const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useMobileModalLayout(open);
 
   useEffect(() => {
     if (!open) return;

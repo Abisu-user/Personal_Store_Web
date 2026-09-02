@@ -485,15 +485,22 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 @media (max-width: 700px) { .anime-workspace { gap: 12px; }.anime-toolbar { gap: 10px; }.anime-tabs { overflow: visible; }.anime-tabs button { min-width: 0; padding-inline: 7px; font-size: .8rem; }.anime-toolbar .button { min-height: 42px; }.anime-filter-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }.anime-filter-scroll { display: none; }.anime-adult-filter-bar .anime-filter-scroll { display: flex; grid-column: 1 / -1; flex: 1 1 auto; flex-wrap: wrap; overflow: visible; }.anime-filter-bar > input { grid-column: 1 / -1; width: 100%; min-height: 42px; }.anime-mobile-filter { display: inline-grid; min-height: 42px; place-items: center; white-space: nowrap; }.anime-category-bar { padding: 8px 0; border: 0; border-radius: 0; background: transparent; }.anime-category-scroll { position: relative; overflow-x: auto; padding: 2px 38px 5px 1px; scrollbar-width: none; }.anime-category-scroll::after, .collection-category-strip::after { content: ""; position: sticky; right: -1px; width: 30px; height: 34px; margin-left: -30px; flex: 0 0 30px; pointer-events: none; background: linear-gradient(90deg, transparent, var(--surface)); }.anime-category-utility { position: relative; z-index: 1; }.anime-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.collection-category-strip { padding-right: 34px; }.collection-category-utility { position: relative; z-index: 1; }.management-section > summary { min-height: 50px; padding-inline: 13px; }.management-section > summary span { max-width: 50%; font-size: .72rem; }.management-section > .management-panel { padding: 0 12px 12px; }.collection-category-manager-list, .anime-category-manager-list { grid-template-columns: 1fr; }.modal-dialog-backdrop .collection-category-dialog, .modal-dialog-backdrop .anime-category-dialog { padding-bottom: calc(4px + env(safe-area-inset-bottom)); } }
 @media (max-width: 700px) { .modal-dialog-backdrop:has(.mobile-sheet-dialog) { align-items: end; padding: 0; }.modal-dialog.mobile-sheet-dialog { width: 100%; max-height: min(82dvh, 680px); border-radius: 22px 22px 0 0; }.modal-dialog.mobile-sheet-dialog .modal-dialog-content { padding-bottom: calc(20px + env(safe-area-inset-bottom)); } }
 
-/* Phone dialogs start near the safe-area top. Long More / Manage lists scroll
-   inside the panel instead of pushing the entire dialog below the viewport. */
+/* One mobile dialog layout for forms, pickers, managers and confirmations.
+   It follows visualViewport while iOS shows its keyboard, while the backdrop
+   stays above the app navigation and floating create control. */
 @media (max-width: 700px) {
-  .modal-dialog-backdrop { display: flex; align-items: flex-start; justify-content: center; overflow-y: auto; overscroll-behavior: contain; padding: max(12px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom)); }
-  .modal-dialog:not(.mobile-sheet-dialog) { align-self: flex-start; display: flex; width: 100%; max-height: calc(100dvh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))); flex-direction: column; overflow: hidden; border-radius: 18px; }
-  .modal-dialog:not(.mobile-sheet-dialog) .modal-dialog-header { flex: 0 0 auto; }
-  .modal-dialog:not(.mobile-sheet-dialog) .modal-dialog-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-  .modal-dialog-backdrop:has(.mobile-sheet-dialog) { display: grid; align-items: end; padding: 0; overflow: hidden; }
+  :root[data-mobile-modal-open="true"] { overflow: hidden; }
+  .modal-dialog-backdrop, .modal-dialog-backdrop:has(.mobile-sheet-dialog), .confirm-dialog-backdrop { position: fixed; z-index: 300; inset: var(--mobile-modal-viewport-offset, 0px) 0 auto; display: flex; height: var(--mobile-modal-viewport-height, 100dvh); align-items: center; justify-content: center; overflow: hidden; overscroll-behavior: contain; padding: max(14px, env(safe-area-inset-top)) 10px max(24px, env(safe-area-inset-bottom)); }
+  .modal-dialog, .modal-dialog.mobile-sheet-dialog, .confirm-dialog { position: relative; width: min(100%, 640px); max-height: calc(var(--mobile-modal-viewport-height, 100dvh) - max(28px, env(safe-area-inset-top)) - max(48px, env(safe-area-inset-bottom))); min-height: 0; margin: 0; border-radius: 18px; box-shadow: 0 22px 60px rgb(3 13 30 / 34%); animation: mobile-dialog-enter .22s ease-out both; }
+  .modal-dialog, .modal-dialog.mobile-sheet-dialog { display: flex; flex-direction: column; overflow: hidden; }
+  .modal-dialog-header { flex: 0 0 auto; }
+  .modal-dialog-content { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .modal-dialog-content .dialog-actions { bottom: 0; margin-bottom: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .confirm-dialog { grid-template-columns: auto minmax(0, 1fr); overflow: auto; overscroll-behavior: contain; }
+  .confirm-dialog .dialog-actions { position: sticky; bottom: 0; z-index: 1; margin-bottom: -1px; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); background: var(--surface); box-shadow: 0 -9px 16px rgb(28 46 81 / 8%); }
+  @keyframes mobile-dialog-enter { from { opacity: 0; transform: translateY(16px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
 }
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) { .modal-dialog, .modal-dialog.mobile-sheet-dialog, .confirm-dialog { animation: none; } }
 
 /* Adult Anime Library stays visually separate from the ordinary catalogue. */
 .anime-category-edit-list { grid-template-columns: 1fr; }

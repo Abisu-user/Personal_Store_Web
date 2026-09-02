@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useId, useRef } from "react";
+import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
 
 type ModalDialogProps = {
   children: ReactNode;
@@ -15,6 +16,8 @@ export function ModalDialog({ children, className, onClose, open, pending = fals
   const closeButton = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const titleId = useId();
+
+  useMobileModalLayout(open);
 
   useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
