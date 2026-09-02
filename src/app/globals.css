@@ -872,6 +872,45 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
     padding-inline: 10px;
     font-size: .78rem;
   }
+
+  .anime-page-heading {
+    padding-top: 2px;
+  }
+  .anime-page-heading p:not(.eyebrow) {
+    display: none;
+  }
+  .anime-page-heading h1 {
+    font-size: 1.65rem;
+  }
+  .anime-workspace .anime-folder-navigation,
+  .anime-workspace .anime-category-bar.collection-navigation-section {
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 88%, var(--canvas));
+    box-shadow: 0 6px 18px rgb(23 42 75 / 6%);
+  }
+  .anime-workspace .collection-navigation-section > header {
+    min-height: 34px;
+    gap: 8px;
+  }
+  .anime-workspace .collection-navigation-section > header > strong {
+    font-size: .78rem;
+  }
+  .anime-workspace .collection-navigation-section > header > div {
+    gap: 6px;
+  }
+  .anime-workspace .collection-navigation-action {
+    min-height: 32px;
+    padding-inline: 9px;
+    font-size: .75rem;
+  }
+  .anime-workspace .anime-folder-navigation .anime-category-scroll,
+  .anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll {
+    gap: 6px;
+    padding: 0;
+  }
 }
 
 /* Collection rails are always a single deliberate line. Extra folders and
