@@ -23,6 +23,7 @@ type ResponsiveChipOverflowProps<T> = {
 export function ResponsiveChipOverflow<T>({ activeId, className, items, itemId, itemMeasureKey, leading, renderItem, renderMore, rowClassName, trailing }: ResponsiveChipOverflowProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
+  const measuredWidthRef = useRef(0);
   const [visibleCount, setVisibleCount] = useState(items.length);
   const signature = items.map((item) => `${itemId(item)}:${itemMeasureKey?.(item) ?? ""}`).join("|");
   const hidden = items.slice(visibleCount);
@@ -32,7 +33,14 @@ export function ResponsiveChipOverflow<T>({ activeId, className, items, itemId, 
     const root = rootRef.current; if (!root) return;
     let frame = 0;
     const reset = () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(() => setVisibleCount(items.length)); };
-    const observer = new ResizeObserver(reset); observer.observe(root);
+    const observeWidth = () => {
+      const nextWidth = Math.round(root.getBoundingClientRect().width);
+      if (nextWidth === measuredWidthRef.current) return;
+      measuredWidthRef.current = nextWidth;
+      reset();
+    };
+    const observer = new ResizeObserver(observeWidth); observer.observe(root);
+    observeWidth();
     void document.fonts?.ready.then(reset);
     return () => { cancelAnimationFrame(frame); observer.disconnect(); };
   }, [items.length, signature]);
