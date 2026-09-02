@@ -1123,8 +1123,9 @@ html[data-theme="dark"] .vault-gate, html[data-theme="dark"] .vault-gate-securit
 /* A single measured chip rail is shared by folders and categories. Its root
    consumes only the space actually left by fixed neighbouring actions; the
    row itself never wraps or exposes a horizontal scrollbar. */
-.responsive-chip-overflow { display: block !important; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; contain: inline-size; }
+.responsive-chip-overflow { position: relative; display: block !important; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; contain: inline-size; }
 .responsive-chip-overflow-row { display: flex !important; width: 100%; align-items: center; flex-wrap: nowrap !important; min-width: 0; max-width: 100%; gap: 7px; overflow: hidden !important; padding-bottom: 0; }
+.responsive-chip-overflow-measure { position: absolute !important; width: max-content !important; max-width: none !important; height: 0; visibility: hidden; overflow: visible !important; pointer-events: none; }
 .collection-navigation-section, .anime-workspace .anime-folder-navigation, .anime-workspace .anime-category-bar.collection-navigation-section { min-width: 0; max-width: 100%; }
 .responsive-chip-overflow-row > * { flex: 0 0 auto; }
 .collection-navigation-section .responsive-chip-overflow-row > button { max-width: min(17vw, 180px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

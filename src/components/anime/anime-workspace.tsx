@@ -303,6 +303,7 @@ function AnimeFolderNavigation({
         activeId={selectedId}
         className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}
         items={visible}
+        trailingCount={onTrash ? (collectionLayout ? 1 : 3) : (collectionLayout ? 0 : 2)}
         itemId={(folder) => folder.id}
         itemMeasureKey={(folder) => folder.name}
         renderItem={(folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => onChange(folder.id)} type="button">{folder.name}</button>}
@@ -1360,6 +1361,7 @@ export function AnimeWorkspace({
                     <ResponsiveChipOverflow
                       activeId={adultCategoryFilter}
                       className="anime-category-scroll bookmark-view-tabs collection-category-strip"
+                      leadingCount={1}
                       items={adultScopedTags}
                       itemId={(category) => category.id}
                       itemMeasureKey={(category) => `${category.name}|${adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
@@ -1622,6 +1624,7 @@ export function AnimeWorkspace({
                 <ResponsiveChipOverflow
                   activeId={categoryFilter}
                   className="anime-category-scroll bookmark-view-tabs collection-category-strip"
+                  leadingCount={1}
                   items={standardScopedTags}
                   itemId={(category) => category.id}
                   itemMeasureKey={(category) => `${category.name}|${data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}

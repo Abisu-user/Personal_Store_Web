@@ -1664,6 +1664,7 @@ export function BookmarksWorkspace({
         <ResponsiveChipOverflow
           activeId={activeFolderId}
           className="bookmark-view-tabs"
+          leadingCount={1}
           items={visibleBookmarkFolders}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
@@ -1672,6 +1673,7 @@ export function BookmarksWorkspace({
           renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
           trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
+          trailingCount={folders.trash.visible ? 1 : 0}
         />
       </section>
       <section aria-label="類別" className="collection-navigation-section" data-chip-overflow-container>
@@ -1697,6 +1699,7 @@ export function BookmarksWorkspace({
         <ResponsiveChipOverflow
           activeId={category === "all" || category === "unclassified" ? null : category}
           className="category-strip collection-category-strip"
+          leadingCount={2}
           items={scopedCategories}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => item.name}
