@@ -1641,10 +1641,10 @@ export function BookmarksWorkspace({
           {success}
         </p>
       )}
-      <section aria-label="資料夾" className="collection-navigation-section">
+      <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>資料夾</strong>
-          <div>
+          <div data-chip-overflow-actions>
             <button
               className="collection-navigation-action"
               onClick={() => openManager("folder")}
@@ -1674,10 +1674,10 @@ export function BookmarksWorkspace({
           trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
         />
       </section>
-      <section aria-label="類別" className="collection-navigation-section">
+      <section aria-label="類別" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>類別</strong>
-          <div>
+          <div data-chip-overflow-actions>
             <button
               className="collection-navigation-action"
               onClick={() => openManager("category")}

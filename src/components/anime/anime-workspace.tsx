@@ -274,11 +274,12 @@ function AnimeFolderNavigation({
     <section
       className={`${inline ? "anime-folder-bar anime-folder-bar-inline" : "anime-folder-bar"}${collectionLayout ? " collection-navigation-section anime-folder-navigation" : ""}`}
       aria-label="動漫資料夾"
+      data-chip-overflow-container={collectionLayout || undefined}
     >
       {collectionLayout && (
         <header>
           <strong>資料夾</strong>
-          <div>
+          <div data-chip-overflow-actions>
             <button
               aria-label="管理動漫資料夾"
               className="collection-navigation-action"
@@ -1333,10 +1334,11 @@ export function AnimeWorkspace({
                   <section
                     className="anime-category-bar anime-adult-category-bar collection-navigation-section"
                     aria-label="成人動漫類別"
+                    data-chip-overflow-container
                   >
                     <header>
                       <strong>類別</strong>
-                      <div>
+                      <div data-chip-overflow-actions>
                         <button
                           aria-label="管理成人動漫類別"
                           className="collection-navigation-action"
@@ -1595,10 +1597,10 @@ export function AnimeWorkspace({
           />
           {libraryView === "library" ? (
             <>
-              <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別">
+              <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別" data-chip-overflow-container>
                 <header>
                   <strong>類別</strong>
-                  <div>
+                  <div data-chip-overflow-actions>
                     <button
                       aria-label="管理動漫類別"
                       className="collection-navigation-action"
