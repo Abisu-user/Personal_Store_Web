@@ -806,6 +806,79 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   }
 }
 
+/* Anime Library deliberately reuses the nearby collection navigation system.
+   The data and handlers remain Anime-specific; these rules only align its
+   controls with 收藏與整理 instead of creating a competing button language. */
+@media (min-width: 821px) {
+  .app-main .dashboard.anime-dashboard {
+    width: min(calc(100% - 64px), 1600px);
+  }
+}
+.anime-workspace .anime-tabs,
+.anime-workspace .anime-filter-scroll,
+.anime-workspace .anime-category-scroll {
+  gap: 7px;
+}
+.anime-workspace .anime-tabs button,
+.anime-workspace .anime-filter-scroll > button,
+.anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button,
+.anime-workspace .anime-category-scroll > button {
+  min-height: 34px;
+  padding: 0 11px;
+  border-color: #cbd6e6;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: .82rem;
+  font-weight: 750;
+}
+.anime-workspace .anime-tabs button:hover,
+.anime-workspace .anime-tabs button.active,
+.anime-workspace .anime-filter-scroll > button:hover,
+.anime-workspace .anime-filter-scroll > button.active,
+.anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button:hover,
+.anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button.active,
+.anime-workspace .anime-category-scroll > button:hover,
+.anime-workspace .anime-category-scroll > button.active {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-soft, #edf4ff);
+}
+.anime-workspace .anime-category-scroll > .anime-category-utility,
+.anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > .anime-category-utility {
+  border-style: solid;
+}
+.anime-workspace .anime-category-scroll > .anime-category-utility.active,
+.anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > .anime-category-utility.active {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-soft, #edf4ff);
+}
+.anime-workspace .anime-category-bar.collection-navigation-section {
+  gap: 7px;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.anime-workspace .anime-category-bar.collection-navigation-section .anime-category-scroll {
+  margin: 0;
+}
+.anime-workspace .anime-create-button {
+  min-height: 42px;
+}
+@media (max-width: 700px) {
+  .anime-workspace .anime-tabs button,
+  .anime-workspace .anime-filter-scroll > button,
+  .anime-workspace .anime-filter-scroll .anime-folder-bar-inline .anime-category-scroll > button,
+  .anime-workspace .anime-category-scroll > button {
+    min-height: 34px;
+    padding-inline: 10px;
+    font-size: .78rem;
+  }
+}
+
 /* Collection rails are always a single deliberate line. Extra folders and
    categories belong in their picker, leaving room for the fixed trash chip. */
 .collection-navigation-section .bookmark-view-tabs-scroll,

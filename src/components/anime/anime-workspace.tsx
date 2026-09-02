@@ -1204,7 +1204,7 @@ export function AnimeWorkspace({
         />
       )}
       <div className="anime-toolbar">
-        <div className="anime-tabs" role="tablist" aria-label="動漫功能">
+        <div className="anime-tabs bookmark-view-tabs" role="tablist" aria-label="動漫功能">
           <button
             className={tab === "library" ? "active" : ""}
             onClick={() => setTab("library")}
@@ -1239,7 +1239,7 @@ export function AnimeWorkspace({
         <div className="anime-toolbar-actions">
           {tab !== "adult" && (
             <button
-              className="button compact"
+              className="button compact page-create-button anime-create-button"
               onClick={() => setAdding(true)}
               type="button"
             >
@@ -1282,7 +1282,7 @@ export function AnimeWorkspace({
           <div className="anime-filter-bar anime-adult-filter-bar">
             <div className="anime-filter-scroll">
               <div
-                className="anime-tabs anime-adult-library-tabs"
+                className="anime-tabs bookmark-view-tabs anime-adult-library-tabs"
                 role="tablist"
                 aria-label="成人內容功能"
               >
@@ -1358,10 +1358,31 @@ export function AnimeWorkspace({
               {adultLibraryView === "library" ? (
                 <>
                   <section
-                    className="anime-category-bar anime-adult-category-bar"
+                    className="anime-category-bar anime-adult-category-bar collection-navigation-section"
                     aria-label="成人動漫類別"
                   >
-                    <div className="anime-category-scroll">
+                    <header>
+                      <strong>類別</strong>
+                      <div>
+                        <button
+                          aria-label="管理成人動漫類別"
+                          className="collection-navigation-action"
+                          onClick={() => setCategoryManageScope("adult")}
+                          type="button"
+                        >
+                          管理
+                        </button>
+                        <button
+                          aria-label="新增成人動漫類別"
+                          className="collection-navigation-action primary"
+                          onClick={() => setCategoryAddOpen(true)}
+                          type="button"
+                        >
+                          ＋ 新增
+                        </button>
+                      </div>
+                    </header>
+                    <div className="anime-category-scroll bookmark-view-tabs collection-category-strip">
                       <button
                         className={!adultCategoryFilter ? "active" : ""}
                         onClick={() => setAdultCategoryFilter(null)}
@@ -1402,22 +1423,6 @@ export function AnimeWorkspace({
                           更多
                         </button>
                       )}
-                      <button
-                        aria-label="修改成人動漫類別"
-                        className="anime-category-utility"
-                        onClick={() => setCategoryManageScope("adult")}
-                        type="button"
-                      >
-                        🔧
-                      </button>
-                      <button
-                        aria-label="新增成人動漫類別"
-                        className="anime-category-utility anime-category-add-button"
-                        onClick={() => setCategoryAddOpen(true)}
-                        type="button"
-                      >
-                        ＋
-                      </button>
                     </div>
                   </section>
                   <AnimeCollectionList
@@ -1593,7 +1598,7 @@ export function AnimeWorkspace({
       {tab === "library" && (
         <>
           <div className="anime-filter-bar">
-            <div className="anime-filter-scroll">
+            <div className="anime-filter-scroll bookmark-view-tabs">
               {visibleFilters.map((value) => (
                 <button
                   className={
@@ -1648,8 +1653,29 @@ export function AnimeWorkspace({
           </div>
           {libraryView === "library" ? (
             <>
-              <section className="anime-category-bar" aria-label="動漫類別">
-                <div className="anime-category-scroll">
+              <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別">
+                <header>
+                  <strong>類別</strong>
+                  <div>
+                    <button
+                      aria-label="管理動漫類別"
+                      className="collection-navigation-action"
+                      onClick={() => setCategoryManageScope("standard")}
+                      type="button"
+                    >
+                      管理
+                    </button>
+                    <button
+                      aria-label="新增動漫類別"
+                      className="collection-navigation-action primary"
+                      onClick={() => setCategoryAddOpen(true)}
+                      type="button"
+                    >
+                      ＋ 新增
+                    </button>
+                  </div>
+                </header>
+                <div className="anime-category-scroll bookmark-view-tabs collection-category-strip">
                   <button
                     className={!categoryFilter ? "active" : ""}
                     onClick={() => setCategoryFilter(null)}
@@ -1688,22 +1714,6 @@ export function AnimeWorkspace({
                       更多
                     </button>
                   )}
-                  <button
-                    aria-label="修改動漫類別"
-                    className="anime-category-utility"
-                    onClick={() => setCategoryManageScope("standard")}
-                    type="button"
-                  >
-                    🔧
-                  </button>
-                  <button
-                    aria-label="新增類別"
-                    className="anime-category-utility anime-category-add-button"
-                    onClick={() => setCategoryAddOpen(true)}
-                    type="button"
-                  >
-                    ＋
-                  </button>
                 </div>
               </section>
               {!loaded ? (
