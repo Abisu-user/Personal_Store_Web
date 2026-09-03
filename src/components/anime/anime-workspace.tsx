@@ -529,6 +529,7 @@ function AnimeCollectionList({
   categories,
   folders,
   items,
+  onGridColumnsChange,
   onMutated,
   onOpen,
   scope,
@@ -539,6 +540,7 @@ function AnimeCollectionList({
   categories: AnimeTag[];
   folders: AnimeWorkspaceData["folders"];
   items: AnimeLibraryItem[];
+  onGridColumnsChange?: (columns: number | null) => void;
   onMutated: () => Promise<void>;
   onOpen: (anime: AnimeLibraryItem) => void;
   scope: CategoryScope;
@@ -552,6 +554,7 @@ function AnimeCollectionList({
   const [confirmPermanent, setConfirmPermanent] = useState(false);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const selected = new Set(selectedIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
   const scopedCategories = useMemo(
@@ -562,6 +565,25 @@ function AnimeCollectionList({
     const available = new Set(scopedCategories.map((category) => category.id));
     setCategoryIds((current) => current.filter((id) => available.has(id)));
   }, [scopedCategories]);
+  useEffect(() => {
+    if (!onGridColumnsChange || !gridRef.current) return;
+    const grid = gridRef.current;
+    const updateColumns = () => {
+      if (!window.matchMedia("(min-width: 701px)").matches) {
+        onGridColumnsChange(null);
+        return;
+      }
+      const columns = window
+        .getComputedStyle(grid)
+        .gridTemplateColumns.split(/\s+/)
+        .filter(Boolean).length;
+      onGridColumnsChange(Math.max(1, columns));
+    };
+    const observer = new ResizeObserver(updateColumns);
+    observer.observe(grid);
+    updateColumns();
+    return () => observer.disconnect();
+  }, [items.length, onGridColumnsChange]);
   const toggle = (animeId: string) =>
     setSelectedIds((ids) =>
       ids.includes(animeId)
@@ -668,7 +690,7 @@ function AnimeCollectionList({
         )}
       </div>
       {message && <p className="notice error">{message}</p>}
-      <div className="anime-grid">
+      <div className="anime-grid" ref={gridRef}>
         {items.map((anime) => (
           <article
             className={`anime-card${adult ? " anime-adult-card" : ""}`}
@@ -854,7 +876,15 @@ export function AnimeWorkspace({
     initialData?.preferences ?? defaultPreferences,
   );
   const [libraryPage, setLibraryPage] = useState(1);
-  const libraryPageSize = 12;
+  const [libraryGridColumns, setLibraryGridColumns] = useState<number | null>(
+    null,
+  );
+  // Mobile keeps its existing 12-item page. On desktop, use every visible
+  // column for five rows so a wider workspace shows more work without adding
+  // a sixth row.
+  const libraryPageSize = libraryGridColumns
+    ? libraryGridColumns * 5
+    : 12;
 
   useEffect(() => {
     let active = true;
@@ -1084,6 +1114,9 @@ export function AnimeWorkspace({
     (activeLibraryPage - 1) * libraryPageSize,
     activeLibraryPage * libraryPageSize,
   );
+  useEffect(() => {
+    setLibraryPage((current) => Math.min(current, libraryPageCount));
+  }, [libraryPageCount]);
   useEffect(() => {
     setLibraryPage(1);
   }, [filter, categoryFilter, folderFilter, query]);
@@ -1663,6 +1696,7 @@ export function AnimeWorkspace({
                   categories={data.tags}
                   folders={data.folders}
                   items={pagedLibrary}
+                  onGridColumnsChange={setLibraryGridColumns}
                   onMutated={async () => {
                     await Promise.all([refresh(), refreshTrash("standard")]);
                   }}
