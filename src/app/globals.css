@@ -480,13 +480,15 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .anime-chart-tabs { display: inline-flex; flex: 0 0 auto; gap: 5px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--surface) 82%, var(--brand-soft)); }
 .anime-chart-tabs button { min-height: 31px; padding: 0 10px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font: inherit; font-size: .76rem; font-weight: 850; }
 .anime-chart-tabs button.active { color: #fff; background: var(--brand); box-shadow: 0 3px 8px color-mix(in srgb, var(--brand) 28%, transparent); }
-.anime-status-bars { display: grid; gap: 12px; }
+.anime-status-summary > .anime-status-list { display: grid; gap: 0; padding: 0; border: 0; }
+.anime-status-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.anime-status-summary > .anime-status-bars { display: grid; gap: 12px; padding: 0; border: 0; }
 .anime-status-bar { display: grid; gap: 7px; }
 .anime-status-bar > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .anime-status-bar > div strong { font-size: .84rem; }
 .anime-status-bar > span { display: block; height: 10px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--line) 72%, transparent); }
 .anime-status-bar > span > i { display: block; height: 100%; min-width: 0; border-radius: inherit; transition: width .2s ease; }
-.anime-status-donut-layout { display: grid; grid-template-columns: minmax(150px, .75fr) minmax(0, 1fr); align-items: center; gap: 24px; }
+.anime-status-summary > .anime-status-donut-layout { display: grid; grid-template-columns: minmax(150px, .75fr) minmax(0, 1fr); align-items: center; gap: 24px; padding: 0; border: 0; }
 .anime-status-donut { display: grid; width: min(190px, 100%); aspect-ratio: 1; place-items: center; justify-self: center; border-radius: 50%; padding: 20px; }
 .anime-status-donut > div { display: grid; width: 100%; height: 100%; place-items: center; align-content: center; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 75%, transparent); }
 .anime-status-donut strong { color: var(--ink); font-size: 1.8rem; line-height: 1; }

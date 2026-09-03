@@ -2141,7 +2141,9 @@ function AnimeGridSkeleton() {
 }
 
 function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
-  const [statusChart, setStatusChart] = useState<"bars" | "donut">("bars");
+  const [statusChart, setStatusChart] = useState<
+    "list" | "bars" | "donut"
+  >("list");
   const watched = data.library.reduce(
     (total, anime) => total + anime.watchedEpisodes,
     0,
@@ -2219,6 +2221,14 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
           </div>
           <div aria-label="觀看狀態圖表類型" className="anime-chart-tabs">
             <button
+              aria-pressed={statusChart === "list"}
+              className={statusChart === "list" ? "active" : ""}
+              onClick={() => setStatusChart("list")}
+              type="button"
+            >
+              清單
+            </button>
+            <button
               aria-pressed={statusChart === "bars"}
               className={statusChart === "bars" ? "active" : ""}
               onClick={() => setStatusChart("bars")}
@@ -2236,7 +2246,18 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
             </button>
           </div>
         </header>
-        {statusChart === "bars" ? (
+        {statusChart === "list" ? (
+          <div className="anime-status-list">
+            {statusCounts.map(({ status, count }) => (
+              <div key={status}>
+                <span>
+                  <Status value={status} />
+                </span>
+                <strong>{count} 部</strong>
+              </div>
+            ))}
+          </div>
+        ) : statusChart === "bars" ? (
           <div className="anime-status-bars">
             {statusCounts.map(({ status, count }) => (
               <div className="anime-status-bar" key={status}>
