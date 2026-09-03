@@ -2144,10 +2144,6 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
   const [statusChart, setStatusChart] = useState<
     "list" | "bars" | "donut"
   >("list");
-  const watched = data.library.reduce(
-    (total, anime) => total + anime.watchedEpisodes,
-    0,
-  );
   const scores = data.library.flatMap((anime) =>
     anime.rating === null ? [] : [anime.rating],
   );
@@ -2165,6 +2161,49 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
   const statusTotal = statusCounts.reduce(
     (total, { count }) => total + count,
     0,
+  );
+  const totalAnime = data.library.length;
+  const completedCount =
+    statusCounts.find(({ status }) => status === "completed")?.count ?? 0;
+  const watchingCount =
+    statusCounts.find(({ status }) => status === "watching")?.count ?? 0;
+  const planningCount =
+    statusCounts.find(({ status }) => status === "planning")?.count ?? 0;
+  const favouriteCount = data.library.filter((anime) => anime.favorite).length;
+  const completionRate = totalAnime
+    ? Math.round((completedCount / totalAnime) * 100)
+    : 0;
+  const categoriesById = new Map<string, { name: string; count: number }>();
+  data.library.forEach((anime) => {
+    anime.tags.forEach((tag) => {
+      const current = categoriesById.get(tag.id);
+      categoriesById.set(tag.id, {
+        name: tag.name,
+        count: (current?.count ?? 0) + 1,
+      });
+    });
+  });
+  const topCategories = Array.from(categoriesById.values())
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
+    .slice(0, 5);
+  const largestCategoryCount = Math.max(
+    1,
+    ...topCategories.map((category) => category.count),
+  );
+  const ratingGroups = [
+    { label: "9–10 分", min: 9, max: 10, color: "#c98119" },
+    { label: "7–8 分", min: 7, max: 8, color: "#4f78cd" },
+    { label: "5–6 分", min: 5, max: 6, color: "#6f67a7" },
+    { label: "1–4 分", min: 1, max: 4, color: "#aeb9ca" },
+  ].map((group) => ({
+    ...group,
+    count: scores.filter(
+      (score) => score >= group.min && score <= group.max,
+    ).length,
+  }));
+  const largestRatingGroup = Math.max(
+    1,
+    ...ratingGroups.map((group) => group.count),
   );
   const statusChartColors: Record<AnimeWatchStatus, string> = {
     planning: "#2d67c7",
@@ -2185,126 +2224,216 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
         .join(", ")})`
     : "conic-gradient(#e4eaf4 0 100%)";
   return (
-    <>
-      <div className="anime-stats-grid">
+    <div className="anime-stats-dashboard">
+      <section className="anime-stats-hero">
+        <div className="anime-stats-hero-copy">
+          <p className="eyebrow">ANIME LIBRARY INSIGHTS</p>
+          <h2>你的觀看輪廓</h2>
+          <p>
+            從收藏進度、觀看狀態與分類偏好，快速掌握下一部值得打開的作品。
+          </p>
+        </div>
+        <div className="anime-stats-hero-summary">
+          <div className="anime-stats-hero-total">
+            <span>收藏作品</span>
+            <strong>{totalAnime}</strong>
+            <small>部</small>
+          </div>
+          <div className="anime-stats-hero-progress">
+            <span>收藏完成度</span>
+            <strong>{completionRate}%</strong>
+            <i aria-hidden="true">
+              <b style={{ width: `${completionRate}%` }} />
+            </i>
+            <small>已看完 {completedCount} 部</small>
+          </div>
+        </div>
+      </section>
+
+      <div className="anime-stats-grid anime-stats-overview">
         <article>
           <small>總收藏</small>
-          <strong>{data.library.length}</strong>
+          <strong>{totalAnime}</strong>
           <span>部動漫</span>
         </article>
         <article>
-          <small>已觀看集數</small>
-          <strong>{watched}</strong>
-          <span>集</span>
+          <small>正在觀看</small>
+          <strong>{watchingCount}</strong>
+          <span>持續追番中</span>
         </article>
         <article>
-          <small>正在觀看</small>
-          <strong>
-            {
-              data.library.filter((anime) => anime.watchStatus === "watching")
-                .length
-            }
-          </strong>
-          <span>部</span>
+          <small>已看完</small>
+          <strong>{completedCount}</strong>
+          <span>{completionRate}% 收藏完成</span>
+        </article>
+        <article>
+          <small>想看清單</small>
+          <strong>{planningCount}</strong>
+          <span>部等待開播</span>
         </article>
         <article>
           <small>平均評分</small>
           <strong>{average}</strong>
-          <span>/ 10</span>
+          <span>{scores.length ? `${scores.length} 部已評分` : "尚未評分"}</span>
         </article>
       </div>
-      <section className="anime-status-summary">
-        <header className="anime-status-chart-header">
-          <div>
-            <h2>觀看狀態</h2>
-            <p>共 {statusTotal} 部作品</p>
-          </div>
-          <div aria-label="觀看狀態圖表類型" className="anime-chart-tabs">
-            <button
-              aria-pressed={statusChart === "list"}
-              className={statusChart === "list" ? "active" : ""}
-              onClick={() => setStatusChart("list")}
-              type="button"
-            >
-              清單
-            </button>
-            <button
-              aria-pressed={statusChart === "bars"}
-              className={statusChart === "bars" ? "active" : ""}
-              onClick={() => setStatusChart("bars")}
-              type="button"
-            >
-              長條圖
-            </button>
-            <button
-              aria-pressed={statusChart === "donut"}
-              className={statusChart === "donut" ? "active" : ""}
-              onClick={() => setStatusChart("donut")}
-              type="button"
-            >
-              圓環圖
-            </button>
-          </div>
-        </header>
-        {statusChart === "list" ? (
-          <div className="anime-status-list">
-            {statusCounts.map(({ status, count }) => (
-              <div key={status}>
-                <span>
-                  <Status value={status} />
-                </span>
-                <strong>{count} 部</strong>
-              </div>
-            ))}
-          </div>
-        ) : statusChart === "bars" ? (
-          <div className="anime-status-bars">
-            {statusCounts.map(({ status, count }) => (
-              <div className="anime-status-bar" key={status}>
-                <div>
-                  <Status value={status} />
-                  <strong>{count} 部</strong>
-                </div>
-                <span aria-hidden="true">
-                  <i
-                    style={{
-                      background: statusChartColors[status],
-                      width: `${statusTotal ? (count / statusTotal) * 100 : 0}%`,
-                    }}
-                  />
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="anime-status-donut-layout">
-            <div
-              aria-label={`觀看狀態圓環圖，共 ${statusTotal} 部作品`}
-              className="anime-status-donut"
-              role="img"
-              style={{ background: donutBackground }}
-            >
-              <div>
-                <strong>{statusTotal}</strong>
-                <span>部作品</span>
-              </div>
+      <div className="anime-stats-detail-grid">
+        <section className="anime-status-summary anime-stats-panel">
+          <header className="anime-status-chart-header">
+            <div>
+              <p className="eyebrow">WATCHING MIX</p>
+              <h2>觀看狀態</h2>
+              <p>共 {statusTotal} 部作品</p>
             </div>
-            <div className="anime-status-legend">
+            <div aria-label="觀看狀態圖表類型" className="anime-chart-tabs">
+              <button
+                aria-pressed={statusChart === "list"}
+                className={statusChart === "list" ? "active" : ""}
+                onClick={() => setStatusChart("list")}
+                type="button"
+              >
+                清單
+              </button>
+              <button
+                aria-pressed={statusChart === "bars"}
+                className={statusChart === "bars" ? "active" : ""}
+                onClick={() => setStatusChart("bars")}
+                type="button"
+              >
+                長條圖
+              </button>
+              <button
+                aria-pressed={statusChart === "donut"}
+                className={statusChart === "donut" ? "active" : ""}
+                onClick={() => setStatusChart("donut")}
+                type="button"
+              >
+                圓環圖
+              </button>
+            </div>
+          </header>
+          {statusChart === "list" ? (
+            <div className="anime-status-list">
               {statusCounts.map(({ status, count }) => (
                 <div key={status}>
-                  <span
-                    aria-hidden="true"
-                    style={{ background: statusChartColors[status] }}
-                  />
-                  <Status value={status} />
+                  <span>
+                    <Status value={status} />
+                  </span>
                   <strong>{count} 部</strong>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </section>
-    </>
+          ) : statusChart === "bars" ? (
+            <div className="anime-status-bars">
+              {statusCounts.map(({ status, count }) => (
+                <div className="anime-status-bar" key={status}>
+                  <div>
+                    <Status value={status} />
+                    <strong>{count} 部</strong>
+                  </div>
+                  <span aria-hidden="true">
+                    <i
+                      style={{
+                        background: statusChartColors[status],
+                        width: `${statusTotal ? (count / statusTotal) * 100 : 0}%`,
+                      }}
+                    />
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="anime-status-donut-layout">
+              <div
+                aria-label={`觀看狀態圓環圖，共 ${statusTotal} 部作品`}
+                className="anime-status-donut"
+                role="img"
+                style={{ background: donutBackground }}
+              >
+                <div>
+                  <strong>{statusTotal}</strong>
+                  <span>部作品</span>
+                </div>
+              </div>
+              <div className="anime-status-legend">
+                {statusCounts.map(({ status, count }) => (
+                  <div key={status}>
+                    <span
+                      aria-hidden="true"
+                      style={{ background: statusChartColors[status] }}
+                    />
+                    <Status value={status} />
+                    <strong>{count} 部</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="anime-stats-panel anime-insight-panel">
+          <header className="anime-insight-header">
+            <div>
+              <p className="eyebrow">CATEGORY TASTE</p>
+              <h2>分類偏好</h2>
+            </div>
+            <strong>{topCategories.length ? "Top 5" : "尚無資料"}</strong>
+          </header>
+          {topCategories.length ? (
+            <div className="anime-insight-bars">
+              {topCategories.map((category) => (
+                <div key={category.name}>
+                  <span>{category.name}</span>
+                  <strong>{category.count} 部</strong>
+                  <i aria-hidden="true">
+                    <b
+                      style={{
+                        width: `${(category.count / largestCategoryCount) * 100}%`,
+                      }}
+                    />
+                  </i>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="anime-insight-empty">替作品加入類別後，這裡會顯示你的收藏偏好。</p>
+          )}
+        </section>
+
+        <section className="anime-stats-panel anime-insight-panel">
+          <header className="anime-insight-header">
+            <div>
+              <p className="eyebrow">RATING MOOD</p>
+              <h2>評分分布</h2>
+            </div>
+            <strong>{scores.length} 部已評分</strong>
+          </header>
+          {scores.length ? (
+            <div className="anime-rating-bars">
+              {ratingGroups.map((group) => (
+                <div key={group.label}>
+                  <span>{group.label}</span>
+                  <i aria-hidden="true">
+                    <b
+                      style={{
+                        background: group.color,
+                        width: `${(group.count / largestRatingGroup) * 100}%`,
+                      }}
+                    />
+                  </i>
+                  <strong>{group.count}</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="anime-insight-empty">為作品留下評分後，這裡會整理你的喜好分布。</p>
+          )}
+          <p className="anime-favourite-note">
+            {favouriteCount ? `已標記 ${favouriteCount} 部最愛作品。` : "尚未標記最愛作品。"}
+          </p>
+        </section>
+      </div>
+    </div>
   );
 }
 
