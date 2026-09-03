@@ -492,9 +492,10 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 .anime-status-donut strong { color: var(--ink); font-size: 1.8rem; line-height: 1; }
 .anime-status-donut span { margin-top: 4px; color: var(--muted); font-size: .72rem; font-weight: 800; }
 .anime-status-legend { display: grid; gap: 9px; }
-.anime-status-legend > div { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.anime-status-legend > div { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .anime-status-legend > div > span { width: 10px; height: 10px; border-radius: 50%; }
-.anime-status-legend strong { font-size: .82rem; }
+.anime-status-legend .anime-status { flex: 0 0 auto; }
+.anime-status-legend strong { flex: 0 0 auto; margin-left: auto; white-space: nowrap; font-size: .82rem; }
 @media (max-width: 700px) { .anime-status-chart-header { align-items: flex-start; flex-direction: column; }.anime-chart-tabs { width: 100%; }.anime-chart-tabs button { flex: 1; }.anime-status-donut-layout { grid-template-columns: 1fr; gap: 18px; }.anime-status-donut { width: min(176px, 62vw); }.anime-pagination button:first-child, .anime-pagination button:last-child { padding-inline: 7px; } }
 
 /* Nearby, compact organization controls for every content collection. */
