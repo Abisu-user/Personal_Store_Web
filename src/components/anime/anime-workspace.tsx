@@ -30,11 +30,12 @@ type Tab = "discover" | "library" | "stats" | "adult";
 type AdultView = "library" | "discover";
 type CategoryScope = "standard" | "adult";
 type Filter = "all" | AnimeWatchStatus;
-const statuses: AnimeWatchStatus[] = [
+// Paused remains supported for older records, but is no longer offered as a
+// viewing-state choice. Editing an old paused record moves it to 想看.
+const statuses: Exclude<AnimeWatchStatus, "paused">[] = [
   "planning",
   "watching",
   "completed",
-  "paused",
   "dropped",
 ];
 // 「暫停」仍保留在既有資料的狀態中，但不再作為主要清單的常駐篩選。
@@ -1710,6 +1711,15 @@ export function AnimeWorkspace({
               {library.length > libraryPageSize && (
                 <nav aria-label="我的動漫分頁" className="anime-pagination">
                   <button
+                    aria-label="第一頁"
+                    className="secondary-button compact"
+                    disabled={activeLibraryPage === 1}
+                    onClick={() => setLibraryPage(1)}
+                    type="button"
+                  >
+                    第一頁
+                  </button>
+                  <button
                     aria-label="上一頁"
                     className="secondary-button compact"
                     disabled={activeLibraryPage === 1}
@@ -1753,6 +1763,15 @@ export function AnimeWorkspace({
                     type="button"
                   >
                     下一頁
+                  </button>
+                  <button
+                    aria-label="最後一頁"
+                    className="secondary-button compact"
+                    disabled={activeLibraryPage === libraryPageCount}
+                    onClick={() => setLibraryPage(libraryPageCount)}
+                    type="button"
+                  >
+                    最後一頁
                   </button>
                 </nav>
               )}
@@ -2122,6 +2141,7 @@ function AnimeGridSkeleton() {
 }
 
 function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
+  const [statusChart, setStatusChart] = useState<"bars" | "donut">("bars");
   const watched = data.library.reduce(
     (total, anime) => total + anime.watchedEpisodes,
     0,
@@ -2134,10 +2154,34 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
         scores.reduce((total, score) => total + score, 0) / scores.length
       ).toFixed(1)
     : "—";
-  const date = (value: string) =>
-    new Intl.DateTimeFormat("zh-TW", { month: "short", day: "numeric" }).format(
-      new Date(value),
-    );
+  const statusCounts = visibleFilters
+    .filter((status): status is AnimeWatchStatus => status !== "all")
+    .map((status) => ({
+    status,
+    count: data.library.filter((anime) => anime.watchStatus === status).length,
+    }));
+  const statusTotal = statusCounts.reduce(
+    (total, { count }) => total + count,
+    0,
+  );
+  const statusChartColors: Record<AnimeWatchStatus, string> = {
+    planning: "#2d67c7",
+    watching: "#21896c",
+    completed: "#8062c8",
+    paused: "#c98c22",
+    dropped: "#c95478",
+  };
+  let segmentStart = 0;
+  const donutBackground = statusTotal
+    ? `conic-gradient(${statusCounts
+        .map(({ status, count }) => {
+          const segmentEnd = segmentStart + (count / statusTotal) * 100;
+          const segment = `${statusChartColors[status]} ${segmentStart}% ${segmentEnd}%`;
+          segmentStart = segmentEnd;
+          return segment;
+        })
+        .join(", ")})`
+    : "conic-gradient(#e4eaf4 0 100%)";
   return (
     <>
       <div className="anime-stats-grid">
@@ -2168,39 +2212,75 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
         </article>
       </div>
       <section className="anime-status-summary">
-        <h2>觀看狀態</h2>
-        {statuses.map((status) => (
-          <div key={status}>
-            <span>
-              <Status value={status} />
-            </span>
-            <strong>
-              {
-                data.library.filter((anime) => anime.watchStatus === status)
-                  .length
-              }{" "}
-              部
-            </strong>
+        <header className="anime-status-chart-header">
+          <div>
+            <h2>觀看狀態</h2>
+            <p>共 {statusTotal} 部作品</p>
           </div>
-        ))}
-      </section>
-      <section className="anime-history">
-        <h2>最近觀看</h2>
-        {data.logs.length ? (
-          data.logs.slice(0, 8).map((log) => (
-            <div key={log.id}>
-              <span>{date(log.watchedAt)}</span>
-              <strong>
-                {data.library.find((anime) => anime.id === log.animeId)
-                  ?.title ?? "已移除的動漫"}
-              </strong>
-              <small>
-                第 {log.fromEpisode} 集 → 第 {log.toEpisode} 集
-              </small>
-            </div>
-          ))
+          <div aria-label="觀看狀態圖表類型" className="anime-chart-tabs">
+            <button
+              aria-pressed={statusChart === "bars"}
+              className={statusChart === "bars" ? "active" : ""}
+              onClick={() => setStatusChart("bars")}
+              type="button"
+            >
+              長條圖
+            </button>
+            <button
+              aria-pressed={statusChart === "donut"}
+              className={statusChart === "donut" ? "active" : ""}
+              onClick={() => setStatusChart("donut")}
+              type="button"
+            >
+              圓環圖
+            </button>
+          </div>
+        </header>
+        {statusChart === "bars" ? (
+          <div className="anime-status-bars">
+            {statusCounts.map(({ status, count }) => (
+              <div className="anime-status-bar" key={status}>
+                <div>
+                  <Status value={status} />
+                  <strong>{count} 部</strong>
+                </div>
+                <span aria-hidden="true">
+                  <i
+                    style={{
+                      background: statusChartColors[status],
+                      width: `${statusTotal ? (count / statusTotal) * 100 : 0}%`,
+                    }}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
         ) : (
-          <p className="anime-field-hint">還沒有觀看紀錄。</p>
+          <div className="anime-status-donut-layout">
+            <div
+              aria-label={`觀看狀態圓環圖，共 ${statusTotal} 部作品`}
+              className="anime-status-donut"
+              role="img"
+              style={{ background: donutBackground }}
+            >
+              <div>
+                <strong>{statusTotal}</strong>
+                <span>部作品</span>
+              </div>
+            </div>
+            <div className="anime-status-legend">
+              {statusCounts.map(({ status, count }) => (
+                <div key={status}>
+                  <span
+                    aria-hidden="true"
+                    style={{ background: statusChartColors[status] }}
+                  />
+                  <Status value={status} />
+                  <strong>{count} 部</strong>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </section>
     </>
@@ -2351,7 +2431,7 @@ function AnimeEditor({
   );
   const [sourceUrl, setSourceUrl] = useState(anime?.sourceUrl ?? "");
   const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(
-    anime?.watchStatus ?? "planning",
+    anime?.watchStatus === "paused" ? "planning" : anime?.watchStatus ?? "planning",
   );
   const [rating, setRating] = useState<number | null>(anime?.rating ?? null);
   const [notes, setNotes] = useState(anime?.notes ?? "");
