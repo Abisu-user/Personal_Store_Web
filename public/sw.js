@@ -4,7 +4,7 @@
  * service worker only keeps static application resources so that an
  * authenticated user's records never end up in the Cache Storage API.
  */
-const CACHE_NAME = "personal-vault-shell-v1";
+const CACHE_NAME = "personal-vault-shell-v2";
 const BOOTSTRAP_ASSETS = ["/manifest.webmanifest", "/icon.svg", "/apple-icon"];
 
 self.addEventListener("install", (event) => {
@@ -12,13 +12,24 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith("personal-vault-shell-") && key !== CACHE_NAME).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith("personal-vault-shell-") && key !== CACHE_NAME).map((key) => caches.delete(key)));
+    // Do not cache private HTML. Navigation preload only overlaps the request
+    // with service-worker startup for an installed PWA.
+    if ("navigationPreload" in self.registration) await self.registration.navigationPreload.enable();
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || request.mode === "navigate") return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (request.mode === "navigate") {
+    event.respondWith((async () => (await event.preloadResponse) ?? fetch(request))());
+    return;
+  }
   const cacheableDestination = ["script", "style", "font", "image", "manifest"].includes(request.destination);
   if (!cacheableDestination) return;
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { hashAppLockPin, makeAppLockSalt, validateAppLockPin, verifyAppLockPin } from "@/lib/app-lock/server";
+import { getAppLockPinStatus } from "@/lib/app-lock/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -15,9 +16,9 @@ export async function GET() {
   const context = await getSecurityContext();
   if (!context) return jsonError("Unauthorized", 401);
   try {
-    const { data, error } = await createAdminClient().from("app_locks").select("pin_mode").eq("owner_id", context.userId).maybeSingle();
-    if (error) throw error;
-    return NextResponse.json({ configured: Boolean(data), mode: data?.pin_mode ?? null });
+    const status = await getAppLockPinStatus(context.userId);
+    if (!status) throw new Error("Unable to load App PIN status");
+    return NextResponse.json(status);
   } catch { return jsonError("目前無法讀取 App 鎖定設定。", 503); }
 }
 
