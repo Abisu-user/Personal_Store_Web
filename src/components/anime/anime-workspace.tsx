@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CoverImageField,
@@ -1940,7 +1940,16 @@ export function AnimeWorkspace({
           </ModalDialog>
         </>
       )}
-      {tab === "stats" && <AnimeStats data={data} />}
+      {tab === "stats" && (
+        <AnimeStats
+          data={data}
+          onSelectStatus={(status) => {
+            setTab("library");
+            selectLibraryStatus(status);
+            setLibraryPage(1);
+          }}
+        />
+      )}
       {adding && (
         <AnimeEditor
           adult={tab === "adult"}
@@ -2140,10 +2149,16 @@ function AnimeGridSkeleton() {
   );
 }
 
-function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
+function AnimeStats({
+  data,
+  onSelectStatus,
+}: {
+  data: AnimeWorkspaceData;
+  onSelectStatus: (status: AnimeWatchStatus) => void;
+}) {
   const [statusChart, setStatusChart] = useState<
     "list" | "bars" | "donut"
-  >("list");
+  >("donut");
   const scores = data.library.flatMap((anime) =>
     anime.rating === null ? [] : [anime.rating],
   );
@@ -2158,10 +2173,6 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
     status,
     count: data.library.filter((anime) => anime.watchStatus === status).length,
     }));
-  const statusTotal = statusCounts.reduce(
-    (total, { count }) => total + count,
-    0,
-  );
   const totalAnime = data.library.length;
   const completedCount =
     statusCounts.find(({ status }) => status === "completed")?.count ?? 0;
@@ -2212,17 +2223,24 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
     paused: "#c98c22",
     dropped: "#c95478",
   };
-  let segmentStart = 0;
-  const donutBackground = statusTotal
-    ? `conic-gradient(${statusCounts
-        .map(({ status, count }) => {
-          const segmentEnd = segmentStart + (count / statusTotal) * 100;
-          const segment = `${statusChartColors[status]} ${segmentStart}% ${segmentEnd}%`;
-          segmentStart = segmentEnd;
-          return segment;
-        })
-        .join(", ")})`
-    : "conic-gradient(#e4eaf4 0 100%)";
+  const formatPercentage = (count: number) =>
+    `${totalAnime ? ((count / totalAnime) * 100).toFixed(1) : "0.0"}%`;
+  let donutOffset = 0;
+  const donutSegments = statusCounts.map(({ status, count }) => {
+    const percentage = totalAnime ? (count / totalAnime) * 100 : 0;
+    const segment = { status, count, percentage, offset: donutOffset };
+    donutOffset += percentage;
+    return segment;
+  });
+  const selectFromChart = (status: AnimeWatchStatus) => onSelectStatus(status);
+  const selectFromChartKey = (
+    event: KeyboardEvent<SVGCircleElement>,
+    status: AnimeWatchStatus,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectFromChart(status);
+  };
   return (
     <div className="anime-stats-dashboard">
       <section className="anime-stats-hero">
@@ -2283,7 +2301,7 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
             <div>
               <p className="eyebrow">WATCHING MIX</p>
               <h2>觀看狀態</h2>
-              <p>共 {statusTotal} 部作品</p>
+              <p>共 {totalAnime} 部作品</p>
             </div>
             <div aria-label="觀看狀態圖表類型" className="anime-chart-tabs">
               <button
@@ -2313,58 +2331,107 @@ function AnimeStats({ data }: { data: AnimeWorkspaceData }) {
             </div>
           </header>
           {statusChart === "list" ? (
-            <div className="anime-status-list">
+            <div className="anime-status-list anime-status-chart-content">
               {statusCounts.map(({ status, count }) => (
-                <div key={status}>
-                  <span>
+                <button
+                  aria-label={`篩選${animeStatusLabels[status]}，${count} 部，${formatPercentage(count)}`}
+                  key={status}
+                  onClick={() => selectFromChart(status)}
+                  type="button"
+                >
+                  <span className="anime-status-list-label">
                     <Status value={status} />
                   </span>
-                  <strong>{count} 部</strong>
-                </div>
+                  <strong>{count} <small>部</small></strong>
+                  <em>{formatPercentage(count)}</em>
+                </button>
               ))}
             </div>
           ) : statusChart === "bars" ? (
-            <div className="anime-status-bars">
+            <div className="anime-status-bars anime-status-chart-content">
               {statusCounts.map(({ status, count }) => (
-                <div className="anime-status-bar" key={status}>
-                  <div>
+                <button
+                  aria-label={`篩選${animeStatusLabels[status]}，${count} 部，${formatPercentage(count)}`}
+                  className="anime-status-bar"
+                  key={status}
+                  onClick={() => selectFromChart(status)}
+                  type="button"
+                >
+                  <span className="anime-status-bar-header">
                     <Status value={status} />
-                    <strong>{count} 部</strong>
-                  </div>
-                  <span aria-hidden="true">
+                    <strong>{count} 部 <em>{formatPercentage(count)}</em></strong>
+                  </span>
+                  <span aria-hidden="true" className="anime-status-bar-track">
                     <i
                       style={{
                         background: statusChartColors[status],
-                        width: `${statusTotal ? (count / statusTotal) * 100 : 0}%`,
+                        width: `${totalAnime ? (count / totalAnime) * 100 : 0}%`,
                       }}
                     />
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           ) : (
-            <div className="anime-status-donut-layout">
+            <div className="anime-status-donut-layout anime-status-chart-content">
               <div
-                aria-label={`觀看狀態圓環圖，共 ${statusTotal} 部作品`}
+                aria-label={`觀看狀態圓環圖，共 ${totalAnime} 部作品。點選扇形可篩選。`}
                 className="anime-status-donut"
-                role="img"
-                style={{ background: donutBackground }}
+                role="group"
               >
-                <div>
-                  <strong>{statusTotal}</strong>
-                  <span>部作品</span>
-                </div>
+                <svg viewBox="0 0 120 120">
+                  <circle
+                    className="anime-status-donut-track"
+                    cx="60"
+                    cy="60"
+                    fill="none"
+                    r="42"
+                    strokeWidth="16"
+                  />
+                  {donutSegments.map(({ status, count, percentage, offset }) => (
+                    <circle
+                      aria-label={`篩選${animeStatusLabels[status]}，${count} 部，${formatPercentage(count)}`}
+                      className="anime-status-donut-segment"
+                      cx="60"
+                      cy="60"
+                      fill="none"
+                      key={status}
+                      onClick={() => selectFromChart(status)}
+                      onKeyDown={(event) => selectFromChartKey(event, status)}
+                      pathLength="100"
+                      r="42"
+                      role="button"
+                      stroke={statusChartColors[status]}
+                      strokeDasharray={`${percentage} ${100 - percentage}`}
+                      strokeDashoffset={-offset}
+                      strokeWidth="16"
+                      tabIndex={0}
+                    />
+                  ))}
+                  <text className="anime-status-donut-total" x="60" y="57">
+                    {totalAnime}
+                  </text>
+                  <text className="anime-status-donut-label" x="60" y="72">
+                    部作品
+                  </text>
+                </svg>
               </div>
               <div className="anime-status-legend">
                 {statusCounts.map(({ status, count }) => (
-                  <div key={status}>
+                  <button
+                    aria-label={`篩選${animeStatusLabels[status]}，${count} 部，${formatPercentage(count)}`}
+                    key={status}
+                    onClick={() => selectFromChart(status)}
+                    type="button"
+                  >
                     <span
                       aria-hidden="true"
                       style={{ background: statusChartColors[status] }}
                     />
                     <Status value={status} />
                     <strong>{count} 部</strong>
-                  </div>
+                    <em>{formatPercentage(count)}</em>
+                  </button>
                 ))}
               </div>
             </div>
