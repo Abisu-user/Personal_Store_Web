@@ -188,7 +188,7 @@ function AnimeFolderNavigation({
   scope: CategoryScope;
   selectedId: string | null;
   inline?: boolean;
-  /** Use the same labelled left-rail/right-actions layout as 收藏與整理. */
+  /** Use the same labelled left-rail/right-actions layout as 網站收藏. */
   collectionLayout?: boolean;
   /** The standard library shares its rail with watch-status shortcuts. */
   compactOnMobile?: boolean;

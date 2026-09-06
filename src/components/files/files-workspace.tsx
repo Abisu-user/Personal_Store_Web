@@ -1,4 +1,5 @@
 "use client";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -348,9 +349,7 @@ export function FilesWorkspace({
         </div>
       </details>
       <CoverImageField onChange={setCover} />
-      <button className="button" disabled={pending} type="submit">
-        {pending ? "上傳中…" : "上傳至保管庫"}
-      </button>
+      <CreateFormActions pending={pending} returnHref="/files" label="儲存" pendingLabel="上傳中…" />
     </form>
   );
   if (createMode)

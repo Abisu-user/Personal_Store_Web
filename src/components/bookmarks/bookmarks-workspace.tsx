@@ -1,4 +1,5 @@
 "use client";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import {
   CSSProperties,
@@ -217,7 +218,7 @@ function BookmarkCollectionSettings({
     <>
       <details className="collection-settings">
         <summary>
-          收藏設定 <small>可複選</small>
+          網站收藏設定 <small>可複選</small>
         </summary>
         <div className="collection-settings-menu">
           <label>
@@ -496,7 +497,7 @@ export function BookmarksWorkspace({
   const load = useCallback(async () => {
     const response = await fetch("/api/bookmarks", { cache: "no-store" });
     if (!response.ok) {
-      setError("目前無法讀取書籤。");
+      setError("目前無法讀取網站收藏。");
       return;
     }
     const next = (await response.json()) as BookmarksWorkspaceData;
@@ -516,7 +517,7 @@ export function BookmarksWorkspace({
     const loadInitial = async () => {
       try {
         const response = await fetch("/api/bookmarks", { cache: "no-store" });
-        if (!response.ok) throw new Error("目前無法讀取書籤。");
+        if (!response.ok) throw new Error("目前無法讀取網站收藏。");
         const next = (await response.json()) as BookmarksWorkspaceData;
         if (!active) return;
         setData(next);
@@ -525,7 +526,7 @@ export function BookmarksWorkspace({
       } catch (cause) {
         if (active && !cached)
           setError(
-            cause instanceof Error ? cause.message : "目前無法讀取書籤。",
+            cause instanceof Error ? cause.message : "目前無法讀取網站收藏。",
           );
       }
     };
@@ -665,10 +666,10 @@ export function BookmarksWorkspace({
     setPending(false);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      setError(body?.error ?? "無法儲存書籤。");
+      setError(body?.error ?? "無法儲存網站收藏。");
       return;
     }
-    setSuccess("書籤已儲存，正在開啟收藏清單…");
+    setSuccess("網站收藏已儲存，正在開啟網站收藏清單…");
     router.replace("/bookmarks");
     router.refresh();
   }
@@ -710,7 +711,7 @@ export function BookmarksWorkspace({
     }
     await load();
     setEditing(null);
-    setSuccess("收藏已更新。");
+    setSuccess("網站收藏已更新。");
     setPending(false);
   }
   async function update(id: string, action: "trash" | "restore") {
@@ -723,7 +724,7 @@ export function BookmarksWorkspace({
     });
     setPending(false);
     if (!response.ok) {
-      setError("無法更新書籤。");
+      setError("無法更新網站收藏。");
       return;
     }
     setData((current) => ({
@@ -739,7 +740,7 @@ export function BookmarksWorkspace({
             },
       ),
     }));
-    setSuccess(action === "trash" ? "已移至垃圾桶。" : "書籤已還原。");
+    setSuccess(action === "trash" ? "已移至垃圾桶。" : "網站收藏已還原。");
     setConfirmation(null);
   }
   async function permanentlyRemove(id: string) {
@@ -752,14 +753,14 @@ export function BookmarksWorkspace({
     });
     setPending(false);
     if (!response.ok) {
-      setError("無法永久刪除書籤。");
+      setError("無法永久刪除網站收藏。");
       return;
     }
     setData((current) => ({
       ...current,
       bookmarks: current.bookmarks.filter((item) => item.id !== id),
     }));
-    setSuccess("書籤已永久刪除。");
+    setSuccess("網站收藏已永久刪除。");
     setConfirmation(null);
   }
   async function trashSelected() {
@@ -786,7 +787,7 @@ export function BookmarksWorkspace({
           : item,
       ),
     }));
-    setSuccess(`已將 ${ids.length} 筆收藏移至垃圾桶。`);
+    setSuccess(`已將 ${ids.length} 筆網站收藏移至垃圾桶。`);
     setConfirmation(null);
   }
   async function permanentlyRemoveSelected() {
@@ -801,7 +802,7 @@ export function BookmarksWorkspace({
     });
     setPending(false);
     if (!response.ok) {
-      setError("無法批量永久刪除書籤。");
+      setError("無法批量永久刪除網站收藏。");
       return;
     }
     setChosen(new Set());
@@ -809,7 +810,7 @@ export function BookmarksWorkspace({
       ...current,
       bookmarks: current.bookmarks.filter((item) => !ids.includes(item.id)),
     }));
-    setSuccess(`已永久刪除 ${ids.length} 筆收藏。`);
+    setSuccess(`已永久刪除 ${ids.length} 筆網站收藏。`);
     setConfirmation(null);
   }
   async function addCategory(event: FormEvent<HTMLFormElement>) {
@@ -864,7 +865,7 @@ export function BookmarksWorkspace({
     } | null;
     setPending(false);
     if (!response.ok || !payload?.item) {
-      setError("無法新增收藏資料夾，名稱可能已存在。");
+      setError("無法新增網站收藏資料夾，名稱可能已存在。");
       return;
     }
     setData((current) => ({
@@ -876,7 +877,7 @@ export function BookmarksWorkspace({
       ),
     }));
     setNewBookmarkFolder("");
-    setSuccess("收藏資料夾已新增。");
+    setSuccess("網站收藏資料夾已新增。");
   }
   async function saveRename(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -890,7 +891,7 @@ export function BookmarksWorkspace({
         },
       });
       setRenaming(null);
-      setSuccess("智慧資料夾名稱已更新，收藏設定已同步。 ");
+      setSuccess("智慧資料夾名稱已更新，網站收藏設定已同步。 ");
       return;
     }
     const name = renaming.value.trim();
@@ -952,7 +953,7 @@ export function BookmarksWorkspace({
     });
     setPending(false);
     if (!response.ok) {
-      setError("無法更新收藏資料夾。 ");
+      setError("無法更新網站收藏資料夾。 ");
       return;
     }
     setData((current) => ({
@@ -961,7 +962,7 @@ export function BookmarksWorkspace({
         item.id === id ? { ...item, is_visible: visible } : item,
       ),
     }));
-    setSuccess(visible ? "收藏資料夾已顯示。" : "收藏資料夾已隱藏。");
+    setSuccess(visible ? "網站收藏資料夾已顯示。" : "網站收藏資料夾已隱藏。");
   }
   async function deleteBookmarkFolder(id: string) {
     setPending(true);
@@ -973,7 +974,7 @@ export function BookmarksWorkspace({
     });
     setPending(false);
     if (!response.ok) {
-      setError("無法刪除收藏資料夾。 ");
+      setError("無法刪除網站收藏資料夾。 ");
       return;
     }
     setData((current) => ({
@@ -984,7 +985,7 @@ export function BookmarksWorkspace({
       ),
     }));
     if (bookmarkFolder === id) setBookmarkFolder("all");
-    setSuccess("收藏資料夾已刪除，原有收藏已移出資料夾。");
+    setSuccess("網站收藏資料夾已刪除，原有網站收藏已移出資料夾。");
     setConfirmation(null);
   }
   async function deleteCategory(id: string) {
@@ -1010,7 +1011,7 @@ export function BookmarksWorkspace({
     }));
     if (category === id) setCategory("all");
     if (view === `folder:${id}`) setView("all");
-    setSuccess("資料夾已刪除，原有收藏已改為未分類。");
+    setSuccess("資料夾已刪除，原有網站收藏已改為未分類。");
     setConfirmation(null);
     await load();
     router.refresh();
@@ -1239,7 +1240,7 @@ export function BookmarksWorkspace({
   );
   const form = (
     <form className="bookmark-form" onSubmit={create}>
-      <h2>新增書籤</h2>
+      <h2>新增網站收藏</h2>
       <label>
         網址
         <input
@@ -1296,9 +1297,7 @@ export function BookmarksWorkspace({
         categories={data.categories}
         folders={data.folders}
       />
-      <button className="button" disabled={pending} type="submit">
-        {pending ? "儲存中…" : "儲存書籤"}
-      </button>
+      <CreateFormActions pending={pending} returnHref="/bookmarks" label="儲存" pendingLabel="儲存中…" />
     </form>
   );
   const renameDialog = renaming && (
@@ -1315,8 +1314,8 @@ export function BookmarksWorkspace({
           {renaming.type === "folder"
             ? "智慧資料夾"
             : renaming.type === "category"
-              ? "收藏類別"
-              : "收藏資料夾"}
+              ? "網站收藏類別"
+              : "網站收藏資料夾"}
         </h2>
         <label htmlFor="rename-folder-input">資料夾名稱</label>
         <input
@@ -1331,7 +1330,7 @@ export function BookmarksWorkspace({
           required
           value={renaming.value}
         />
-        <p className="hint">修改後會立刻同步到收藏清單與新增書籤的選項。</p>
+        <p className="hint">修改後會立刻同步到網站收藏清單與新增網站收藏的選項。</p>
         <div className="dialog-actions">
           <button className="button compact" disabled={pending} type="submit">
             {pending ? "儲存中…" : "儲存名稱"}
@@ -1351,7 +1350,7 @@ export function BookmarksWorkspace({
   if (createMode)
     return (
       <section className="bookmarks-workspace create-only">
-        {pending && <OperationStatus label="正在更新收藏設定…" />}
+        {pending && <OperationStatus label="正在更新網站收藏設定…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -1370,9 +1369,9 @@ export function BookmarksWorkspace({
           <header className="manager-heading">
             <div>
               <p className="eyebrow">BOOKMARK ORGANIZATION</p>
-              <h2 id="bookmark-folders-title">管理收藏／類別</h2>
+              <h2 id="bookmark-folders-title">管理網站收藏／類別</h2>
               <p>
-                類別用於整理內容；「未分類」會永久保留。只有選擇「置於上方」的類別，才會顯示在收藏頁頂端。
+                類別用於整理內容；「未分類」會永久保留。只有選擇「置於上方」的類別，才會顯示在網站收藏頁頂端。
               </p>
             </div>
           </header>
@@ -1394,7 +1393,7 @@ export function BookmarksWorkspace({
             <article className="category-row system-folder">
               <div>
                 <strong>未分類</strong>
-                <small>固定保留：未指定類別的收藏會顯示在此</small>
+                <small>固定保留：未指定類別的網站收藏會顯示在此</small>
               </div>
               <span>固定保留</span>
             </article>
@@ -1442,8 +1441,8 @@ export function BookmarksWorkspace({
                       className="delete-button compact"
                       onClick={() =>
                         setConfirmation({
-                          title: "移除收藏類別？",
-                          description: `「${item.name}」的收藏會改為未分類；此操作無法復原。`,
+                          title: "移除網站收藏類別？",
+                          description: `「${item.name}」的網站收藏會改為未分類；此操作無法復原。`,
                           action: () => deleteCategory(item.id),
                         })
                       }
@@ -1465,15 +1464,15 @@ export function BookmarksWorkspace({
             <div className="folder-heading">
               <div>
                 <p className="eyebrow">BOOKMARK FOLDERS</p>
-                <h3 id="bookmark-folder-manager-title">管理收藏資料夾</h3>
+                <h3 id="bookmark-folder-manager-title">管理網站收藏資料夾</h3>
                 <p>
-                  資料夾和類別分開管理；隱藏資料夾不會出現在新增書籤的選單或收藏頁。
+                  資料夾和類別分開管理；隱藏資料夾不會出現在新增網站收藏的選單或網站收藏頁。
                 </p>
               </div>
             </div>
             <form className="category-create-row" onSubmit={addBookmarkFolder}>
               <label className="sr-only" htmlFor="new-bookmark-folder">
-                新收藏資料夾名稱
+                新網站收藏資料夾名稱
               </label>
               <input
                 id="new-bookmark-folder"
@@ -1497,7 +1496,7 @@ export function BookmarksWorkspace({
                       <strong>{item.name}</strong>
                       <small>
                         {item.is_visible
-                          ? "目前顯示於收藏頁與新增選單"
+                          ? "目前顯示於網站收藏頁與新增選單"
                           : "目前已隱藏"}
                       </small>
                     </div>
@@ -1531,8 +1530,8 @@ export function BookmarksWorkspace({
                         className="delete-button compact"
                         onClick={() =>
                           setConfirmation({
-                            title: "移除收藏資料夾？",
-                            description: `「${item.name}」中的收藏不會被刪除，只會移出這個資料夾。`,
+                            title: "移除網站收藏資料夾？",
+                            description: `「${item.name}」中的網站收藏不會被刪除，只會移出這個資料夾。`,
                             action: () => deleteBookmarkFolder(item.id),
                           })
                         }
@@ -1544,7 +1543,7 @@ export function BookmarksWorkspace({
                   </article>
                 ))
               ) : (
-                <p className="manager-empty">尚未建立收藏資料夾。</p>
+                <p className="manager-empty">尚未建立網站收藏資料夾。</p>
               )}
             </div>
           </section>
@@ -1575,7 +1574,7 @@ export function BookmarksWorkspace({
                     <strong>{folders[key].label}</strong>
                     <small>
                       {folders[key].visible
-                        ? "目前顯示於收藏頁"
+                        ? "目前顯示於網站收藏頁"
                         : "目前已隱藏（可恢復）"}
                     </small>
                   </div>
@@ -1645,7 +1644,7 @@ export function BookmarksWorkspace({
   };
   return (
     <section className="bookmarks-workspace">
-      {pending && <OperationStatus label="正在處理收藏資料…" />}
+      {pending && <OperationStatus label="正在處理網站收藏資料…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}
@@ -1685,7 +1684,7 @@ export function BookmarksWorkspace({
           itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
           leading={<button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
           renderItem={(item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
-          renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
+          renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
           trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
           trailingCount={folders.trash.visible ? 1 : 0}
@@ -1720,13 +1719,13 @@ export function BookmarksWorkspace({
           itemMeasureKey={(item) => item.name}
           leading={<><button className={category === "all" ? "active" : ""} onClick={() => selectBookmarkCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => selectBookmarkCategory("unclassified")} type="button">未分類</button></>}
           renderItem={(item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => selectBookmarkCategory(item.id)} type="button">{item.name}</button>}
-          renderMore={(hasHiddenActive) => <button aria-label="查看更多收藏類別" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
+          renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏類別" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
         />
       </section>
       <div className="bookmark-toolbar">
         <input
-          aria-label="搜尋書籤"
+          aria-label="搜尋網站收藏"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜尋標題或網址"
           value={query}
@@ -1748,8 +1747,8 @@ export function BookmarksWorkspace({
               disabled={pending}
               onClick={() =>
                 setConfirmation({
-                  title: `永久刪除 ${selected.length} 筆收藏？`,
-                  description: "這些收藏將無法還原。",
+                  title: `永久刪除 ${selected.length} 筆網站收藏？`,
+                  description: "這些網站收藏將無法還原。",
                   action: permanentlyRemoveSelected,
                 })
               }
@@ -1763,8 +1762,8 @@ export function BookmarksWorkspace({
               disabled={pending}
               onClick={() =>
                 setConfirmation({
-                  title: `移除 ${selected.length} 筆收藏？`,
-                  description: "這些收藏將移至垃圾桶，30 天內仍可還原。",
+                  title: `移除 ${selected.length} 筆網站收藏？`,
+                  description: "這些網站收藏將移至垃圾桶，30 天內仍可還原。",
                   confirmLabel: "移至垃圾桶",
                   action: trashSelected,
                 })
@@ -1805,7 +1804,7 @@ export function BookmarksWorkspace({
                 selected={chosen.has(item.id)}
               />
             ))}
-            {list.length === 0 && <p className="lead">尚無符合條件的書籤。</p>}
+            {list.length === 0 && <p className="lead">尚無符合條件的網站收藏。</p>}
           </>
         )}
       </div>
@@ -1814,7 +1813,7 @@ export function BookmarksWorkspace({
         onClose={() => setFolderAddOpen(false)}
         open={folderAddOpen}
         pending={pending}
-        title="新增收藏資料夾"
+        title="新增網站收藏資料夾"
       >
         <form
           className="collection-category-dialog"
@@ -1856,12 +1855,12 @@ export function BookmarksWorkspace({
           setFolderQuery("");
         }}
         open={folderMoreOpen}
-        title="更多收藏資料夾"
+        title="更多網站收藏資料夾"
       >
         <div className="collection-category-dialog collection-category-manager">
           <p>此處僅用來選擇資料夾；新增、修改、排序與刪除請使用資料夾列的「管理」。</p>
           <input
-            aria-label="搜尋收藏資料夾"
+            aria-label="搜尋網站收藏資料夾"
             onChange={(event) => setFolderQuery(event.target.value)}
             placeholder="搜尋資料夾"
             value={folderQuery}
@@ -1910,7 +1909,7 @@ export function BookmarksWorkspace({
         }}
         open={folderManagerOpen}
         pending={pending}
-        title="管理收藏資料夾"
+        title="管理網站收藏資料夾"
       >
         <div className="collection-category-dialog">
           <p>
@@ -1979,7 +1978,7 @@ export function BookmarksWorkspace({
               </article>
             ))}
             {!managedFolders.length && (
-              <p className="manager-empty">尚未建立收藏資料夾。</p>
+              <p className="manager-empty">尚未建立網站收藏資料夾。</p>
             )}
           </div>
         </div>
@@ -1992,7 +1991,7 @@ export function BookmarksWorkspace({
         }}
         open={categoryManagerOpen}
         pending={pending}
-        title="修改收藏類別"
+        title="修改網站收藏類別"
       >
         <div className="collection-category-dialog">
           <p>
@@ -2070,13 +2069,13 @@ export function BookmarksWorkspace({
         onClose={() => setCategoryAddOpen(false)}
         open={categoryAddOpen}
         pending={pending}
-        title="新增收藏類別"
+        title="新增網站收藏類別"
       >
         <form
           className="collection-category-dialog"
           onSubmit={(event) => void addCategory(event)}
         >
-          <p>新增後會立即出現在收藏類別列與新增收藏的選項中。</p>
+          <p>新增後會立即出現在網站收藏類別列與新增網站收藏的選項中。</p>
           <label>
             類別名稱
             <input
@@ -2110,12 +2109,12 @@ export function BookmarksWorkspace({
         className="mobile-sheet-dialog"
         onClose={() => setCategoryMoreOpen(false)}
         open={categoryMoreOpen}
-        title="收藏類別"
+        title="網站收藏類別"
       >
         <div className="collection-category-dialog collection-category-manager">
-          <p>可快速選擇收藏類別；資料夾、鎖定與常駐清單請在管理資料夾調整。</p>
+          <p>可快速選擇網站收藏類別；資料夾、鎖定與常駐清單請在管理資料夾調整。</p>
           <input
-            aria-label="搜尋收藏類別"
+            aria-label="搜尋網站收藏類別"
             onChange={(event) => setCategoryQuery(event.target.value)}
             placeholder="搜尋類別"
             value={categoryQuery}
@@ -2206,7 +2205,7 @@ export function BookmarksWorkspace({
                   <dd>{detailItem.folder?.name ?? "未放入資料夾"}</dd>
                 </div>
                 <div>
-                  <dt>收藏設定</dt>
+                  <dt>網站收藏設定</dt>
                   <dd>
                     {[
                       detailItem.favorite && "我的最愛",
@@ -2214,7 +2213,7 @@ export function BookmarksWorkspace({
                       detailItem.archived && "封存",
                     ]
                       .filter(Boolean)
-                      .join("、") || "一般收藏"}
+                      .join("、") || "一般網站收藏"}
                   </dd>
                 </div>
               </dl>
@@ -2239,7 +2238,7 @@ export function BookmarksWorkspace({
                       className="delete-button"
                       onClick={() =>
                         setConfirmation({
-                          title: "永久刪除收藏？",
+                          title: "永久刪除網站收藏？",
                           description: `「${detailItem.title}」將無法還原。`,
                           action: () => permanentlyRemove(detailItem.id),
                         })
@@ -2293,7 +2292,7 @@ export function BookmarksWorkspace({
           role="dialog"
         >
           <form onSubmit={saveEdit}>
-            <h2 id="edit-bookmark-title">修改收藏</h2>
+            <h2 id="edit-bookmark-title">修改網站收藏</h2>
             <p className="edit-link">{editing.detail?.url}</p>
             <label>
               標題

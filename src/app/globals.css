@@ -783,7 +783,7 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
 
 /* Anime Library deliberately reuses the nearby collection navigation system.
    The data and handlers remain Anime-specific; these rules only align its
-   controls with 收藏與整理 instead of creating a competing button language. */
+   controls with 網站收藏 instead of creating a competing button language. */
 .anime-workspace .anime-tabs,
 .anime-workspace .anime-filter-scroll,
 .anime-workspace .anime-category-scroll {
@@ -1152,3 +1152,14 @@ html[data-theme="dark"] .vault-gate, html[data-theme="dark"] .vault-gate-securit
 .anime-workspace .responsive-chip-overflow .anime-category-scroll-row > .anime-category-utility.active { border-color: var(--brand); color: var(--brand); background: var(--brand-soft, #edf4ff); }
 .vault-filter-chips .vault-filter-chips-row { gap: 7px; padding: 1px 1px 4px; }
 @media (max-width: 700px) { .collection-navigation-section .responsive-chip-overflow-row > button { max-width: 108px; }.anime-workspace .responsive-chip-overflow .anime-category-scroll-row > button, .anime-workspace .anime-filter-scroll .responsive-chip-overflow .anime-category-scroll-row > button { max-width: 92px; min-height: 34px; padding-inline: 10px; font-size: .78rem; } }
+/* Creation actions own the sticky surface; submit buttons retain their color. */
+.create-form-actions { position: sticky; z-index: 6; bottom: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 18px; padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--line); }
+.create-form-actions > button { display: grid; place-items: center; min-width: 0; min-height: 44px; padding: 10px 16px; border-radius: 10px; font: inherit; font-weight: 800; }
+.create-only .bookmark-form, .create-only .file-upload-form { padding-bottom: 12px; }
+.app-main .dashboard:has(.create-only) > .dashboard-card { display: block; overflow-y: auto; padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+.vocabulary-quiz-results { overflow: visible; }
+.vocabulary-quiz-results .vocabulary-quiz-result-list { max-height: none; overflow: visible; }
+.vocabulary-quiz-results > .quiz-result-actions { position: static; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 22px; padding: 0; box-shadow: none; }
+.quiz-result-actions > button { min-width: 0; min-height: 44px; padding: 10px 8px; border-radius: 10px; font-size: .9rem; white-space: nowrap; }
+.quiz-kana-hint { color: var(--brand); }
+@media (max-width: 360px) { .vocabulary-quiz-results > .quiz-result-actions { gap: 6px; } .quiz-result-actions > button { font-size: .8rem; padding-inline: 4px; } }

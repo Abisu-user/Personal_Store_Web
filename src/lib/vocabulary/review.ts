@@ -77,18 +77,17 @@ export function calculateAdaptiveReview(card: AdaptiveCard, attempt: AdaptiveAtt
 export function adaptiveQuestionWeight(card: Pick<VocabularyCard, "totalAttempts" | "currentLevel" | "masteryLevel" | "recentResults" | "lastAnsweredAt" | "lastAnswerCorrect">, now = new Date()) {
   const attempts = Math.max(0, card.totalAttempts ?? 0);
   const level = card.currentLevel ?? card.masteryLevel ?? 0;
-  let weight = attempts === 0 ? 9 : [0, 12, 8, 4.5, 2.2, 0.22][level] ?? 4;
+  const bases = [32, 16, 8, 4, 1.5, 0.12];
+  if (attempts === 0) return bases[0];
+  const base = bases[level] ?? 4;
   const recent = (card.recentResults ?? []).slice(-5);
-  const recentWrong = recent.filter((item) => !item.correct).length;
-  weight *= 1 + recentWrong * 0.42;
-  if (recent.length >= 3 && recent.slice(-3).every((item) => !item.correct)) weight *= 1.8;
-  if (card.lastAnswerCorrect === false) weight *= 1.35;
+  const wrongRate = recent.length ? recent.filter((item) => !item.correct).length / recent.length : 0;
   const last = card.lastAnsweredAt ? new Date(card.lastAnsweredAt).getTime() : 0;
-  const daysSince = last ? Math.max(0, (now.getTime() - last) / 86_400_000) : 14;
-  // Long-unseen mastered words are still checked occasionally, without
-  // competing with weak words until roughly a month has passed.
-  weight *= 1 + Math.min(daysSince, 60) / (level === 5 ? 24 : 70);
-  return Math.max(0.05, weight);
+  const days = last && Number.isFinite(last) ? Math.max(0, (now.getTime() - last) / 86_400_000) : 0;
+  // Bounded history/forgetting boost preserves the requested ordering between
+  // levels while still prioritizing recent errors and overdue words.
+  const boost = Math.min(.8, wrongRate * .35 + (card.lastAnswerCorrect === false ? .15 : 0) + Math.min(days, 60) / 60 * .3);
+  return base * (1 + boost);
 }
 
 export function selectWeightedCards<T extends VocabularyCard>(cards: T[], count: number, now = new Date()) {

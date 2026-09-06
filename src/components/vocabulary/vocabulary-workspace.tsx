@@ -8,15 +8,15 @@ import { FlashcardReview, type LocalReview } from "@/components/vocabulary/flash
 import { VocabularyLookupPanel } from "@/components/vocabulary/vocabulary-lookup-panel";
 import { VocabularyCatalog } from "@/components/vocabulary/vocabulary-catalog";
 import type { ReviewRating, VocabularyCard, VocabularyStatus, VocabularyWorkspaceData } from "@/lib/vocabulary/types";
-import { masteryLabels, selectWeightedCards } from "@/lib/vocabulary/review";
+import { masteryLabels } from "@/lib/vocabulary/review";
 import { readClientResource, writeClientResource } from "@/lib/pwa/client-resource-cache";
 
 type Tab = "catalog" | "overview" | "lookup" | "assistant" | "review" | "decks" | "favorites" | "quiz" | "stats" | "transfer" | "settings" | "trash";
 type Draft = { id?: string; language: string; word: string; reading: string; romaji: string; primaryTranslation: string; englishDefinition: string; partOfSpeech: string; jlptLevel: string; cefrLevel: string; notes: string; languageDetails: string; tagIds: string[]; deckIds: string[]; meaningsText: string; examplesText: string; isFavorite: boolean; learningStatus: VocabularyStatus; masteryLevel: number };
-type StudyMode = "review" | "quiz";
-type StudyTimerMode = "none" | "countup" | "countdown";
-type StudyOrder = "sequential" | "random" | "jlpt";
-type StudySession = { mode: StudyMode; cards: VocabularyCard[]; timerMode: StudyTimerMode; countdownMinutes: number; direction: "native" | "reverse"; order: StudyOrder };
+import { VocabularyQuizSession } from "@/components/vocabulary/quiz-session";
+import { ambiguousHints, drawQuizCards, eligibleStudyCards, type StudyFilters, type StudyMode, type StudyOrder, type StudySession, type StudyTimerMode } from "@/lib/vocabulary/quiz-session";
+const studyCacheKey = "vocabulary:study-session";
+const setupCacheKey = "vocabulary:study-setup";
 const kanaFilters = ["あ", "い", "う", "え", "お", "か", "き", "く", "け", "こ", "さ", "し", "す", "せ", "そ", "た", "ち", "つ", "て", "と", "な", "に", "ぬ", "ね", "の", "は", "ひ", "ふ", "へ", "ほ", "ま", "み", "む", "め", "も", "や", "ゆ", "よ", "ら", "り", "る", "れ", "ろ", "わ", "を", "ん"];
 const toHiragana = (value: string) => value.replace(/[ァ-ヶ]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
 const tabs: { id: Tab; label: string }[] = [{ id: "overview", label: "單字總覽" }, { id: "catalog", label: "探索單字庫" }, { id: "lookup", label: "查字典" }, { id: "assistant", label: "AI 學習" }, { id: "review", label: "複習與測驗" }, { id: "decks", label: "單字本" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" }];
@@ -163,7 +163,28 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
   const [studyCountdownMinutes, setStudyCountdownMinutes] = useState(10);
   const [studyOrder, setStudyOrder] = useState<StudyOrder>("sequential");
   const [studyDirection, setStudyDirection] = useState<"native" | "reverse">("native");
-  const [studySession, setStudySession] = useState<StudySession | null>(null);
+  const [studySession, setStudySessionState] = useState<StudySession | null>(null);
+  const [, refreshStudyPhase] = useState(0);
+  function setStudySession(session: StudySession | null) {
+    writeClientResource(studyCacheKey, session, Infinity);
+    setStudySessionState(session);
+  }
+  useEffect(() => {
+    let active = true;
+    // Restore after hydration; a route immediately unmounted must not restore.
+    queueMicrotask(() => {
+    if (!active) return;
+    const saved = readClientResource<StudySession>(studyCacheKey);
+    if (saved) { setStudySessionState(saved); setTab("review"); return; }
+    const setup = readClientResource<{ mode: StudyMode; count: string; timerMode: StudyTimerMode; minutes: number; order: StudyOrder; direction: "native" | "reverse"; filters: StudyFilters }>(setupCacheKey);
+    if (setup) { setTab("review"); setStudySetupMode(setup.mode); setStudyCountInput(setup.count); setStudyTimerMode(setup.timerMode); setStudyCountdownMinutes(setup.minutes); setStudyOrder(setup.order); setStudyDirection(setup.direction); setLanguage(setup.filters.language); setQuery(setup.filters.query); setDeckFilter(setup.filters.deckId); setMasteryFilter(setup.filters.mastery); setKanaFilter(setup.filters.kana); }
+    });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (studySetupMode) writeClientResource(setupCacheKey, { mode: studySetupMode, count: studyCountInput, timerMode: studyTimerMode, minutes: studyCountdownMinutes, order: studyOrder, direction: studyDirection, filters: { language, query, deckId: deckFilter, mastery: masteryFilter, kana: kanaFilter } }, Infinity);
+  }, [studySetupMode, studyCountInput, studyTimerMode, studyCountdownMinutes, studyOrder, studyDirection, language, query, deckFilter, masteryFilter, kanaFilter]);
+  function closeStudySetup() { writeClientResource(setupCacheKey, null, Infinity); setStudySetupMode(null); }
   const trash = tab === "trash";
 
   useEffect(() => { const node = document.createElement("style"); node.dataset.vocabularyStyles = "true"; node.textContent = `${vocabularyCss}${vocabularyButtonCss}${vocabularyDashboardCss}${vocabularyMobileSelectionCss}${vocabularyCatalogCss}${vocabularyExamplesCss}${vocabularyDensityCss}${vocabularyCatalogCompactMobileCss}${vocabularyStudyModeCss}${vocabularyMasteryCss}${vocabularyCompactFilterCss}${vocabularyMobileDialogCss}${vocabularyWorkspaceShellCss}`; document.head.appendChild(node); return () => node.remove(); }, []);
@@ -199,7 +220,7 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
   }), [data.cards, deckFilter, kanaFilter, language, masteryFilter, query, tab]);
   const dueCards = useMemo(() => data.cards.filter((card) => card.learningStatus !== "paused" && card.nextReviewAt && new Date(card.nextReviewAt).getTime() <= Date.now()), [data.cards]);
   const quizPreferences = getQuizPreferences(data.settings.flashcardPreferences);
-  const studyCards = useMemo(() => data.cards.filter((card) => !card.deletedAt && card.learningStatus !== "paused" && !(card.currentLevel === 5 && !quizPreferences.includeMastered)).sort((a, b) => (a.nextReviewAt ? new Date(a.nextReviewAt).getTime() : Number.MAX_SAFE_INTEGER) - (b.nextReviewAt ? new Date(b.nextReviewAt).getTime() : Number.MAX_SAFE_INTEGER)), [data.cards, quizPreferences.includeMastered]);
+  const studyCards = useMemo(() => eligibleStudyCards(data.cards, { language, query, deckId: deckFilter, mastery: masteryFilter, kana: kanaFilter }, quizPreferences.includeMastered), [data.cards, language, query, deckFilter, masteryFilter, kanaFilter, quizPreferences.includeMastered]);
   const stat = useMemo(() => { const learningCards = data.cards.filter((card) => !(card.sourceKind === "catalog" && card.learningStatus === "paused")); return { total: learningCards.length, ja: learningCards.filter((card) => card.language === "ja").length, en: learningCards.filter((card) => card.language === "en").length, mastered: learningCards.filter((card) => card.currentLevel >= 5).length, learning: learningCards.filter((card) => card.learningStatus === "learning" || card.learningStatus === "reviewing").length, mastery: masteryLabels.map((_, level) => learningCards.filter((card) => card.currentLevel === level).length), reviewed: data.reviewLogs.filter((log) => day(log.reviewedAt) === day(new Date().toISOString())).length, correct: data.reviewLogs.filter((log) => day(log.reviewedAt) === day(new Date().toISOString()) && log.answerResult).length }; }, [data]);
   const recentCards = useMemo(() => [...data.cards].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3), [data.cards]);
   const streak = useMemo(() => { const days = new Set(data.reviewLogs.map((log) => new Date(log.reviewedAt).toLocaleDateString("sv-SE"))); let count = 0; const cursor = new Date(); while (days.has(cursor.toLocaleDateString("sv-SE"))) { count += 1; cursor.setDate(cursor.getDate() - 1); } return count; }, [data.reviewLogs]);
@@ -260,10 +281,14 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     if (!response.ok) throw new Error(body.error || "測驗結果暫時無法儲存，請稍後再試。");
     const updates = Array.isArray(body.cardUpdates) ? body.cardUpdates as Partial<VocabularyCard & { cardId: string }>[] : [];
     const updateById = new Map(updates.map((update) => [update.cardId!, update]));
-    setData((current) => ({ ...current, cards: current.cards.map((card) => {
+    const mergeUpdates = (current: VocabularyWorkspaceData) => ({ ...current, cards: current.cards.map((card) => {
       const update = updateById.get(card.id);
       return update ? { ...card, masteryLevel: update.masteryLevel ?? card.masteryLevel, currentLevel: update.currentLevel ?? card.currentLevel, currentIntervalDays: update.currentIntervalDays ?? card.currentIntervalDays, consecutiveCorrect: update.consecutiveCorrect ?? card.consecutiveCorrect, consecutiveWrong: update.consecutiveWrong ?? card.consecutiveWrong, learningStatus: update.learningStatus ?? card.learningStatus, reviewCount: update.reviewCount ?? card.reviewCount, totalAttempts: update.totalAttempts ?? card.totalAttempts, correctCount: update.correctCount ?? card.correctCount, wrongCount: update.wrongCount ?? card.wrongCount, correctRate: update.correctRate ?? card.correctRate, recentResults: update.recentResults ?? card.recentResults, lastAnswerCorrect: update.lastAnswerCorrect ?? card.lastAnswerCorrect, lastAnsweredAt: update.lastAnsweredAt ?? card.lastAnsweredAt, lastReviewedAt: update.lastReviewedAt ?? card.lastReviewedAt, nextReviewAt: update.nextReviewAt ?? card.nextReviewAt } : card;
-    }) }));
+    }) });
+    // Update the shared snapshot even if this workspace unmounted while saving.
+    const cached = readClientResource<VocabularyWorkspaceData>("vocabulary:standard");
+    if (cached) writeClientResource("vocabulary:standard", mergeUpdates(cached));
+    setData(mergeUpdates);
     setNotice("已儲存本次測驗結果，熟練度已更新。");
   }, []);
   function openStudySetup(mode: StudyMode) {
@@ -272,50 +297,31 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     setStudyTimerMode("none");
     setStudyCountdownMinutes(10);
     setStudyOrder("sequential");
-    setStudyDirection("native");
-  }
-  function orderedStudyCards(order: StudyOrder, source = studyCards) {
-    const next = [...source];
-    if (quizPreferences.mode === "smart") {
-      const weighted = selectWeightedCards(next, next.length);
-      if (order === "random") return weighted;
-      if (order === "sequential") return weighted;
-      return weighted.sort((a, b) => (a.jlptLevel || "ZZ").localeCompare(b.jlptLevel || "ZZ"));
-    }
-    if (order === "random") {
-      for (let index = next.length - 1; index > 0; index -= 1) { const target = Math.floor(Math.random() * (index + 1)); [next[index], next[target]] = [next[target], next[index]]; }
-      return next;
-    }
-    if (order === "jlpt") {
-      const levels: Record<string, number> = { N5: 0, N4: 1, N3: 2, N2: 3, N1: 4 };
-      return next.sort((a, b) => (levels[a.jlptLevel || ""] ?? 99) - (levels[b.jlptLevel || ""] ?? 99));
-    }
-    return next;
+    setStudyDirection(mode === "quiz" ? "reverse" : "native");
   }
   function startStudySession() {
     if (!studySetupMode || studyCards.length < 5) return;
     const rawCount = Number.parseInt(studyCountInput, 10);
     const count = Number.isFinite(rawCount) ? Math.min(Math.max(5, rawCount), studyCards.length) : Math.min(10, studyCards.length);
     setStudyCountInput(String(count));
-    setStudySession({ mode: studySetupMode, cards: orderedStudyCards(studyOrder).slice(0, count), timerMode: studyTimerMode, countdownMinutes: studyCountdownMinutes, direction: studyDirection, order: studyOrder });
-    setStudySetupMode(null);
+    const filters = { language, query, deckId: deckFilter, mastery: masteryFilter, kana: kanaFilter };
+    setStudySession({ id: crypto.randomUUID(), mode: studySetupMode, cards: drawQuizCards(studyCards, count, quizPreferences.mode, studyOrder), timerMode: studyTimerMode, countdownMinutes: studyCountdownMinutes, direction: studyDirection, order: studyOrder, filters, count, quizMode: quizPreferences.mode, includeMastered: quizPreferences.includeMastered, hints: ambiguousHints(studyCards), phase: "testing", elapsed: 0 });
+    closeStudySetup();
   }
   function continueQuizSession(previous: StudySession) {
-    const answeredIds = new Set(previous.cards.map((card) => card.id));
-    const remainingCards = studyCards.filter((card) => !answeredIds.has(card.id));
-    if (remainingCards.length < 5) {
-      setStudySession(null);
-      setNotice("沒有至少 5 個尚未出現的單字可繼續測驗，請重新設定題數或範圍。");
-      openStudySetup("quiz");
-      return;
-    }
-    const count = Math.min(previous.cards.length, remainingCards.length);
-    setStudySession({ ...previous, cards: orderedStudyCards(previous.order, remainingCards).slice(0, count) });
+    const pool = eligibleStudyCards((readClientResource<VocabularyWorkspaceData>("vocabulary:standard") || data).cards, previous.filters, previous.includeMastered);
+    if (pool.length < 5) { setError("目前符合原設定的單字不足 5 個，請按「重新設定」調整範圍。"); return; }
+    setStudySession({ ...previous, id: crypto.randomUUID(), cards: drawQuizCards(pool, previous.count, previous.quizMode, previous.order, previous.cards), hints: ambiguousHints(pool), phase: "testing", elapsed: 0, progress: undefined, savePromise: undefined });
+  }
+  function reconfigureQuiz(previous: StudySession) {
+    setStudySession(null);
+    setLanguage(previous.filters.language); setQuery(previous.filters.query); setDeckFilter(previous.filters.deckId); setMasteryFilter(previous.filters.mastery); setKanaFilter(previous.filters.kana);
+    setStudySetupMode("quiz"); setStudyCountInput(String(previous.count)); setStudyTimerMode(previous.timerMode); setStudyCountdownMinutes(previous.countdownMinutes); setStudyOrder(previous.order); setStudyDirection(previous.direction);
   }
   async function createTaxonomy(type: "tag" | "deck") { const name = type === "tag" ? tagName : deckName; if (!name.trim()) return; const result = await request("/api/vocabulary/taxonomy", { method: "POST", body: JSON.stringify(type === "tag" ? { type, name, color: "#2f67c7" } : { type, name }) }); if (result) { type === "tag" ? setTagName("") : setDeckName(""); await load(false); } }
   async function saveSettings(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const flashcardPreferences = { ...data.settings.flashcardPreferences, quizMode: form.get("quizMode") === "equal" ? "equal" : "smart", includeMasteredInQuiz: form.get("includeMasteredInQuiz") === "on" }; const result = await request("/api/vocabulary/taxonomy", { method: "POST", body: JSON.stringify({ type: "settings", dailyNewGoal: Number(form.get("dailyNewGoal")), dailyReviewGoal: Number(form.get("dailyReviewGoal")), flashcardPreferences }) }); if (result) { await load(false); setNotice("已儲存測驗設定。"); } }
   function setField(key: keyof Draft, value: Draft[keyof Draft]) { setDraft((current) => current ? { ...current, [key]: value } : current); }
-  function activateTab(next: Tab, preserveFilters = false) { setTab(next); setChosen(new Set()); setSelectionMode(false); if (!preserveFilters) { setQuery(""); setDeckFilter(null); setMasteryFilter(null); setKanaFilter(null); } setMoreOpen(false); if (next === "trash") void load(true).catch((cause) => setError(cause instanceof Error ? cause.message : "垃圾桶資料暫時無法讀取。")); else if (dataMode === "trash") void load(false).catch((cause) => setError(cause instanceof Error ? cause.message : "單字資料暫時無法讀取。")); }
+  function activateTab(next: Tab, preserveFilters = false) { setTab(next); setChosen(new Set()); setSelectionMode(false); if (!preserveFilters && next !== "review") { setQuery(""); setDeckFilter(null); setMasteryFilter(null); setKanaFilter(null); } setMoreOpen(false); if (next === "trash") void load(true).catch((cause) => setError(cause instanceof Error ? cause.message : "垃圾桶資料暫時無法讀取。")); else if (dataMode === "trash") void load(false).catch((cause) => setError(cause instanceof Error ? cause.message : "單字資料暫時無法讀取。")); }
   function toggleChoice(id: string) { setChosen((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
   function toggleBatchTag(id: string) { setBatchTagIds((current) => { const next = new Set(current); next.has(id) ? next.delete(id) : next.add(id); return next; }); }
   async function toggleFavorite(card: VocabularyCard) { const result = await request("/api/vocabulary", { method: "PUT", body: JSON.stringify({ ...fromCard(card), isFavorite: !card.isFavorite, meanings: card.meanings, examples: card.examples, languageDetails: card.languageDetails }) }); if (result) await load(false); }
@@ -333,7 +339,7 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
     {tab === "catalog" && <VocabularyCatalog onChanged={() => load(false)} />}
     {tab === "lookup" && <VocabularyLookupPanel cards={data.cards} mode="lookup" onAdd={(entry) => setDraft({ ...blankDraft(), ...entry })} />}
     {tab === "assistant" && <VocabularyLookupPanel cards={data.cards} mode="assistant" onAdd={(entry) => setDraft({ ...blankDraft(), ...entry })} />}
-    {tab === "review" && (studySession ? <section className="vocabulary-study-session"><div className="vocabulary-study-session-toolbar"><div><p className="eyebrow">{studySession.mode === "review" ? "REVIEW SESSION" : "QUIZ SESSION"}</p><h2>{studySession.mode === "review" ? "本次複習" : "本次測驗"} · {studySession.cards.length} 個單字</h2></div><button className="secondary-button compact" onClick={() => setStudySession(null)} type="button">放棄本次</button></div><StudySessionTimer countdownMinutes={studySession.countdownMinutes} mode={studySession.timerMode} onElapsed={() => { setNotice("時間到，本次練習已結束，尚未儲存的結果不會寫入。"); setStudySession(null); }} />{studySession.mode === "review" ? <FlashcardReview cards={studySession.cards} direction={studySession.direction} onComplete={saveStudyReviews} pending={pending} /> : <VocabularyQuizSession cards={studySession.cards} onComplete={saveQuizResults} onContinue={() => continueQuizSession(studySession)} onRestart={() => { setStudySession(null); openStudySetup("quiz"); }} />}</section> : <StudyModeHome availableCount={studyCards.length} dueCount={dueCards.length} onChoose={openStudySetup} />)}
+    {tab === "review" && (studySession ? <section className="vocabulary-study-session"><div className="vocabulary-study-session-toolbar"><div><p className="eyebrow">{studySession.mode === "review" ? "REVIEW SESSION" : "QUIZ SESSION"}</p><h2>{studySession.mode === "review" ? "本次複習" : "本次測驗"} · {studySession.cards.length} 個單字</h2></div>{studySession.phase === "testing" && <button className="secondary-button compact" onClick={() => setStudySession(null)} type="button">放棄本次</button>}</div>{studySession.phase === "testing" && <StudySessionTimer key={studySession.id} session={studySession} countdownMinutes={studySession.countdownMinutes} mode={studySession.timerMode} onElapsed={() => { if (studySession.phase !== "testing") return; setNotice("時間到，本次練習已結束，尚未儲存的結果不會寫入。"); setStudySession(null); }} />}{studySession.mode === "review" ? <FlashcardReview key={studySession.id} cards={studySession.cards} direction={studySession.direction} onComplete={saveStudyReviews} pending={pending} /> : <VocabularyQuizSession key={studySession.id} session={studySession} onComplete={saveQuizResults} onPhase={() => refreshStudyPhase((value) => value + 1)} onHome={() => setStudySession(null)} onContinue={() => continueQuizSession(studySession)} onRestart={() => reconfigureQuiz(studySession)} />}</section> : <StudyModeHome availableCount={studyCards.length} dueCount={dueCards.length} onChoose={openStudySetup} />)}
     {tab === "decks" && <section className="vocabulary-taxonomy"><div><p className="eyebrow">WORD BOOKS</p><h2>單字本</h2><form onSubmit={(event) => { event.preventDefault(); void createTaxonomy("deck"); }}><input onChange={(event) => setDeckName(event.target.value)} placeholder="例如：JLPT N3、程式英文" value={deckName} /><button className="button" type="submit">新增單字本</button></form><div className="vocabulary-chip-list">{data.decks.map((deck) => <button key={deck.id} onClick={() => { setDeckFilter(deck.id); activateTab("overview", true); }} type="button"><strong>{deck.name}</strong><span>{deck.cardIds.length} 個單字</span></button>)}{!data.decks.length && <p>還沒有單字本。</p>}</div></div><div><p className="eyebrow">TAGS</p><h2>標籤</h2><form onSubmit={(event) => { event.preventDefault(); void createTaxonomy("tag"); }}><input onChange={(event) => setTagName(event.target.value)} placeholder="例如：動漫、TOEIC" value={tagName} /><button className="button" type="submit">新增標籤</button></form><div className="vocabulary-tag-list">{data.tags.map((tag) => <span key={tag.id} style={{ borderColor: tag.color || undefined }}>{tag.name}</span>)}{!data.tags.length && <p>還沒有標籤。</p>}</div></div></section>}
     {tab === "stats" && <section className="vocabulary-stats"><div className="vocabulary-stat-grid">{[["總單字", stat.total], ["日文", stat.ja], ["英文", stat.en], ["今日複習", stat.reviewed], ["今日答對", stat.correct], ["已掌握", stat.mastered]].map(([label, value]) => <div key={String(label)}><strong>{value}</strong><span>{label}</span></div>)}</div><section className="vocabulary-chart"><h2>熟練度分布</h2>{[0, 1, 2, 3, 4, 5].map((level) => { const count = data.cards.filter((card) => card.currentLevel === level).length; return <div key={level}><span>{masteryLabels[level]}</span><i style={{ width: `${stat.total ? (count / stat.total) * 100 : 0}%` }} /><b>{count}</b></div>; })}</section></section>}
     {tab === "transfer" && <Transfer request={request} load={load} />}
@@ -343,7 +349,7 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
 
     <ModalDialog className="vocabulary-more-dialog" onClose={() => setMoreOpen(false)} open={moreOpen} title="更多功能"> <div className="vocabulary-more-list">{moreTabs.map((item) => <button key={item.id} onClick={() => activateTab(item.id)} type="button"><span>{item.label}</span>{item.id === "trash" ? <small>已刪除資料</small> : null}</button>)}</div></ModalDialog>
     <ModalDialog className="vocabulary-more-dialog" onClose={() => setFilterOpen(false)} open={filterOpen} title="篩選單字"><div className="vocabulary-filter-list"><section className="vocabulary-filter-section"><h3>語言</h3><div className="vocabulary-filter-chips">{[["all", "所有語言"], ["ja", "日文"], ["en", "英文"]].map(([value, label]) => <button className={language === value ? "active" : ""} key={value} onClick={() => setLanguage(value)} type="button">{label}</button>)}</div></section><section className="vocabulary-filter-section"><h3>熟練度</h3><div className="vocabulary-filter-chips"><button className={masteryFilter === null ? "active" : ""} onClick={() => setMasteryFilter(null)} type="button">全部</button>{masteryLabels.map((label, level) => <button className={masteryFilter === level ? "active" : ""} key={label} onClick={() => setMasteryFilter(level)} type="button">{label}</button>)}</div></section><section className="vocabulary-filter-section"><h3>五十音</h3><div className="vocabulary-filter-chips vocabulary-kana-filter-chips"><button className={!kanaFilter ? "active" : ""} onClick={() => setKanaFilter(null)} type="button">全部</button>{kanaFilters.map((kana) => <button className={kanaFilter === kana ? "active" : ""} key={kana} onClick={() => setKanaFilter(kana)} type="button">{kana}</button>)}</div></section><section className="vocabulary-filter-section"><h3>單字本</h3><p>選擇一本單字本以縮小清單範圍。</p><div className="vocabulary-filter-chips"><button className={!deckFilter ? "active" : ""} onClick={() => setDeckFilter(null)} type="button">全部單字本</button>{data.decks.map((deck) => <button className={deckFilter === deck.id ? "active" : ""} key={deck.id} onClick={() => setDeckFilter(deck.id)} type="button">{deck.name}</button>)}</div></section><div className="dialog-actions"><button className="secondary-button" onClick={() => { setLanguage("all"); setDeckFilter(null); setMasteryFilter(null); setKanaFilter(null); }} type="button">重設</button><button className="button" onClick={() => setFilterOpen(false)} type="button">套用篩選</button></div></div></ModalDialog>
-    <ModalDialog className="vocabulary-study-setup-dialog" onClose={() => setStudySetupMode(null)} open={Boolean(studySetupMode)} title={studySetupMode === "review" ? "設定複習模式" : "設定測驗模式"}>{studySetupMode && <form className="vocabulary-study-setup" onSubmit={(event) => { event.preventDefault(); startStudySession(); }}><p>本次會從 {studyCards.length} 個符合設定的單字中建立練習清單。</p>{studyCards.length < 5 ? <p className="notice error">目前只有 {studyCards.length} 個可練習的單字；至少需要 5 個才能開始。</p> : <><label>本次單字數<input aria-describedby="study-count-hint" inputMode="numeric" onBlur={() => { const value = Number.parseInt(studyCountInput, 10); setStudyCountInput(String(Number.isFinite(value) ? Math.min(Math.max(5, value), studyCards.length) : Math.min(10, studyCards.length))); }} onChange={(event) => setStudyCountInput(event.target.value.replace(/\D/g, ""))} pattern="[0-9]*" type="text" value={studyCountInput} /><small id="study-count-hint">最少 5 個，最多 {studyCards.length} 個。</small></label>{studySetupMode === "review" && <fieldset><legend>顯示方向</legend><div className="vocabulary-filter-chips"><button className={studyDirection === "native" ? "active" : ""} onClick={() => setStudyDirection("native")} type="button">日文 → 中文</button><button className={studyDirection === "reverse" ? "active" : ""} onClick={() => setStudyDirection("reverse")} type="button">中文 → 日文</button></div></fieldset>}<fieldset><legend>計時方式</legend><div className="vocabulary-filter-chips">{[["none", "不計時"], ["countup", "開始計時"], ["countdown", "倒數計時"]].map(([value, label]) => <button className={studyTimerMode === value ? "active" : ""} key={value} onClick={() => setStudyTimerMode(value as StudyTimerMode)} type="button">{label}</button>)}</div></fieldset>{studyTimerMode === "countdown" && <label>倒數分鐘<input max="180" min="1" onChange={(event) => setStudyCountdownMinutes(Math.min(180, Math.max(1, Number(event.target.value) || 1)))} type="number" value={studyCountdownMinutes} /></label>}<fieldset><legend>出題順序</legend><div className="vocabulary-filter-chips">{[["sequential", "依複習順序"], ["random", "打亂隨機"], ["jlpt", "依 JLPT N5 → N1"]].map(([value, label]) => <button className={studyOrder === value ? "active" : ""} key={value} onClick={() => setStudyOrder(value as StudyOrder)} type="button">{label}</button>)}</div></fieldset></>}<div className="dialog-actions"><button className="button" disabled={studyCards.length < 5} type="submit">開始{studySetupMode === "review" ? "複習" : "測驗"}</button><button className="secondary-button" onClick={() => setStudySetupMode(null)} type="button">取消</button></div></form>}</ModalDialog>
+    <ModalDialog className="vocabulary-study-setup-dialog" onClose={closeStudySetup} open={Boolean(studySetupMode)} title={studySetupMode === "review" ? "設定複習模式" : "設定測驗模式"}>{studySetupMode && <form className="vocabulary-study-setup" onSubmit={(event) => { event.preventDefault(); startStudySession(); }}><p>本次會從 {studyCards.length} 個符合設定的單字中建立練習清單。</p>{studyCards.length < 5 ? <p className="notice error">目前只有 {studyCards.length} 個可練習的單字；至少需要 5 個才能開始。</p> : <><label>本次單字數<input aria-describedby="study-count-hint" inputMode="numeric" onBlur={() => { const value = Number.parseInt(studyCountInput, 10); setStudyCountInput(String(Number.isFinite(value) ? Math.min(Math.max(5, value), studyCards.length) : Math.min(10, studyCards.length))); }} onChange={(event) => setStudyCountInput(event.target.value.replace(/\D/g, ""))} pattern="[0-9]*" type="text" value={studyCountInput} /><small id="study-count-hint">最少 5 個，最多 {studyCards.length} 個。</small></label>{<fieldset><legend>顯示方向</legend><div className="vocabulary-filter-chips"><button className={studyDirection === "native" ? "active" : ""} onClick={() => setStudyDirection("native")} type="button">日文 → 中文</button><button className={studyDirection === "reverse" ? "active" : ""} onClick={() => setStudyDirection("reverse")} type="button">中文 → 日文</button></div></fieldset>}<fieldset><legend>計時方式</legend><div className="vocabulary-filter-chips">{[["none", "不計時"], ["countup", "開始計時"], ["countdown", "倒數計時"]].map(([value, label]) => <button className={studyTimerMode === value ? "active" : ""} key={value} onClick={() => setStudyTimerMode(value as StudyTimerMode)} type="button">{label}</button>)}</div></fieldset>{studyTimerMode === "countdown" && <label>倒數分鐘<input max="180" min="1" onChange={(event) => setStudyCountdownMinutes(Math.min(180, Math.max(1, Number(event.target.value) || 1)))} type="number" value={studyCountdownMinutes} /></label>}<fieldset><legend>出題順序</legend><div className="vocabulary-filter-chips">{[["sequential", "依複習順序"], ["random", "打亂隨機"], ["jlpt", "依 JLPT N5 → N1"]].map(([value, label]) => <button className={studyOrder === value ? "active" : ""} key={value} onClick={() => setStudyOrder(value as StudyOrder)} type="button">{label}</button>)}</div></fieldset></>}<div className="dialog-actions"><button className="button" disabled={studyCards.length < 5} type="submit">開始{studySetupMode === "review" ? "複習" : "測驗"}</button><button className="secondary-button" onClick={closeStudySetup} type="button">取消</button></div></form>}</ModalDialog>
     <ModalDialog className="vocabulary-more-dialog" onClose={() => setOrganizeOpen(false)} open={organizeOpen} pending={pending} title={`整理 ${selectedCount} 筆單字`}><div className="vocabulary-filter-list"><section className="vocabulary-filter-section"><h3>移至單字本</h3><p>每個單字會保留在一個指定單字本；選擇「不變更」不會改動既有單字本。</p><div className="vocabulary-filter-chips"><button className={batchDeckId === undefined ? "active" : ""} onClick={() => setBatchDeckId(undefined)} type="button">不變更</button><button className={batchDeckId === null ? "active" : ""} onClick={() => setBatchDeckId(null)} type="button">移出單字本</button>{data.decks.map((deck) => <button className={batchDeckId === deck.id ? "active" : ""} key={deck.id} onClick={() => setBatchDeckId(deck.id)} type="button">{deck.name}</button>)}</div></section><section className="vocabulary-filter-section"><h3>加入標籤</h3><p>可複選；只會新增標籤，不會移除既有標籤。</p><div className="vocabulary-filter-chips">{data.tags.map((tag) => <button className={batchTagIds.has(tag.id) ? "active" : ""} key={tag.id} onClick={() => toggleBatchTag(tag.id)} type="button">{batchTagIds.has(tag.id) ? "✓ " : ""}{tag.name}</button>)}{!data.tags.length && <p>尚未建立標籤。</p>}</div></section><div className="dialog-actions"><button className="button" disabled={pending} onClick={() => void organizeSelected()} type="button">套用整理</button><button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(false)} type="button">取消</button></div></div></ModalDialog>
     <ModalDialog onClose={() => setError(null)} open={Boolean(error)} title="操作未完成"><div className="vocabulary-detail"><p className="notice error" role="alert">{error}</p><div className="dialog-actions"><button className="button" onClick={() => setError(null)} type="button">知道了</button></div></div></ModalDialog>
     <ModalDialog onClose={() => setDraft(null)} open={Boolean(draft)} pending={pending} title={draft?.id ? "修改單字" : "新增單字"}>{draft && <Editor data={data} draft={draft} pending={pending} setField={setField} onCancel={() => setDraft(null)} onSave={save} />}</ModalDialog>
@@ -353,18 +359,18 @@ export function VocabularyWorkspace({ initialData }: { initialData?: VocabularyW
 }
 
 function StudyModeHome({ availableCount, dueCount, onChoose }: { availableCount: number; dueCount: number; onChoose: (mode: StudyMode) => void }) {
-  return <section className="vocabulary-study-home"><header><p className="eyebrow">STUDY SPACE</p><h2>今天想怎麼練習？</h2><p>先選擇模式，再設定本次單字數、計時與出題順序。</p></header><div className="vocabulary-study-mode-grid"><button className="vocabulary-study-mode-card" onClick={() => onChoose("review")} type="button"><span>◎</span><strong>複習模式</strong><p>翻開單字卡、查看答案，並以答對或答錯讓系統自動安排下一次複習。</p><small>目前 {dueCount} 個待複習</small></button><button className="vocabulary-study-mode-card" onClick={() => onChoose("quiz")} type="button"><span>✦</span><strong>測驗模式</strong><p>依中文提示輸入答案；答題表現會自動更新熟練度。</p><small>{availableCount} 個符合設定的單字可選</small></button></div><p className="vocabulary-study-hint">每次至少選擇 5 個單字；智慧模式會優先抽出答錯較多、近期表現不佳或久未複習的單字。</p></section>;
+  return <section className="vocabulary-study-home"><header><p className="eyebrow">STUDY SPACE</p><h2>今天想怎麼練習？</h2><p>先選擇模式，再設定本次單字數、計時與出題順序。</p></header><div className="vocabulary-study-mode-grid"><button className="vocabulary-study-mode-card" onClick={() => onChoose("review")} type="button"><span>◎</span><strong>複習模式</strong><p>翻開單字卡、查看答案，並以答對或答錯讓系統自動安排下一次複習。</p><small>目前 {dueCount} 個待複習</small></button><button className="vocabulary-study-mode-card" onClick={() => onChoose("quiz")} type="button"><span>✦</span><strong>測驗模式</strong><p>可選擇單字或中文提示；答題表現會自動更新熟練度。</p><small>{availableCount} 個符合設定的單字可選</small></button></div><p className="vocabulary-study-hint">每次至少選擇 5 個單字；智慧模式優先抽出尚未測驗與不熟的單字，並參考近期表現與複習時間。</p></section>;
 }
 
-function StudySessionTimer({ mode, countdownMinutes, onElapsed }: { mode: StudyTimerMode; countdownMinutes: number; onElapsed: () => void }) {
-  const [elapsed, setElapsed] = useState(0);
+function StudySessionTimer({ session, mode, countdownMinutes, onElapsed }: { session: StudySession; mode: StudyTimerMode; countdownMinutes: number; onElapsed: () => void }) {
+  const [elapsed, setElapsed] = useState(session.elapsed);
   const completed = useRef(false);
-  useEffect(() => { setElapsed(0); completed.current = false; }, [mode, countdownMinutes]);
+  useEffect(() => { completed.current = false; }, [session.id]);
   useEffect(() => {
     if (mode === "none") return;
     const maximum = countdownMinutes * 60;
     const timer = window.setInterval(() => setElapsed((current) => {
-      const next = current + 1;
+      const next = current + 1; session.elapsed = next;
       if (mode === "countdown" && next >= maximum) {
         if (!completed.current) { completed.current = true; window.setTimeout(onElapsed, 0); }
         return maximum;
@@ -378,33 +384,6 @@ function StudySessionTimer({ mode, countdownMinutes, onElapsed }: { mode: StudyT
   const minutes = Math.floor(total / 60).toString().padStart(2, "0");
   const seconds = (total % 60).toString().padStart(2, "0");
   return <p className="vocabulary-study-timer" aria-live="polite">{mode === "countdown" ? "剩餘時間" : "已練習"} <strong>{minutes}:{seconds}</strong></p>;
-}
-
-function VocabularyQuizSession({ cards, onComplete, onContinue, onRestart }: { cards: VocabularyCard[]; onComplete: (reviews: LocalReview[]) => Promise<void>; onContinue: () => void; onRestart: () => void }) {
-  const [index, setIndex] = useState(0); const [answer, setAnswer] = useState(""); const [checked, setChecked] = useState<boolean | null>(null); const [skipped, setSkipped] = useState(false); const [results, setResults] = useState<{ card: VocabularyCard; correct: boolean; durationMs: number; occurrenceIndex: number }[]>([]); const [startedAt, setStartedAt] = useState(() => Date.now()); const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle"); const [saveError, setSaveError] = useState("");
-  const onCompleteRef = useRef(onComplete);
-  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
-  const card = cards[index];
-  const normalize = (value: string) => toHiragana(value).replace(/[\s・ー\-]/g, "").toLocaleLowerCase();
-  const expectedAnswers = (item: VocabularyCard) => [item.word, item.reading || "", item.kana || ""].map(normalize).filter(Boolean);
-  const next = (correct: boolean) => { if (!card) return; setResults((current) => [...current, { card, correct, durationMs: Date.now() - startedAt, occurrenceIndex: index + 1 }]); setIndex((value) => value + 1); setAnswer(""); setChecked(null); setSkipped(false); setStartedAt(Date.now()); };
-  const reviews = useMemo(() => results.map((item) => ({ cardId: item.card.id, answerResult: item.correct, durationMs: item.durationMs, occurrenceIndex: item.occurrenceIndex, mode: "quiz" as const })), [results]);
-  const completed = index >= cards.length && results.length === cards.length;
-  useEffect(() => {
-    if (!completed || saveState !== "idle") return;
-    setSaveState("saving");
-    void onCompleteRef.current(reviews).then(() => { setSaveState("saved"); }).catch((cause) => { setSaveError(cause instanceof Error ? cause.message : "測驗結果暫時無法儲存，請稍後再試。"); setSaveState("error"); });
-  }, [completed, reviews, saveState]);
-  if (!card) {
-    if (saveState !== "saved") return <section aria-live="polite" className="vocabulary-quiz vocabulary-quiz-saving"><header><p className="eyebrow">SAVING QUIZ RESULT</p><h2>{saveState === "error" ? "測驗結果尚未儲存" : "正在儲存測驗結果"}</h2><p>{saveState === "error" ? saveError : "正在更新答題紀錄與熟練度，完成後會顯示最終結果。"}</p></header>{saveState === "error" ? <button className="button" onClick={() => { setSaveError(""); setSaveState("idle"); }} type="button">重新儲存</button> : <div className="vocabulary-quiz-save-progress"><i aria-hidden="true" /><span>儲存資料中…</span></div>}</section>;
-    const correctCount = results.filter((item) => item.correct).length;
-    return <section className="vocabulary-quiz vocabulary-quiz-results"><header><p className="eyebrow">QUIZ RESULT</p><h2>測驗結果</h2><p>共 {results.length} 題 · <b className="quiz-correct">答對 {correctCount} 題</b> · <b className="quiz-wrong">答錯 {results.length - correctCount} 題</b> · 正確率 {results.length ? Math.round(correctCount / results.length * 100) : 0}%</p></header><p className="notice success" role="status">已儲存本次測驗結果，熟練度已更新。</p><div className="vocabulary-quiz-result-list">{results.map((item, resultIndex) => <article className={item.correct ? "correct" : "wrong"} key={`${item.card.id}-${resultIndex}`}><div><strong>{resultIndex + 1}. {item.card.word}</strong><span>{item.card.reading || item.card.kana || ""} · {item.card.primaryTranslation || item.card.meanings[0]?.meaning || ""}</span></div><b>{item.correct ? "答對" : "答錯"}</b></article>)}</div><div className="review-outcome-actions"><button className="secondary-button" onClick={onRestart} type="button">重新開始</button><button className="button" onClick={onContinue} type="button">繼續</button></div></section>;
-  }
-  const answerCorrect = checked === true;
-  const correctAnswer = `${card.word}${card.reading || card.kana ? `（${card.reading || card.kana}）` : ""}`;
-  function submit() { setSkipped(false); setChecked(expectedAnswers(card).includes(normalize(answer))); }
-  function skip() { setSkipped(true); setChecked(false); }
-  return <section className="vocabulary-quiz"><header><p className="eyebrow">QUIZ</p><span>{index + 1} ／ {cards.length}</span></header><div className="vocabulary-quiz-card"><p>根據提示寫出正確的{card.language === "ja" ? "日文" : "英文"}單字。</p><h2>{card.primaryTranslation || card.meanings[0]?.meaning || "請猜這個單字"}</h2><label>你的答案<input aria-label="你的答案" autoComplete="off" onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && checked === null) submit(); }} placeholder="輸入答案" value={answer} /></label>{checked === null ? <><button className="button" disabled={!answer.trim()} onClick={submit} type="button">確認答案</button><button className="secondary-button compact" onClick={skip} type="button">不會，跳過這個單字</button></> : <><p className={`notice ${answerCorrect ? "success" : "error"}`} role="status">{answerCorrect ? "答對了！做得很好。" : <>{skipped ? "已跳過。" : "答錯了。"}正確答案是「{correctAnswer}」。</>}</p><button className="button" onClick={() => next(answerCorrect)} type="button">下一題</button></>}</div></section>;
 }
 
 function VocabularyCardRow({ card, onFavorite, onOpen, onToggle, selected, selectionMode }: { card: VocabularyCard; onFavorite: () => void; onOpen: () => void; onToggle: () => void; selected: boolean; selectionMode: boolean }) {

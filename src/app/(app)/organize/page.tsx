@@ -5,7 +5,7 @@ import { requireUser } from "@/lib/security/require-user";
 export const dynamic = "force-dynamic";
 
 const destinations = [
-  ["/bookmarks", "收藏與整理", "管理收藏的資料夾與類別"],
+  ["/bookmarks", "網站收藏", "管理收藏的資料夾與類別"],
   ["/notes", "筆記", "管理筆記的資料夾與類別"],
   ["/code", "程式碼", "管理程式碼的資料夾與類別"],
   ["/files", "檔案", "管理檔案的資料夾與類別"],

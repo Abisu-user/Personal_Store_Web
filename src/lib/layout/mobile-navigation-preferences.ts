@@ -1,5 +1,5 @@
 export const mobileNavigationDestinations = [
-  { id: "bookmarks", href: "/bookmarks", icon: "◇", label: "收藏" },
+  { id: "bookmarks", href: "/bookmarks", icon: "◇", label: "網站收藏" },
   { id: "notes", href: "/notes", icon: "□", label: "筆記" },
   { id: "code", href: "/code", icon: "⌘", label: "程式碼" },
   { id: "files", href: "/files", icon: "▣", label: "檔案" },

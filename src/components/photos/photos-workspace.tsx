@@ -1,4 +1,5 @@
 "use client";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -414,9 +415,7 @@ export function PhotosWorkspace({
         </select>
       </div>
       <CollectionSettings folders={data.folders} />
-      <button className="button" disabled={pending} type="submit">
-        {pending ? "上傳中…" : "儲存照片"}
-      </button>
+      <CreateFormActions pending={pending} returnHref="/photos" label="儲存" pendingLabel="上傳中…" />
     </form>
   );
   if (createMode)
