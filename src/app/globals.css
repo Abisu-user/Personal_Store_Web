@@ -1185,3 +1185,17 @@ html[data-theme="dark"] .vault-gate, html[data-theme="dark"] .vault-gate-securit
 .create-success-toast button { background: transparent; border: 0; color: inherit; }
 @media (max-width:700px) { .modal-dialog.create-item-dialog { width: calc(100vw - 24px) !important; max-height: calc(var(--mobile-modal-viewport-height,100dvh) - max(24px,env(safe-area-inset-top)) - env(safe-area-inset-bottom)) !important; border-radius: 18px !important; } .create-item-dialog > .modal-dialog-header { padding: 16px; } .create-item-dialog > .modal-dialog-content { padding: 16px !important; } .create-item-dialog > .create-item-footer { padding: 12px 16px max(12px,env(safe-area-inset-bottom)); } .create-item-dialog .create-form-actions > button { padding: 8px 14px !important; } }
 @media (max-width: 360px) { .vocabulary-quiz-results > .quiz-result-actions { gap: 6px; } .quiz-result-actions > button { font-size: .8rem; padding-inline: 4px; } }
+
+/* Email OTP uses the existing authentication card and button system. */
+.otp-form { margin-top: 22px; }
+.otp-destination, .otp-meta, .auth-privacy-note { margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.55; }
+.otp-destination strong { color: var(--ink); overflow-wrap: anywhere; }
+.auth-privacy-note { text-align: center; }
+.auth-card .otp-input { min-height: 58px; padding: 10px 14px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 1.7rem; font-weight: 850; letter-spacing: .42em; text-align: center; }
+.otp-meta { margin-top: -8px; text-align: center; }
+.otp-expired { display: grid; gap: 14px; margin-top: 22px; }
+.otp-expired .button { width: 100%; }
+@media (max-width: 520px) {
+  .otp-form { margin-top: 18px; }
+  .auth-card .otp-input { min-height: 56px; padding-left: calc(14px + .42em); font-size: 1.55rem; }
+}

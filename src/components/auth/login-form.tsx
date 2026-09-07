@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { PasswordInput } from "@/components/auth/password-input";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 
-export function LoginForm() {
+export function LoginForm({ passwordReset = false }: { passwordReset?: boolean }) {
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +53,7 @@ export function LoginForm() {
 
   return (
     <form className="form" onSubmit={onSubmit}>
+      {passwordReset && <p className="notice success" role="status">密碼已更新，請使用新密碼登入。</p>}
       {progress && <OperationStatus label={progress} />}
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="field"><label htmlFor="email">Email</label><input autoComplete="email" id="email" name="email" required type="email" /></div>

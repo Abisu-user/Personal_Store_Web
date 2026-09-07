@@ -1,16 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { passwordError, passwordHint } from "@/components/auth/password-policy";
 import { PasswordInput } from "@/components/auth/password-input";
 
 export function SignUpForm() {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -19,20 +18,24 @@ export function SignUpForm() {
     const validationError = passwordError(password);
     if (validationError) { setError(validationError); return; }
     setPending(true);
-    const { error: signUpError } = await createClient().auth.signUp({
-      email: String(form.get("email") ?? "").trim(),
-      password,
-      options: {
-        data: { display_name: String(form.get("displayName") ?? "").trim() },
-        emailRedirectTo: `${window.location.origin}/api/auth/callback?next=/verify-email`,
-      },
+    const response = await fetch("/api/auth/otp/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        purpose: "email_verification",
+        email: String(form.get("email") ?? "").trim(),
+        password,
+        displayName: String(form.get("displayName") ?? "").trim(),
+      }),
     });
+    const data = await response.json().catch(() => ({}));
     setPending(false);
-    if (signUpError) { setError("目前無法建立帳號，請稍後再試。若此 Email 已註冊，請改用登入或重設密碼。"); return; }
-    setSuccess(true);
+    if (!response.ok) {
+      setError(data.error ?? "目前無法建立帳號，請稍後再試。若此 Email 已註冊，請改用登入或重設密碼。");
+      return;
+    }
+    router.push("/verify-email?purpose=email_verification");
   }
-
-  if (success) return <p className="notice success" role="status">驗證信已寄出。請開啟 Email 內的連結，完成驗證後再登入。</p>;
 
   return (
     <form className="form" onSubmit={onSubmit}>
