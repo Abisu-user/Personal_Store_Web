@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export type AppLockPinStatus = {
   configured: boolean;
   mode: "pin4" | "pin6" | null;
+  autoLockEnabled: boolean;
 };
 
 /**
@@ -14,17 +15,17 @@ export type AppLockPinStatus = {
  */
 export async function getAppLockPinStatus(ownerId: string): Promise<AppLockPinStatus | null> {
   try {
-    const { data, error } = await createAdminClient()
-      .from("app_locks")
-      .select("pin_mode")
-      .eq("owner_id", ownerId)
-      .maybeSingle();
-    if (error) throw error;
+    const admin = createAdminClient();
+    const [{ data, error }, { data: settings, error: settingsError }] = await Promise.all([
+      admin.from("app_locks").select("pin_mode").eq("owner_id", ownerId).maybeSingle(),
+      admin.from("user_settings").select("app_auto_lock_enabled").eq("user_id", ownerId).maybeSingle(),
+    ]);
+    if (error || settingsError) throw error ?? settingsError;
 
     const mode = data?.pin_mode;
     return mode === "pin4" || mode === "pin6"
-      ? { configured: true, mode }
-      : { configured: false, mode: null };
+      ? { configured: true, mode, autoLockEnabled: settings?.app_auto_lock_enabled === true }
+      : { configured: false, mode: null, autoLockEnabled: settings?.app_auto_lock_enabled === true };
   } catch {
     // The client can safely fall back to its non-secret local cache and then
     // refresh the state from the protected endpoint.

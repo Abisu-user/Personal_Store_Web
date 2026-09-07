@@ -9,6 +9,7 @@ const pinModeSchema = z.enum(["pin4", "pin6"]);
 const configureSchema = z.object({ action: z.literal("configure"), mode: pinModeSchema, pin: z.string().min(1).max(12) });
 const verifySchema = z.object({ action: z.literal("verify"), pin: z.string().min(1).max(12) });
 const removeSchema = z.object({ action: z.literal("remove"), pin: z.string().min(1).max(12) });
+const settingsSchema = z.object({ action: z.literal("settings"), enabled: z.boolean(), pin: z.string().min(1).max(12).optional() });
 
 function jsonError(error: string, status: number) { return NextResponse.json({ error }, { status }); }
 
@@ -29,7 +30,8 @@ export async function POST(request: NextRequest) {
   const configure = configureSchema.safeParse(body);
   const verify = verifySchema.safeParse(body);
   const remove = removeSchema.safeParse(body);
-  if (!configure.success && !verify.success && !remove.success) return jsonError("請檢查 App 鎖定資料。", 400);
+  const settings = settingsSchema.safeParse(body);
+  if (!configure.success && !verify.success && !remove.success && !settings.success) return jsonError("請檢查 App 鎖定資料。", 400);
   try {
     const admin = createAdminClient();
     if (configure.success) {
@@ -40,11 +42,16 @@ export async function POST(request: NextRequest) {
       if (error) throw error;
       return NextResponse.json({ ok: true, configured: true, mode: configure.data.mode });
     }
+    if (settings.success && settings.data.enabled) {
+      const { error } = await admin.from("user_settings").update({ app_auto_lock_enabled: true }).eq("user_id", context.userId);
+      if (error) throw error;
+      return NextResponse.json({ ok: true, autoLockEnabled: true });
+    }
     const { data: lock, error } = await admin.from("app_locks").select("pin_mode, pin_salt, pin_hash, failed_attempts, locked_until").eq("owner_id", context.userId).maybeSingle();
     if (error) throw error;
     if (!lock) return jsonError("尚未設定 App 鎖定 PIN。", 404);
     if (lock.locked_until && new Date(lock.locked_until).getTime() > Date.now()) return jsonError("嘗試次數過多，請 1 分鐘後再試。", 429);
-    const suppliedPin = verify.success ? verify.data.pin : remove.success ? remove.data.pin : "";
+    const suppliedPin = verify.success ? verify.data.pin : remove.success ? remove.data.pin : settings.success ? settings.data.pin ?? "" : "";
     const valid = validateAppLockPin(lock.pin_mode as "pin4" | "pin6", suppliedPin) && await verifyAppLockPin(suppliedPin, lock.pin_salt, lock.pin_hash);
     if (!valid) {
       const attempts = lock.failed_attempts + 1;
@@ -56,6 +63,12 @@ export async function POST(request: NextRequest) {
       const { error: deleteError } = await admin.from("app_locks").delete().eq("owner_id", context.userId);
       if (deleteError) throw deleteError;
       return NextResponse.json({ ok: true, configured: false });
+    }
+    if (settings.success) {
+      const { error: updateError } = await admin.from("user_settings").update({ app_auto_lock_enabled: false }).eq("user_id", context.userId);
+      if (updateError) throw updateError;
+      await admin.from("app_locks").update({ failed_attempts: 0, locked_until: null, updated_at: new Date().toISOString() }).eq("owner_id", context.userId);
+      return NextResponse.json({ ok: true, autoLockEnabled: false });
     }
     await admin.from("app_locks").update({ failed_attempts: 0, locked_until: null, updated_at: new Date().toISOString() }).eq("owner_id", context.userId);
     return NextResponse.json({ ok: true });

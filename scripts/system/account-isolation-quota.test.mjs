@@ -35,3 +35,28 @@ test("database and storage quotas are enforced by server-side gates", async () =
   assert.match(fileUpload, /assertStorageQuota/);
   assert.match(photoUpload, /assertStorageQuota/);
 });
+
+test("usage breakdown is calculated by the database and returned without system detail", async () => {
+  const migration = await source("supabase/migrations/20260907193000_add_usage_breakdown_and_app_lock_setting.sql");
+  const ownRoute = await source("src/app/api/system/storage-usage/route.ts");
+  assert.match(migration, /vault_user_database_usage/);
+  assert.match(migration, /databaseGroups/);
+  assert.match(ownRoute, /databaseGroups:\s*capacity\.databaseGroups/);
+  assert.doesNotMatch(ownRoute, /vault_project_storage_usage/);
+});
+
+test("new accounts default App auto-lock off and disabling requires server PIN verification", async () => {
+  const migration = await source("supabase/migrations/20260907193000_add_usage_breakdown_and_app_lock_setting.sql");
+  const route = await source("src/app/api/security/app-lock/route.ts");
+  assert.match(migration, /set default false/);
+  assert.match(migration, /set app_auto_lock_enabled = true/);
+  assert.match(route, /verifyAppLockPin/);
+  assert.match(route, /app_auto_lock_enabled:\s*false/);
+});
+
+test("unauthorized accounts do not render adult settings", async () => {
+  const page = await source("src/app/(app)/security/page.tsx");
+  const settings = await source("src/components/security/adult-content-settings.tsx");
+  assert.match(page, /permissions\.adultContentAccess && <AdultContentSettings/);
+  assert.match(settings, /if \(!canAccess\) return null/);
+});

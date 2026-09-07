@@ -35,12 +35,21 @@ export async function GET(request: NextRequest) {
     if (projectResult.error || !projectResult.data) throw projectResult.error ?? new Error("PROJECT_USAGE_UNAVAILABLE");
     if (accountsResult.error || !accountsResult.data) throw accountsResult.error ?? new Error("ACCOUNT_USAGE_UNAVAILABLE");
     const project = projectResult.data as ProjectUsage;
+    const systemDatabaseGroups = [
+      { category: "system-data", usedBytes: project.tables.filter((table) => table.group === "system").reduce((sum, table) => sum + Number(table.dataBytes), 0) },
+      { category: "user-data", usedBytes: project.tables.filter((table) => table.group === "personal").reduce((sum, table) => sum + Number(table.dataBytes), 0) },
+      { category: "indexes", usedBytes: project.tables.reduce((sum, table) => sum + Number(table.indexBytes) + Number(table.otherBytes), 0) },
+    ];
+    const knownDatabaseBytes = systemDatabaseGroups.reduce((sum, group) => sum + group.usedBytes, 0);
+    const databaseRemainder = Math.max(0, Number(project.database?.usedBytes ?? 0) - knownDatabaseBytes);
+    if (databaseRemainder) systemDatabaseGroups.push({ category: "auth-metadata-other", usedBytes: databaseRemainder });
     return NextResponse.json({
       project: {
         database: project.database ? quota(Number(project.database.usedBytes), projectStorageUsageLimits.databaseBytes) : null,
         storage: project.storage ? quota(Number(project.storage.usedBytes), projectStorageUsageLimits.storageBytes) : null,
         tables: project.tables ?? [],
         storageGroups: project.storageGroups ?? [],
+        databaseGroups: systemDatabaseGroups.filter((group) => group.usedBytes > 0),
         errors: project.errors ?? {},
         updatedAt: project.collectedAt ?? new Date().toISOString(),
       },

@@ -8,6 +8,7 @@ type CapacityRow = {
   databaseQuotaBytes?: number | string;
   storageUsedBytes?: number | string;
   storageQuotaBytes?: number | string;
+  databaseGroups?: Array<{ category: string; usedBytes: number | string }>;
   storageGroups?: Array<{ category: string; usedBytes: number | string }>;
   collectedAt?: string;
 };
@@ -26,6 +27,7 @@ export async function getUserCapacity(userId: string) {
     databaseQuotaBytes: numberValue(row.databaseQuotaBytes, userStorageQuotaDefaults.databaseBytes),
     storageUsedBytes: numberValue(row.storageUsedBytes),
     storageQuotaBytes: numberValue(row.storageQuotaBytes, userStorageQuotaDefaults.storageBytes),
+    databaseGroups: Array.isArray(row.databaseGroups) ? row.databaseGroups.map((group) => ({ category: group.category, usedBytes: numberValue(group.usedBytes) })) : [],
     storageGroups: Array.isArray(row.storageGroups) ? row.storageGroups.map((group) => ({ category: group.category, usedBytes: numberValue(group.usedBytes) })) : [],
     collectedAt: row.collectedAt ?? new Date().toISOString(),
   };

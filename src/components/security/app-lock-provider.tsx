@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 
 type LockDelay = "immediate" | "30" | "60" | "300" | "900";
 type PinMode = "pin4" | "pin6";
-type PinStatus = { configured: boolean; mode: PinMode | null };
+type PinStatus = { configured: boolean; mode: PinMode | null; autoLockEnabled: boolean };
 
 const lockDelayMs: Record<LockDelay, number> = {
   immediate: 0,
@@ -19,7 +19,7 @@ const lockSettingKey = "personal-vault:app-lock-delay:v1";
 const pinStatusCacheKey = "personal-vault:app-lock-pin-status:v1";
 const pinStatusEvent = "personal-vault:app-lock-pin-updated";
 const unlockSessionKey = "personal-vault:app-lock-session-unlocked:v1";
-const emptyPinStatus: PinStatus = { configured: false, mode: null };
+const emptyPinStatus: PinStatus = { configured: false, mode: null, autoLockEnabled: false };
 
 function readDelay(): LockDelay {
   const value = window.localStorage.getItem(lockSettingKey);
@@ -29,7 +29,7 @@ function readDelay(): LockDelay {
 function isPinStatus(value: unknown): value is PinStatus {
   if (!value || typeof value !== "object") return false;
   const candidate = value as { configured?: unknown; mode?: unknown };
-  return typeof candidate.configured === "boolean" && (candidate.mode === null || candidate.mode === "pin4" || candidate.mode === "pin6");
+  return typeof candidate.configured === "boolean" && typeof (candidate as { autoLockEnabled?: unknown }).autoLockEnabled === "boolean" && (candidate.mode === null || candidate.mode === "pin4" || candidate.mode === "pin6");
 }
 
 function readCachedPinStatus(): PinStatus {
@@ -61,7 +61,7 @@ async function getPinStatus(): Promise<PinStatus> {
 }
 
 export function AppLockProvider({ children, email, initialPinStatus }: { children: ReactNode; email: string; initialPinStatus: PinStatus | null }) {
-  const [locked, setLocked] = useState(true);
+  const [locked, setLocked] = useState(() => initialPinStatus?.autoLockEnabled !== false);
   const [pending, setPending] = useState(false);
   const [passwordMode, setPasswordMode] = useState(false);
   // Only the public PIN configuration and length are cached—never a PIN or
@@ -76,12 +76,17 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
 
   const lock = useCallback(() => {
     if (lockTimer.current) window.clearTimeout(lockTimer.current);
+    if (!pinStatus.autoLockEnabled) {
+      document.documentElement.dataset.vaultLocked = "false";
+      setLocked(false);
+      return;
+    }
     window.sessionStorage.removeItem(unlockSessionKey);
     document.documentElement.dataset.vaultLocked = "true";
     setPin("");
     setLocked(true);
     setPasswordMode(false);
-  }, []);
+  }, [pinStatus.autoLockEnabled]);
 
   const unlock = useCallback(() => {
     if (lockTimer.current) window.clearTimeout(lockTimer.current);
@@ -109,37 +114,42 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
 
   useEffect(() => {
     const justAuthenticated = window.sessionStorage.getItem("personal-vault:unlock-after-login") === "1";
-    if (justAuthenticated) {
-      window.sessionStorage.removeItem("personal-vault:unlock-after-login");
-      unlock();
-    } else if (window.sessionStorage.getItem(unlockSessionKey) === "1" && document.visibilityState === "visible") {
-      unlock();
-    } else {
-      lock();
-    }
+    const initialStateTimer = window.setTimeout(() => {
+      if (!pinStatus.autoLockEnabled) {
+        unlock();
+      } else if (justAuthenticated) {
+        window.sessionStorage.removeItem("personal-vault:unlock-after-login");
+        unlock();
+      } else if (window.sessionStorage.getItem(unlockSessionKey) === "1" && document.visibilityState === "visible") {
+        unlock();
+      } else {
+        lock();
+      }
+    }, 0);
 
     // A server-rendered status is already current for this page request. Only
     // use the client endpoint as a fallback when the server lookup failed.
     if (initialPinStatus) persistPinStatus(initialPinStatus);
     if (needsClientPinStatusRefresh.current) {
-      if (pinStatus.configured) statusRefreshTimer.current = window.setTimeout(() => void loadPinStatus(), 350);
-      else void loadPinStatus();
+      statusRefreshTimer.current = window.setTimeout(() => void loadPinStatus(), pinStatus.configured ? 350 : 0);
     }
 
     const onPinUpdated = () => void loadPinStatus();
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
+        if (!pinStatus.autoLockEnabled) return;
         backgroundAt.current = Date.now();
         const delay = readDelay();
         if (delay === "immediate") lock();
         else lockTimer.current = window.setTimeout(lock, lockDelayMs[delay]);
         return;
       }
+      if (!pinStatus.autoLockEnabled) return;
       const delay = readDelay();
       if (backgroundAt.current && Date.now() - backgroundAt.current >= lockDelayMs[delay]) lock();
       backgroundAt.current = null;
     };
-    const onPageHide = () => lock();
+    const onPageHide = () => { if (pinStatus.autoLockEnabled) lock(); };
 
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", onPageHide);
@@ -148,10 +158,11 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener(pinStatusEvent, onPinUpdated);
+      window.clearTimeout(initialStateTimer);
       if (lockTimer.current) window.clearTimeout(lockTimer.current);
       if (statusRefreshTimer.current) window.clearTimeout(statusRefreshTimer.current);
     };
-  }, [initialPinStatus, loadPinStatus, lock, pinStatus.configured, unlock]);
+  }, [initialPinStatus, loadPinStatus, lock, pinStatus.autoLockEnabled, pinStatus.configured, unlock]);
 
   async function unlockWithPasskey() {
     setPending(true);

@@ -8,11 +8,13 @@ type Status = "healthy" | "growing" | "high" | "critical" | "exceeded";
 type Quota = { usedBytes: number; limitBytes: number; remainingBytes: number; overageBytes: number; usagePercent: number; status: Status };
 type StorageGroup = { category: string; usedBytes: number };
 type TableUsage = { name: string; group: "system" | "personal"; dataBytes: number; indexBytes: number; otherBytes: number; totalBytes: number };
-type Usage = { scope: "self"; isAdmin: boolean; database: Quota | null; storage: Quota | null; storageGroups: StorageGroup[]; errors: { database?: string; storage?: string }; updatedAt: string };
+type Usage = { scope: "self"; isAdmin: boolean; database: Quota | null; databaseGroups: StorageGroup[]; storage: Quota | null; storageGroups: StorageGroup[]; errors: { database?: string; storage?: string }; updatedAt: string };
 type AccountUsage = { userId: string; email: string; displayName: string | null; capacity: { databaseUsedBytes: number; databaseQuotaBytes: number; storageUsedBytes: number; storageQuotaBytes: number } };
-type AdminUsage = { project: { database: Quota | null; storage: Quota | null; tables: TableUsage[]; storageGroups: StorageGroup[]; errors: Record<string, string>; updatedAt: string }; accounts: { total: number; users: AccountUsage[] }; page: number };
+type AdminUsage = { project: { database: Quota | null; storage: Quota | null; tables: TableUsage[]; databaseGroups: StorageGroup[]; storageGroups: StorageGroup[]; errors: Record<string, string>; updatedAt: string }; accounts: { total: number; users: AccountUsage[] }; page: number };
 
 const storageLabels: Record<string, string> = { photos: "照片", files: "一般檔案", "content-covers": "內容封面", "workspace-backgrounds": "工作區背景", avatars: "個人頭像" };
+const databaseLabels: Record<string, string> = { bookmarks: "網站收藏", notes: "筆記與想法", code: "程式碼", files: "檔案資料", photos: "照片資料", anime: "動漫收藏", vocabulary: "單字學習", vault: "私密保管庫", calendar: "日曆", organization: "資料夾與類別", account: "帳號與安全", other: "其他資料" };
+const systemDatabaseLabels: Record<string, string> = { "system-data": "系統資料", "user-data": "用戶資料", indexes: "Index 與資料庫開銷", "auth-metadata-other": "Auth、Metadata 與其他" };
 const statusCopy: Record<Status, string> = { healthy: "容量充足", growing: "使用量增加", high: "儲存空間即將用完", critical: "儲存空間即將用完", exceeded: "已超出限額" };
 
 function Progress({ quota }: { quota: Quota }) {
@@ -31,6 +33,14 @@ function CapacityCard({ title, quota, error, updatedAt }: { title: "Database" | 
     {warning && <p className="storage-quota-warning">{title === "Database" ? "資料庫容量" : "檔案儲存空間"}即將用完，請整理不需要的資料。</p>}
     <small className="storage-updated">統計時間：{updatedAt ? new Date(updatedAt).toLocaleString("zh-TW") : "—"}</small>
   </article>;
+}
+
+function UsageBreakdown({ groups, labels, quotaBytes, title }: { groups: StorageGroup[]; labels: Record<string, string>; quotaBytes: number; title: string }) {
+  return <div className="storage-resource-breakdown"><h3>{title}</h3>{groups.length ? <ul>{groups.map((group) => <li key={group.category}><i /><span>{labels[group.category] ?? group.category}</span><strong>{formatBytes(group.usedBytes)}</strong><small>{quotaBytes ? `${((group.usedBytes / quotaBytes) * 100).toFixed(1)}% 配額` : "0% 配額"}</small></li>)}</ul> : <p>目前沒有可分類的使用量。</p>}</div>;
+}
+
+function ResourcePanel({ title, quota, groups, labels, error, updatedAt }: { title: "Database" | "Storage"; quota: Quota | null; groups: StorageGroup[]; labels: Record<string, string>; error?: string; updatedAt?: string }) {
+  return <section className="storage-resource-panel"><CapacityCard error={error} quota={quota} title={title} updatedAt={updatedAt} />{quota && <UsageBreakdown groups={groups} labels={labels} quotaBytes={quota.limitBytes} title="使用明細" />}</section>;
 }
 
 function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
@@ -56,12 +66,10 @@ function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
   function submit(event: FormEvent) { event.preventDefault(); void load(1, query.trim()); }
   const pages = Math.max(1, Math.ceil((data?.accounts.total ?? 0) / 20));
   return <section className="storage-admin-panel">
-    <header><div><p className="eyebrow">ADMIN ONLY</p><h2>系統儲存空間</h2><p>完整專案容量、資料表明細及所有帳號的個人配額。</p></div></header>
+    <header><div><p className="eyebrow">SYSTEM OVERVIEW</p><h2>系統儲存空間</h2><p>先顯示整理後的系統分類；技術明細與個別帳號配額可視需要展開。</p></div></header>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {data?.project && <><div className="storage-capacity-grid"><CapacityCard quota={data.project.database} title="Database" updatedAt={data.project.updatedAt} /><CapacityCard quota={data.project.storage} title="Storage" updatedAt={data.project.updatedAt} /></div><details className="storage-admin-details"><summary>Database 資料表詳細資訊</summary><div className="storage-table-list">{data.project.tables.map((table) => <div className="storage-table-row" key={table.name}><span>{table.name}</span><strong>{formatBytes(table.totalBytes)}</strong></div>)}</div></details></>}
-    <div className="storage-account-heading"><div><h3>使用者配額</h3><small>每頁最多 20 個帳號</small></div><form onSubmit={submit}><input aria-label="搜尋帳號或 Email" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋帳號或 Email" value={query} /><button className="secondary-button compact" type="submit">搜尋</button></form></div>
-    {loading && !data ? <p>正在讀取管理員資料…</p> : <div className="storage-account-list">{data?.accounts.users.map((account) => <article key={account.userId}><div><strong>{account.displayName || account.email.split("@")[0]}</strong><small>{account.email}</small></div><span>Database <b>{formatBytes(account.capacity.databaseUsedBytes)} / {formatBytes(account.capacity.databaseQuotaBytes)}</b></span><span>Storage <b>{formatBytes(account.capacity.storageUsedBytes)} / {formatBytes(account.capacity.storageQuotaBytes)}</b></span></article>)}</div>}
-    <div className="storage-pagination"><button className="secondary-button compact" disabled={loading || page <= 1} onClick={() => void load(page - 1, query.trim())} type="button">上一頁</button><span>{page} / {pages}</span><button className="secondary-button compact" disabled={loading || page >= pages} onClick={() => void load(page + 1, query.trim())} type="button">下一頁</button></div>
+    {data?.project && <><div className="storage-system-grid"><ResourcePanel groups={data.project.databaseGroups} labels={systemDatabaseLabels} quota={data.project.database} title="Database" updatedAt={data.project.updatedAt} /><ResourcePanel groups={data.project.storageGroups} labels={storageLabels} quota={data.project.storage} title="Storage" updatedAt={data.project.updatedAt} /></div><details className="storage-admin-details"><summary>查看 Database 資料表技術明細</summary><div className="storage-table-list">{data.project.tables.map((table) => <div className="storage-table-row" key={table.name}><span>{table.name}</span><strong>{formatBytes(table.totalBytes)}</strong></div>)}</div></details></>}
+    <details className="storage-admin-details"><summary>查看個別帳號配額</summary><div className="storage-account-heading"><div><h3>使用者配額</h3><small>每頁最多 20 個帳號</small></div><form onSubmit={submit}><input aria-label="搜尋帳號或 Email" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋帳號或 Email" value={query} /><button className="secondary-button compact" type="submit">搜尋</button></form></div>{loading && !data ? <p>正在讀取管理員資料…</p> : <div className="storage-account-list">{data?.accounts.users.map((account) => <article key={account.userId}><div><strong>{account.displayName || account.email.split("@")[0]}</strong><small>{account.email}</small></div><span>Database <b>{formatBytes(account.capacity.databaseUsedBytes)} / {formatBytes(account.capacity.databaseQuotaBytes)}</b></span><span>Storage <b>{formatBytes(account.capacity.storageUsedBytes)} / {formatBytes(account.capacity.storageQuotaBytes)}</b></span></article>)}</div>}<div className="storage-pagination"><button className="secondary-button compact" disabled={loading || page <= 1} onClick={() => void load(page - 1, query.trim())} type="button">上一頁</button><span>{page} / {pages}</span><button className="secondary-button compact" disabled={loading || page >= pages} onClick={() => void load(page + 1, query.trim())} type="button">下一頁</button></div></details>
   </section>;
 }
 
@@ -88,11 +96,11 @@ export function StorageUsageWorkspace() {
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(null), 3000); return () => window.clearTimeout(timer); }, [notice]);
 
   return <div className="storage-usage-workspace">
-    <header className="page-heading storage-page-heading"><div><p className="eyebrow">MY STORAGE</p><h1>儲存空間</h1><p>只顯示這個帳號所擁有的資料與檔案容量。</p></div><button className="secondary-button storage-refresh" disabled={updating} onClick={() => void refresh(true)} type="button">{updating ? "↻ 更新中" : "↻ 更新"}</button></header>
+    <header className="page-heading storage-page-heading"><div><p className="eyebrow">MY STORAGE</p><h1>儲存空間</h1><p>先查看我的使用量；管理員可在下方另外查看整個系統。</p></div><button className="secondary-button storage-refresh" disabled={updating} onClick={() => void refresh(true)} type="button">{updating ? "↻ 更新中" : "↻ 更新"}</button></header>
     {notice && <p className={notice.startsWith("✓") ? "notice success" : "notice error"} role="status">{notice}</p>}
     {loading && !usage ? <div className="storage-skeletons"><div /><div /></div> : <>
-      <section className="storage-capacity-grid"><CapacityCard error={usage?.errors.database} quota={usage?.database ?? null} title="Database" updatedAt={usage?.updatedAt} /><CapacityCard error={usage?.errors.storage} quota={usage?.storage ?? null} title="Storage" updatedAt={usage?.updatedAt} /></section>
-      {usage?.storageGroups?.length ? <section className="storage-breakdown"><header><div><p className="eyebrow">MY FILES</p><h2>Storage 使用組成</h2></div></header><ul>{usage.storageGroups.map((group) => <li key={group.category}><i /><span>{storageLabels[group.category] ?? group.category}</span><strong>{formatBytes(group.usedBytes)}</strong><small>{usage.storage?.usedBytes ? `${((group.usedBytes / usage.storage.usedBytes) * 100).toFixed(1)}%` : "0%"}</small></li>)}</ul></section> : null}
+      <section className="storage-section-heading"><p className="eyebrow">MY USAGE</p><h2>我的使用量</h2></section>
+      <section className="storage-capacity-grid storage-personal-grid"><ResourcePanel error={usage?.errors.database} groups={usage?.databaseGroups ?? []} labels={databaseLabels} quota={usage?.database ?? null} title="Database" updatedAt={usage?.updatedAt} /><ResourcePanel error={usage?.errors.storage} groups={usage?.storageGroups ?? []} labels={storageLabels} quota={usage?.storage ?? null} title="Storage" updatedAt={usage?.updatedAt} /></section>
       <p className="storage-disclaimer">Database 使用量以 PostgreSQL 中此帳號擁有的資料列實際大小計算；Storage 使用量依此帳號路徑下的檔案 metadata 計算。</p>
       {usage?.isAdmin && <AdminPanel />}
     </>}

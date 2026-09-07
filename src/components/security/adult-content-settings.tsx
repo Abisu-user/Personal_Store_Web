@@ -26,7 +26,7 @@ export function AdultContentSettings({ canAccess }: { canAccess: boolean }) {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : "無法讀取成人內容設定。"); }
   })(); }, [canAccess]);
 
-  if (!canAccess) return <section className="passkey-settings adult-security-settings"><div><p className="eyebrow">ADULT CONTENT</p><h2>成人內容保護</h2><p>此帳戶尚未取得成人功能存取權。成人內容採預設禁止，只有經成人功能管理員明確允許後才能使用。</p></div></section>;
+  if (!canAccess) return null;
 
   async function save(changes: Partial<AnimePreferences>) {
     setPending(true); setMessage(null);
