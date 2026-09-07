@@ -1,4 +1,6 @@
 "use client";
+import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -90,6 +92,7 @@ export function NotesWorkspace({
   createMode?: boolean;
 }) {
   const router = useRouter();
+  const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
   const [view, setView] = useState<CollectionView>("all");
   const [category, setCategory] = useState<CollectionCategory>("all");
@@ -116,6 +119,7 @@ export function NotesWorkspace({
     }
     setData((await response.json()) as NotesWorkspaceData);
   }, []);
+  useCreatedItemRefresh("note", load);
   useEffect(() => {
     if (createMode) void load();
   }, [createMode, load]);
@@ -177,6 +181,7 @@ export function NotesWorkspace({
           (await response.json().catch(() => null))?.error ?? "無法儲存筆記。",
         );
       if (!note && createMode) {
+        if (createFlow) { createFlow.complete(); return; }
         router.replace("/notes");
         router.refresh();
         return;
@@ -337,7 +342,7 @@ export function NotesWorkspace({
       </label>
       <CollectionSettings folders={data.folders} note={note} />
       <CoverImageField initialUrl={note?.coverImageUrl} onChange={setCover} />
-      <div className="dialog-actions">
+      {createMode ? <CreateFormActions pending={pending} returnHref="/notes" label="儲存" pendingLabel="儲存中…" /> : (<div className="dialog-actions">
         <button className="button" disabled={pending} type="submit">
           {pending ? "儲存中…" : note ? "儲存修改" : "儲存筆記"}
         </button>
@@ -350,7 +355,7 @@ export function NotesWorkspace({
             取消
           </button>
         )}
-      </div>
+      </div>)}
     </form>
   );
   if (createMode)

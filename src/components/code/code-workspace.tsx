@@ -1,4 +1,6 @@
 "use client";
+import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import {
   FormEvent,
@@ -72,6 +74,7 @@ export function CodeWorkspace({
   createMode?: boolean;
 }) {
   const router = useRouter();
+  const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,7 @@ export function CodeWorkspace({
     }
     setData((await response.json()) as CodeWorkspaceData);
   }, []);
+  useCreatedItemRefresh("code", load);
   useEffect(() => {
     if (createMode) void load();
   }, [createMode, load]);
@@ -157,6 +161,7 @@ export function CodeWorkspace({
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? "無法儲存程式碼。");
       if (!snippet && createMode) {
+        if (createFlow) { createFlow.complete(); return; }
         router.replace("/code");
         router.refresh();
         return;
@@ -384,7 +389,7 @@ export function CodeWorkspace({
         initialUrl={snippet?.coverImageUrl}
         onChange={setCover}
       />
-      <div className="dialog-actions">
+      {createMode ? <CreateFormActions pending={pending} returnHref="/code" label="儲存" pendingLabel="儲存中…" /> : (<div className="dialog-actions">
         <button className="button" disabled={pending} type="submit">
           {pending ? "儲存中…" : snippet ? "儲存修改" : "儲存程式碼"}
         </button>
@@ -397,7 +402,7 @@ export function CodeWorkspace({
             取消
           </button>
         )}
-      </div>
+      </div>)}
     </form>
   );
   if (createMode)

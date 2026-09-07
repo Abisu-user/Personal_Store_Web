@@ -1,4 +1,6 @@
 "use client";
+import { CreateItemModal } from "@/components/ui/create-item-modal";
+import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -847,6 +849,7 @@ export function AnimeWorkspace({
   const [selectedReadOnly, setSelectedReadOnly] = useState(false);
   const [editing, setEditing] = useState<AnimeLibraryItem | null>(null);
   const [adding, setAdding] = useState(false);
+  useEffect(() => { const open = () => setAdding(true); window.addEventListener("personal-vault:new-item", open); return () => window.removeEventListener("personal-vault:new-item", open); }, []);
   const [removing, setRemoving] = useState<AnimeLibraryItem | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [categoryName, setCategoryName] = useState("");
@@ -2719,7 +2722,7 @@ function AnimeEditor({
   };
   const currentCover = anime ? coverUrl(anime) : (prefill?.coverUrl ?? null);
   return (
-    <ModalDialog
+    <CreateItemModal
       onClose={onClose}
       open
       pending={pending}
@@ -2847,7 +2850,7 @@ function AnimeEditor({
           />
         </label>
         {message && <p className="notice error">{message}</p>}
-        <div className="anime-editor-actions">
+        {anime ? (<div className="anime-editor-actions">
           <div>
             {anime && onRemove && (
               <button
@@ -2878,8 +2881,8 @@ function AnimeEditor({
               {pending ? "儲存中…" : anime ? "儲存修改" : "新增動漫"}
             </button>
           </div>
-        </div>
+        </div>) : <CreateFormActions pending={pending} label="新增動漫" pendingLabel="儲存中…" onSave={() => void save()} onCancel={onClose} />}
       </div>
-    </ModalDialog>
+    </CreateItemModal>
   );
 }

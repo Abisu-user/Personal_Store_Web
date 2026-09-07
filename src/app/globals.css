@@ -1162,4 +1162,24 @@ html[data-theme="dark"] .vault-gate, html[data-theme="dark"] .vault-gate-securit
 .vocabulary-quiz-results > .quiz-result-actions { position: static; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 22px; padding: 0; box-shadow: none; }
 .quiz-result-actions > button { min-width: 0; min-height: 44px; padding: 10px 8px; border-radius: 10px; font-size: .9rem; white-space: nowrap; }
 .quiz-kana-hint { color: var(--brand); }
+/* Same create shell for every resource; only the middle region scrolls. */
+.modal-dialog.create-item-dialog { display: flex !important; flex-direction: column !important; width: min(900px, calc(100vw - 48px)) !important; max-height: min(90dvh, 960px) !important; padding: 0 !important; overflow: hidden !important; }
+.create-item-dialog > .modal-dialog-header { flex: 0 0 auto; padding: 22px 26px; }
+.create-item-dialog > .modal-dialog-content { flex: 1 1 auto; min-height: 0; overflow-y: auto !important; padding: 20px 26px !important; }
+.create-item-dialog > .create-item-footer { flex: 0 0 auto; padding: 12px 26px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--surface); }
+.create-item-footer:empty { display: none; }
+@media (max-width:700px) { .modal-dialog-backdrop:has(> .create-item-dialog) { padding: max(16px,env(safe-area-inset-top)) 12px max(16px,env(safe-area-inset-bottom)); } .modal-dialog-backdrop > .modal-dialog.create-item-dialog { max-height: calc(var(--mobile-modal-viewport-height,100dvh) - max(24px,env(safe-area-inset-top)) - max(24px,env(safe-area-inset-bottom))) !important; } }
+.modal-dialog[data-create-dialog="true"] .dialog-actions { display: flex !important; justify-content: flex-end !important; gap: 10px; }
+.modal-dialog[data-create-dialog="true"] .dialog-actions > button { width: auto !important; flex: 0 0 auto !important; min-height: 40px; padding: 8px 16px; }
+.modal-dialog[data-create-dialog="true"] .dialog-actions > .secondary-button { order: -1; }
+.create-item-dialog .create-form-actions { position: static !important; display: flex !important; justify-content: flex-end !important; gap: 10px; margin: 0 !important; padding: 0 !important; border: 0; background: transparent; }
+.create-item-dialog .create-form-actions > button { width: auto !important; flex: 0 0 auto !important; min-height: 40px !important; padding: 8px 18px !important; font-size: .9rem; white-space: nowrap; }
+.create-item-dialog .create-only, .create-item-dialog .bookmark-form, .create-item-dialog .file-upload-form, .create-item-dialog .note-editor, .create-item-dialog .code-editor, .create-item-dialog .calendar-form { display: block; width: 100%; max-width: none; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.create-item-dialog .bookmark-form, .create-item-dialog .file-upload-form, .create-item-dialog .note-editor, .create-item-dialog .code-editor, .create-item-dialog .calendar-form { display: grid; gap: 14px; }
+.create-item-dialog .create-only h2, .create-item-dialog .create-only .eyebrow, .create-item-dialog .calendar-form .note-editor-heading { display: none; }
+.create-item-dialog .operation-status { display: none; }
+.create-type-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.create-success-toast { position: fixed; z-index: 180; top: max(20px,env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); display: flex; gap: 20px; align-items: center; padding: 12px 18px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-card); }
+.create-success-toast button { background: transparent; border: 0; color: inherit; }
+@media (max-width:700px) { .modal-dialog.create-item-dialog { width: calc(100vw - 24px) !important; max-height: calc(var(--mobile-modal-viewport-height,100dvh) - max(24px,env(safe-area-inset-top)) - env(safe-area-inset-bottom)) !important; border-radius: 18px !important; } .create-item-dialog > .modal-dialog-header { padding: 16px; } .create-item-dialog > .modal-dialog-content { padding: 16px !important; } .create-item-dialog > .create-item-footer { padding: 12px 16px max(12px,env(safe-area-inset-bottom)); } .create-item-dialog .create-form-actions > button { padding: 8px 14px !important; } }
 @media (max-width: 360px) { .vocabulary-quiz-results > .quiz-result-actions { gap: 6px; } .quiz-result-actions > button { font-size: .8rem; padding-inline: 4px; } }

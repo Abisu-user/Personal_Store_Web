@@ -1,5 +1,5 @@
 import { BookmarksWorkspace } from "@/components/bookmarks/bookmarks-workspace";
-import Link from "next/link";
+import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { requireMfaIfEnrolled } from "@/lib/security/require-mfa";
 import { requireUser } from "@/lib/security/require-user";
 
@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 export default async function BookmarksPage() {
   const user = await requireUser();
   await requireMfaIfEnrolled(user);
-  return <main className="dashboard"><section className="dashboard-card"><div className="page-heading"><div><p className="eyebrow">BOOKMARK COLLECTION</p><h1>網站收藏</h1><p>將常用網址放入個人保管庫，依分類與標籤快速找回。</p></div><Link className="button page-create-button" href="/create/bookmark">＋ 新增網站收藏</Link></div><BookmarksWorkspace /></section></main>;
+  return <main className="dashboard"><section className="dashboard-card"><div className="page-heading"><div><p className="eyebrow">BOOKMARK COLLECTION</p><h1>網站收藏</h1><p>將常用網址放入個人保管庫，依分類與標籤快速找回。</p></div><CreateItemButton kind="bookmark">＋ 新增網站收藏</CreateItemButton></div><BookmarksWorkspace /></section></main>;
 }

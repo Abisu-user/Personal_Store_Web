@@ -1,4 +1,5 @@
 "use client";
+import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -102,6 +103,7 @@ export function PhotosWorkspace({
   createMode?: boolean;
 }) {
   const router = useRouter();
+  const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
@@ -125,6 +127,7 @@ export function PhotosWorkspace({
     }
     setData((await response.json()) as PhotosWorkspaceData);
   }, []);
+  useCreatedItemRefresh("photo", load);
   useEffect(() => {
     if (createMode) void load();
   }, [createMode, load]);
@@ -220,6 +223,7 @@ export function PhotosWorkspace({
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? "無法儲存照片。");
       if (createMode) {
+        if (createFlow) { createFlow.complete(); return; }
         router.replace("/photos");
         router.refresh();
       } else {

@@ -1,4 +1,5 @@
 "use client";
+import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
@@ -42,6 +43,7 @@ export function FilesWorkspace({
   createMode?: boolean;
 }) {
   const router = useRouter();
+  const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
@@ -64,6 +66,7 @@ export function FilesWorkspace({
     }
     setData((await response.json()) as FilesWorkspaceData);
   }, []);
+  useCreatedItemRefresh("file", load);
   useEffect(() => {
     if (createMode) void load();
   }, [createMode, load]);
@@ -151,6 +154,7 @@ export function FilesWorkspace({
       if (!completeResponse.ok)
         throw new Error(completed.error ?? "無法完成上傳。");
       if (createMode) {
+        if (createFlow) { createFlow.complete(); return; }
         router.replace("/files");
         router.refresh();
       } else {

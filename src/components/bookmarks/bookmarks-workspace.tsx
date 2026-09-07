@@ -1,4 +1,5 @@
 "use client";
+import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import {
@@ -424,6 +425,7 @@ export function BookmarksWorkspace({
   createMode?: boolean;
 }) {
   const router = useRouter();
+  const createFlow = useCreateFlow();
   const previewRequest = useRef<AbortController | null>(null);
   const [data, setData] = useState(initialData ?? emptyBookmarks);
   const [loaded, setLoaded] = useState(Boolean(initialData));
@@ -505,6 +507,8 @@ export function BookmarksWorkspace({
     setLoaded(true);
     if (!createMode) writeClientResource("bookmarks:standard", next);
   }, [createMode]);
+  useCreatedItemRefresh("bookmark", load);
+  useEffect(() => { if (createMode) void load(); }, [createMode, load]);
   useEffect(() => {
     if (createMode) return;
     let active = true;
@@ -648,6 +652,7 @@ export function BookmarksWorkspace({
     setPending(true);
     setError(null);
     setSuccess(null);
+    try {
     const response = await fetch("/api/bookmarks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -663,15 +668,16 @@ export function BookmarksWorkspace({
         archived: form.get("archived") === "on",
       }),
     });
-    setPending(false);
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       setError(body?.error ?? "無法儲存網站收藏。");
       return;
     }
     setSuccess("網站收藏已儲存，正在開啟網站收藏清單…");
+    if (createFlow) { createFlow.complete(); return; }
     router.replace("/bookmarks");
     router.refresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存網站收藏。"); } finally { setPending(false); }
   }
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

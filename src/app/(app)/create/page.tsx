@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { CreateItemButton, type CreateKind } from "@/components/layout/create-item-provider";
 
 const choices = [
   { href: "/create/bookmark", icon: "◇", title: "新增網站收藏", description: "貼上連結，自動取得標題與預覽縮圖。" },
@@ -13,6 +12,5 @@ const choices = [
 ];
 
 export default function CreatePage() {
-  const router = useRouter();
-  return <main className="dashboard"><section className="dashboard-card"><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1><p>選擇想要新增的資料類型；你的網站收藏、筆記、程式碼與檔案頁會專心顯示已儲存的內容。</p><div className="create-choice-grid">{choices.map((choice) => <Link className="create-choice" href={choice.href} key={choice.href} onFocus={() => router.prefetch(choice.href)} onMouseEnter={() => router.prefetch(choice.href)} prefetch><i>{choice.icon}</i><div><h2>{choice.title}</h2><p>{choice.description}</p></div><span>→</span></Link>)}</div></section></main>;
+  return <main className="dashboard"><section className="dashboard-card"><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1><p>選擇想要新增的資料類型；你的網站收藏、筆記、程式碼與檔案頁會專心顯示已儲存的內容。</p><div className="create-choice-grid">{choices.map((choice) => <CreateItemButton className="create-choice" kind={(choice.href.includes("vocabulary") ? "vocabulary" : choice.href.split("/").pop()) as CreateKind} key={choice.href}><i>{choice.icon}</i><div><h2>{choice.title}</h2><p>{choice.description}</p></div><span>→</span></CreateItemButton>)}</div></section></main>;
 }

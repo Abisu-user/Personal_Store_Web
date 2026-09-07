@@ -1,5 +1,6 @@
 import React from "react";
-const router = { push: (path: string) => { window.dispatchEvent(new CustomEvent("test:navigate", { detail: path })); }, replace: () => {}, prefetch: () => {}, refresh: () => {} };
+const navigate = (path: string) => { window.dispatchEvent(new CustomEvent("test:navigate", { detail: path })); };
+const router = { push: navigate, replace: navigate, prefetch: () => {}, refresh: () => {} };
 const params = new URLSearchParams();
 export const useRouter = () => router;
 export const useSearchParams = () => params;

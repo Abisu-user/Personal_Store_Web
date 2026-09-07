@@ -10,9 +10,11 @@ type ModalDialogProps = {
   open: boolean;
   pending?: boolean;
   title: string;
+  footer?: ReactNode;
+  eyebrow?: string;
 };
 
-export function ModalDialog({ children, className, onClose, open, pending = false, title }: ModalDialogProps) {
+export function ModalDialog({ children, className, onClose, open, pending = false, title, footer, eyebrow = "EDIT PRIVATE ITEM" }: ModalDialogProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   const titleId = useId();
@@ -36,12 +38,13 @@ export function ModalDialog({ children, className, onClose, open, pending = fals
   return <div className="modal-dialog-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !pending) onClose();
   }}>
-    <section aria-labelledby={titleId} aria-modal="true" className={`modal-dialog${className ? ` ${className}` : ""}`} role="dialog">
+    <section aria-labelledby={titleId} aria-modal="true" data-create-dialog={/^(新增|上傳|建立)/.test(title) ? "true" : undefined} className={`modal-dialog${className ? ` ${className}` : ""}`} role="dialog">
       <header className="modal-dialog-header">
-        <div><p className="eyebrow">EDIT PRIVATE ITEM</p><h2 id={titleId}>{title}</h2></div>
+        <div><p className="eyebrow">{eyebrow}</p><h2 id={titleId}>{title}</h2></div>
         <button aria-label="關閉視窗" className="modal-dialog-close" disabled={pending} onClick={onClose} ref={closeButton} type="button">×</button>
       </header>
       <div className="modal-dialog-content">{children}</div>
+      {footer}
     </section>
   </div>;
 }
