@@ -8,12 +8,29 @@ import { parseQuotaInput, quotaInitialValue, QuotaUnit } from "@/lib/system/quot
 
 type Capacity = { databaseUsedBytes: number; databaseQuotaBytes: number; storageUsedBytes: number; storageQuotaBytes: number; quotaUpdatedAt: string | null };
 export type QuotaAccount = { userId: string; email: string; username?: string | null; displayName: string | null; role: "user" | "admin"; capacity: Capacity };
-type Detail = QuotaAccount & { maximums: { databaseBytes: number; storageBytes: number }; systemLimits: { databaseBytes: number; storageBytes: number } };
+type PoolAllocation = { userId: string; email: string; label: string; role: "user" | "admin"; limitBytes: number };
+type PoolResource = { totalBytes: number; allocatedBytes: number; remainingBytes: number; availableForTargetBytes: number; maximumForTargetBytes: number; allocations: PoolAllocation[] };
+type Detail = QuotaAccount & { maximums: { databaseBytes: number; storageBytes: number }; quotaPool: { database: PoolResource; storage: PoolResource }; systemLimits: { databaseBytes: number; storageBytes: number } };
+
+const allocationColors = ["#2f67c7", "#7958c7", "#1688a8", "#d69132", "#cf5d91", "#2d966f", "#e36a32", "#5568b8", "#c44855", "#248f91"];
 
 function UsageLine({ label, used, limit }: { label: string; used: number; limit: number }) {
   const percentage = usagePercentage(used, limit);
   const status = percentage >= 100 ? "容量已滿" : percentage >= 95 ? "嚴重警告" : percentage >= 90 ? "警告" : percentage >= 80 ? "提醒" : "正常";
   return <div className="quota-current-usage"><div><strong>{label}</strong><span>{formatBytes(used)} / {formatBytes(limit)}</span></div><div className={`quota-mini-progress ${percentage >= 95 ? "critical" : percentage >= 90 ? "warning" : percentage >= 80 ? "notice" : "normal"}`}><i style={{ width: `${Math.min(100, percentage)}%` }} /></div><small>{percentage.toFixed(1)}% · {status}</small></div>;
+}
+
+function QuotaPoolPanel({ label, pool, targetUserId }: { label: "Database" | "Storage"; pool: PoolResource; targetUserId: string }) {
+  const overAllocated = pool.allocatedBytes > pool.totalBytes;
+  return <article className={`quota-pool-card${overAllocated ? " is-over" : ""}`}>
+    <header><strong>{label}</strong><span>系統總容量 {formatBytes(pool.totalBytes)}</span></header>
+    <div aria-label={`${label} 已分配 ${formatBytes(pool.allocatedBytes)}，系統總容量 ${formatBytes(pool.totalBytes)}`} className="quota-pool-bar" role="img">
+      {pool.allocations.filter((allocation) => allocation.limitBytes > 0).map((allocation, index) => <i key={allocation.userId} style={{ backgroundColor: allocationColors[index % allocationColors.length], flexBasis: `${pool.totalBytes > 0 ? (allocation.limitBytes / pool.totalBytes) * 100 : 0}%` }} />)}
+    </div>
+    <div className="quota-pool-totals"><span>已分配 <b>{formatBytes(pool.allocatedBytes)}</b></span><span>{overAllocated ? "超額分配" : "尚未分配"} <b>{formatBytes(overAllocated ? pool.allocatedBytes - pool.totalBytes : pool.remainingBytes)}</b></span></div>
+    <ul className="quota-pool-legend">{pool.allocations.map((allocation, index) => <li className={allocation.userId === targetUserId ? "is-target" : undefined} key={allocation.userId}><i style={{ backgroundColor: allocationColors[index % allocationColors.length] }} /><span>{allocation.label}{allocation.userId === targetUserId ? "（目前帳號）" : ""}</span><strong>{formatBytes(allocation.limitBytes)}</strong></li>)}</ul>
+    <p>此帳號目前最多可配額 <strong>{formatBytes(pool.maximumForTargetBytes)}</strong></p>
+  </article>;
 }
 
 export function QuotaEditorDialog({ account, onClose, onSaved }: { account: QuotaAccount | null; onClose: () => void; onSaved: (account: QuotaAccount) => void }) {
@@ -83,7 +100,7 @@ export function QuotaEditorDialog({ account, onClose, onSaved }: { account: Quot
       const response = await fetch(`/api/system/storage-usage/admin/${account.userId}/quota`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ databaseLimitBytes: values.database, storageLimitBytes: values.storage, expectedUpdatedAt: detail.capacity.quotaUpdatedAt }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (["QUOTA_CONFLICT", "QUOTA_BELOW_USAGE"].includes(result.code)) await load(false);
+        if (["QUOTA_CONFLICT", "QUOTA_BELOW_USAGE", "SYSTEM_QUOTA_POOL_EXCEEDED"].includes(result.code)) await load(false);
         throw new Error(result.error ?? "配額更新失敗，請稍後再試。");
       }
       onSaved(result as QuotaAccount); onClose();
@@ -101,8 +118,9 @@ export function QuotaEditorDialog({ account, onClose, onSaved }: { account: Quot
   return <ModalDialog className="quota-editor-dialog" eyebrow="ADMIN QUOTA" onClose={() => !pending && onClose()} open={Boolean(account)} pending={pending} title="調整帳號配額">
     {loading && !detail ? <div className="quota-editor-loading"><p>正在取得最新使用量與配額…</p></div> : !detail ? <div className="quota-editor-loading"><p className="notice error">{error ?? "無法取得最新配額資訊。"}</p><button className="secondary-button compact" onClick={() => void load(true)} type="button">重新載入</button></div> : <form className="quota-editor-form" onSubmit={submit}>
       <div className="quota-account-summary"><strong>{detail.displayName || detail.username || detail.email}</strong><span>{detail.email}</span><small>{detail.role === "admin" ? "管理員" : "一般使用者"}</small></div>
-      <section><h3>目前使用量</h3><UsageLine label="Database" limit={detail.capacity.databaseQuotaBytes} used={detail.capacity.databaseUsedBytes} /><UsageLine label="Storage" limit={detail.capacity.storageQuotaBytes} used={detail.capacity.storageUsedBytes} /></section>
-      <div className="quota-limit-fields"><label>Database 上限<div><input disabled={pending} inputMode="decimal" onChange={(event) => { setDatabaseValue(event.target.value); setConfirmingReduction(false); }} value={databaseValue} /><select disabled={pending} onChange={(event) => setDatabaseUnit(event.target.value as QuotaUnit)} value={databaseUnit}><option>MB</option><option>GB</option></select></div><small>最大 {formatBytes(detail.maximums.databaseBytes)}</small></label><label>Storage 上限<div><input disabled={pending} inputMode="decimal" onChange={(event) => { setStorageValue(event.target.value); setConfirmingReduction(false); }} value={storageValue} /><select disabled={pending} onChange={(event) => setStorageUnit(event.target.value as QuotaUnit)} value={storageUnit}><option>MB</option><option>GB</option></select></div><small>最大 {formatBytes(detail.maximums.storageBytes)}</small></label></div>
+      <section className="quota-pool-overview"><div><h3>系統配額分配</h3><p>系統總容量由所有帳號共同分配；不同顏色代表不同帳號的配額。</p></div><div className="quota-pool-grid"><QuotaPoolPanel label="Database" pool={detail.quotaPool.database} targetUserId={detail.userId} /><QuotaPoolPanel label="Storage" pool={detail.quotaPool.storage} targetUserId={detail.userId} /></div></section>
+      <section><h3>此帳號實際使用量</h3><UsageLine label="Database" limit={detail.capacity.databaseQuotaBytes} used={detail.capacity.databaseUsedBytes} /><UsageLine label="Storage" limit={detail.capacity.storageQuotaBytes} used={detail.capacity.storageUsedBytes} /></section>
+      <div className="quota-limit-fields"><label>Database 上限<div><input disabled={pending} inputMode="decimal" onChange={(event) => { setDatabaseValue(event.target.value); setConfirmingReduction(false); }} value={databaseValue} /><select disabled={pending} onChange={(event) => setDatabaseUnit(event.target.value as QuotaUnit)} value={databaseUnit}><option>MB</option><option>GB</option></select></div><small>目前可配額上限 {formatBytes(detail.maximums.databaseBytes)}</small></label><label>Storage 上限<div><input disabled={pending} inputMode="decimal" onChange={(event) => { setStorageValue(event.target.value); setConfirmingReduction(false); }} value={storageValue} /><select disabled={pending} onChange={(event) => setStorageUnit(event.target.value as QuotaUnit)} value={storageUnit}><option>MB</option><option>GB</option></select></div><small>目前可配額上限 {formatBytes(detail.maximums.storageBytes)}</small></label></div>
       {validation && <p className="notice error" role="alert">{validation}</p>}
       {warnings.map((warning) => <p className="notice quota-warning" key={warning}>⚠ {warning}</p>)}
       {error && <p className="notice error" role="alert">{error}</p>}

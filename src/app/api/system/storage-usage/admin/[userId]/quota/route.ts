@@ -6,6 +6,7 @@ import { getSecurityContext } from "@/lib/security/activity";
 import { isSystemAdmin } from "@/lib/security/system-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserCapacity } from "@/lib/system/quota";
+import { getQuotaPool } from "@/lib/system/quota-pool";
 import { projectStorageUsageLimits } from "@/lib/system/storage-usage";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,11 @@ async function details(userId: string) {
   ]);
   if (accountError || !account.user || profileError || !profile) throw accountError ?? profileError ?? new Error("USER_NOT_FOUND");
   if (settingsError || !settings) throw settingsError ?? new Error("QUOTA_SETTINGS_UNAVAILABLE");
+  const safetyMaximums = {
+    databaseBytes: Number(settings.maximum_database_limit_bytes),
+    storageBytes: Number(settings.maximum_storage_limit_bytes),
+  };
+  const quotaPool = await getQuotaPool(userId, safetyMaximums);
   return {
     userId,
     email: account.user.email ?? "",
@@ -48,9 +54,10 @@ async function details(userId: string) {
     role: profile.role,
     capacity,
     maximums: {
-      databaseBytes: Number(settings.maximum_database_limit_bytes),
-      storageBytes: Number(settings.maximum_storage_limit_bytes),
+      databaseBytes: quotaPool.database.maximumForTargetBytes,
+      storageBytes: quotaPool.storage.maximumForTargetBytes,
     },
+    quotaPool,
     systemLimits: {
       databaseBytes: projectStorageUsageLimits.databaseBytes,
       storageBytes: projectStorageUsageLimits.storageBytes,
@@ -78,12 +85,14 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   if (!parsed.success) return responseError("容量設定格式錯誤。", "INVALID_QUOTA", 400);
 
   try {
-    const { data, error } = await createAdminClient().rpc("vault_admin_update_user_quota", {
+    const { data, error } = await createAdminClient().rpc("vault_admin_update_user_quota_v2", {
       acting_admin_id: authorization.context.userId,
       target_user_id: userId,
       new_database_limit_bytes: parsed.data.databaseLimitBytes,
       new_storage_limit_bytes: parsed.data.storageLimitBytes,
       expected_updated_at: parsed.data.expectedUpdatedAt,
+      system_database_capacity_bytes: projectStorageUsageLimits.databaseBytes,
+      system_storage_capacity_bytes: projectStorageUsageLimits.storageBytes,
     });
     if (error) throw error;
     return NextResponse.json({ ...(await details(userId)), capacity: data }, { headers: { "Cache-Control": "private, no-store" } });
@@ -93,6 +102,11 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (message.includes("USER_NOT_FOUND")) return responseError("找不到指定帳號。", "USER_NOT_FOUND", 404);
     if (message.includes("QUOTA_CONFLICT")) return responseError("此帳號的配額已被其他管理員更新，請重新確認最新設定。", "QUOTA_CONFLICT", 409);
     if (message.includes("QUOTA_ABOVE_MAX")) return responseError("已超過目前系統允許設定的最大容量。", "QUOTA_ABOVE_MAX", 400);
+    if (message.includes("SYSTEM_QUOTA_POOL_EXCEEDED")) {
+      const resource = message.includes(":storage:") ? "Storage" : "Database";
+      const bytes = Number(message.match(/:(\d+)(?:\D|$)/)?.[1] ?? 0);
+      return responseError(`${resource} 系統可分配容量不足，目前此帳號最多可配額 ${formatBytes(bytes)}。`, "SYSTEM_QUOTA_POOL_EXCEEDED", 409, { resource: resource.toLowerCase(), availableBytes: bytes });
+    }
     if (message.includes("QUOTA_BELOW_USAGE")) {
       const resource = message.includes(":storage:") ? "Storage" : "Database";
       const bytes = Number(message.match(/:(\d+)(?:\D|$)/)?.[1] ?? 0);

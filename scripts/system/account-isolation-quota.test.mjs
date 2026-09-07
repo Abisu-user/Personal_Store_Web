@@ -131,3 +131,23 @@ test("actual Supabase Storage metadata is the authoritative quota gate", async (
   assert.match(migration, /vault_user_storage_usage\(account_id\)/);
   assert.match(migration, /quota_exceeded:storage/);
 });
+
+test("system capacity is a shared allocation pool with a dynamic per-account maximum", async () => {
+  const migration = await source("supabase/migrations/20260907230000_enforce_system_quota_pool.sql");
+  const pool = await source("src/lib/system/quota-pool.ts");
+  const route = await source("src/app/api/system/storage-usage/admin/[userId]/quota/route.ts");
+  const dialog = await source("src/components/system/quota-editor-dialog.tsx");
+  assert.match(migration, /vault_admin_quota_pool_summary/);
+  assert.match(migration, /vault-quota-system-pool/);
+  assert.match(migration, /system_database_capacity_bytes - other_database_allocated/);
+  assert.match(migration, /system_storage_capacity_bytes - other_storage_allocated/);
+  assert.match(migration, /SYSTEM_QUOTA_POOL_EXCEEDED:database/);
+  assert.match(migration, /SYSTEM_QUOTA_POOL_EXCEEDED:storage/);
+  assert.match(pool, /databaseAllocatedBytes - \(target\?\.databaseLimitBytes \?\? 0\)/);
+  assert.match(pool, /storageAllocatedBytes - \(target\?\.storageLimitBytes \?\? 0\)/);
+  assert.match(route, /vault_admin_update_user_quota_v2/);
+  assert.match(route, /system_database_capacity_bytes:\s*projectStorageUsageLimits\.databaseBytes/);
+  assert.match(route, /system_storage_capacity_bytes:\s*projectStorageUsageLimits\.storageBytes/);
+  assert.match(dialog, /系統總容量/);
+  assert.match(dialog, /目前可配額上限/);
+});
