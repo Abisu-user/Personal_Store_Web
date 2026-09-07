@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const parsed = querySchema.safeParse(request.nextUrl.searchParams.get("q") ?? "");
   if (!parsed.success) return NextResponse.json({ error: "請至少輸入 2 個字搜尋動漫。" }, { status: 400 });
   try {
-    const results = await searchAnime(parsed.data, request.signal);
+    const results = (await searchAnime(parsed.data, request.signal)).filter((anime) => !anime.isAdult);
     console.info("[api/anime/search] catalogue lookup succeeded", { queryLength: parsed.data.length, resultCount: results.length });
     return NextResponse.json({ results }, { headers: { "Cache-Control": "private, no-store" } });
   }

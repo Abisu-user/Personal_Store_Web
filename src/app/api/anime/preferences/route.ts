@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,14 @@ const fail = (message: string, status = 400) => NextResponse.json({ error: messa
 export async function GET() {
   const context = await getSecurityContext();
   if (!context) return fail("Unauthorized", 401);
+  if (!(await hasAdultContentAccess(context.userId))) return fail("你沒有成人內容存取權。", 403);
   return NextResponse.json(await getAnimePreferences(context.userId), { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return fail("Unauthorized", 401);
+  if (!(await hasAdultContentAccess(context.userId))) return fail("你沒有成人內容存取權。", 403);
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return fail("設定格式不正確。");
   const current = await getAnimePreferences(context.userId);

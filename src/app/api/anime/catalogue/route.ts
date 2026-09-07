@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCatalogue, getCatalogueTaxonomy, getDiscoveryHome, type CatalogueFilters } from "@/lib/anime/anilist-catalogue";
 import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,7 +18,8 @@ export async function GET(request: NextRequest) {
   const security = await getSecurityContext();
   if (!security) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = request.nextUrl.searchParams;
-  const includeAdult = params.get("adult") === "1" && (await getAnimePreferences(security.userId)).adultModeEnabled;
+  const adultRequested = params.get("adult") === "1";
+  const includeAdult = adultRequested && await hasAdultContentAccess(security.userId) && (await getAnimePreferences(security.userId)).adultModeEnabled;
   if (params.get("adult") === "1" && !includeAdult) return NextResponse.json({ error: "成人內容模式尚未啟用。" }, { status: 403 });
   if (params.get("view") === "home") {
     try { return NextResponse.json(await getDiscoveryHome(), { headers: { "Cache-Control": "private, max-age=900" } }); }

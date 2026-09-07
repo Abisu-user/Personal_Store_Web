@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ const serializeTag = (tag: { id: string; name: string; color: string | null; fol
 });
 
 async function mayUseScope(userId: string, value: "standard" | "adult") {
-  return value === "standard" || (await getAnimePreferences(userId)).adultModeEnabled;
+  return value === "standard" || await hasAdultContentAccess(userId);
 }
 
 export async function POST(request: NextRequest) {

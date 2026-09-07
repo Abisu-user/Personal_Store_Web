@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ function serializeFolder(folder: { id: string; name: string; scope: "standard" |
 }
 
 async function allowScope(userId: string, value: "standard" | "adult") {
-  return value !== "adult" || (await getAnimePreferences(userId)).adultModeEnabled;
+  return value !== "adult" || await hasAdultContentAccess(userId);
 }
 
 export async function POST(request: NextRequest) {
@@ -40,11 +40,15 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = patchSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "資料夾設定不正確。" }, { status: 400 });
+  const admin = createAdminClient();
+  const { data: current } = await admin.from("anime_folders").select("scope").eq("id", parsed.data.id).eq("user_id", context.userId).maybeSingle();
+  if (!current) return NextResponse.json({ error: "找不到此資料夾。" }, { status: 404 });
+  if (!(await allowScope(context.userId, current.scope))) return NextResponse.json({ error: "你沒有成人內容存取權。" }, { status: 403 });
   const updates: Record<string, unknown> = {};
   if (parsed.data.name !== undefined) updates.name = parsed.data.name;
   if (parsed.data.sortOrder !== undefined) updates.sort_order = parsed.data.sortOrder;
   if (parsed.data.isVisible !== undefined) updates.is_visible = parsed.data.isVisible;
-  const { data, error } = await createAdminClient().from("anime_folders").update(updates).eq("id", parsed.data.id).eq("user_id", context.userId).select("id,name,scope,sort_order,is_visible").maybeSingle();
+  const { data, error } = await admin.from("anime_folders").update(updates).eq("id", parsed.data.id).eq("user_id", context.userId).select("id,name,scope,sort_order,is_visible").maybeSingle();
   if (error || !data) return NextResponse.json({ error: "找不到或無法修改此資料夾。" }, { status: 404 });
   return NextResponse.json({ folder: serializeFolder(data) });
 }
@@ -52,7 +56,11 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = deleteSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return NextResponse.json({ error: "找不到要移除的資料夾。" }, { status: 400 });
-  const { error } = await createAdminClient().from("anime_folders").delete().eq("id", parsed.data.id).eq("user_id", context.userId);
+  const admin = createAdminClient();
+  const { data: current } = await admin.from("anime_folders").select("scope").eq("id", parsed.data.id).eq("user_id", context.userId).maybeSingle();
+  if (!current) return NextResponse.json({ error: "找不到此資料夾。" }, { status: 404 });
+  if (!(await allowScope(context.userId, current.scope))) return NextResponse.json({ error: "你沒有成人內容存取權。" }, { status: 403 });
+  const { error } = await admin.from("anime_folders").delete().eq("id", parsed.data.id).eq("user_id", context.userId);
   if (error) return NextResponse.json({ error: "無法移除資料夾。" }, { status: 503 });
   return NextResponse.json({ ok: true });
 }

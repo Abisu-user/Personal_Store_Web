@@ -2,6 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AnimeFolder, AnimeLibraryItem, AnimePreferences, AnimeRelation, AnimeTag, AnimeWatchLog, AnimeWorkspaceData } from "@/lib/anime/types";
 import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
+import { getAdultContentPermissions } from "@/lib/security/adult-content";
 
 const asStrings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 const asRelations = (value: unknown): AnimeRelation[] => Array.isArray(value) ? value.filter((item): item is AnimeRelation => Boolean(item) && typeof item === "object" && typeof (item as AnimeRelation).malId === "number" && typeof (item as AnimeRelation).title === "string") : [];
@@ -29,7 +30,8 @@ export async function getAnimePreferences(userId: string): Promise<AnimePreferen
 
 export async function getAnimeWorkspaceData(userId: string, scope: "standard" | "adult" = "standard", options: { trashed?: boolean } = {}): Promise<AnimeWorkspaceData> {
   const admin = createAdminClient();
-  const preferences = await getAnimePreferences(userId);
+  const [preferences, adultPermissions] = await Promise.all([getAnimePreferences(userId), getAdultContentPermissions(userId)]);
+  if (scope === "adult" && !adultPermissions.adultContentAccess) throw new Error("Adult content forbidden");
   let libraryQuery = admin.from("anime_library").select("*").eq("user_id", userId).order("updated_at", { ascending: false }).limit(400);
   libraryQuery = options.trashed ? libraryQuery.not("deleted_at", "is", null) : libraryQuery.is("deleted_at", null);
   libraryQuery = scope === "adult" ? libraryQuery.eq("is_adult", true) : libraryQuery.or("is_adult.is.null,is_adult.eq.false");
@@ -71,5 +73,5 @@ export async function getAnimeWorkspaceData(userId: string, scope: "standard" | 
   library.forEach((anime) => { const linked = [...new Set(folderIdsByAnime.get(anime.id) ?? [])]; anime.folderIds = linked.length ? linked : anime.folderId ? [anime.folderId] : []; anime.folderId = anime.folderIds[0] ?? null; });
   (links ?? []).forEach((link: any) => { const tag = tagById.get(link.tag_id); if (tag) animeById.get(link.anime_id)?.tags.push(tag); });
   const logs = (logRows ?? []).map((row: any): AnimeWatchLog => ({ id: row.id, animeId: row.anime_id, fromEpisode: row.from_episode, toEpisode: row.to_episode, action: row.action, watchedAt: row.watched_at }));
-  return { library, tags, folders, logs, preferences };
+  return { library, tags, folders, logs, preferences, adultPermissions };
 }

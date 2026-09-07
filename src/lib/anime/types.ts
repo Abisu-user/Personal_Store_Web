@@ -23,7 +23,8 @@ export type AnimeLibraryItem = {
 export type AnimeWatchLog = { id: string; animeId: string; fromEpisode: number; toEpisode: number; action: "set" | "increment" | "decrement"; watchedAt: string };
 export type AdultAccessMode = "none" | "passkey" | "pin4" | "pin6";
 export type AnimePreferences = { adultModeEnabled: boolean; adultHiddenByDefault: boolean; adultAccessMode: AdultAccessMode; blurAdultCovers: boolean; };
-export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; folders: AnimeFolder[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; };
+export type AnimeAdultPermissions = { adultContentAccess: boolean; adultContentAdmin: boolean; };
+export type AnimeWorkspaceData = { library: AnimeLibraryItem[]; tags: AnimeTag[]; folders: AnimeFolder[]; logs: AnimeWatchLog[]; preferences: AnimePreferences; adultPermissions: AnimeAdultPermissions; };
 
 export type ExternalAnime = {
   id: string; source: "jikan" | "anilist" | "bangumi"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null; originalTitle: string | null;

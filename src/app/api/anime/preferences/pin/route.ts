@@ -3,6 +3,7 @@ import { z } from "zod";
 import { hashAppLockPin, makeAppLockSalt, validateAppLockPin, verifyAppLockPin } from "@/lib/app-lock/server";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 const modeSchema = z.enum(["pin4", "pin6"]);
 const configureSchema = z.object({ action: z.literal("configure"), mode: modeSchema, pin: z.string().min(1).max(12) });
@@ -12,6 +13,7 @@ const fail = (error: string, status = 400) => NextResponse.json({ error }, { sta
 export async function GET() {
   const context = await getSecurityContext();
   if (!context) return fail("Unauthorized", 401);
+  if (!(await hasAdultContentAccess(context.userId))) return fail("你沒有成人內容存取權。", 403);
   try {
     const { data, error } = await createAdminClient().from("anime_preferences").select("adult_access_mode,adult_pin_hash").eq("user_id", context.userId).maybeSingle();
     if (error) throw error;
@@ -22,6 +24,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return fail("Unauthorized", 401);
+  if (!(await hasAdultContentAccess(context.userId))) return fail("你沒有成人內容存取權。", 403);
   const body = await request.json().catch(() => null);
   const configure = configureSchema.safeParse(body);
   const verify = verifySchema.safeParse(body);

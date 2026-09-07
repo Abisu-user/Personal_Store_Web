@@ -5,6 +5,7 @@ import { deleteCover, verifiedCoverPath } from "@/lib/content/server";
 import { getAnimePreferences, getAnimeWorkspaceData } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasAdultContentAccess } from "@/lib/security/adult-content";
 
 export const dynamic = "force-dynamic";
 
@@ -99,6 +100,7 @@ function manualRow(input: z.infer<typeof commonFields>, coverPath: string | null
 export async function GET(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const adultScope = request.nextUrl.searchParams.get("scope") === "adult";
+  if (adultScope && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
   if (adultScope && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
   const trashed = request.nextUrl.searchParams.get("view") === "trash";
   try { return NextResponse.json(await getAnimeWorkspaceData(context.userId, adultScope ? "adult" : "standard", { trashed }), { headers: { "Cache-Control": "private, no-store" } }); }
@@ -110,6 +112,7 @@ export async function POST(request: NextRequest) {
   const parsed = createSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查動漫名稱、連結與其他欄位。", 400);
   const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
+    if (parsed.data.isAdult && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     if (parsed.data.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
     const scope = parsed.data.isAdult ? "adult" : "standard" as const;
     const folderIds = await validateFolderIds(context.userId, scope, normalizedFolderIds(parsed.data));
@@ -128,6 +131,7 @@ export async function PATCH(request: NextRequest) {
   const batch = batchSchema.safeParse(input);
   if (batch.success) {
     const { action, ids, scope, categoryIds = [] } = batch.data;
+    if (scope === "adult" && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     if (scope === "adult" && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
     const admin = createAdminClient();
     let target = admin.from("anime_library").select("id,cover_url").eq("user_id", context.userId).in("id", ids);
@@ -163,6 +167,7 @@ export async function PATCH(request: NextRequest) {
     const admin = createAdminClient(); const { id: animeId, categoryIds } = parsed.data; const changes = parsed.data;
     const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,watch_status,is_adult,folder_id").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
     if (currentError) throw currentError; if (!current) return error("找不到這部動漫。", 404);
+    if ((current.is_adult || changes.isAdult === true) && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     const updates: Record<string, unknown> = {};
     if (changes.title !== undefined) updates.title = changes.title;
     if (changes.sourceUrl !== undefined) updates.source_url = changes.sourceUrl || null;
@@ -200,6 +205,6 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const parsed = deleteSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("找不到要移除的動漫。", 400);
-  try { const { error: deleteError } = await createAdminClient().from("anime_library").update({ deleted_at: new Date().toISOString() }).eq("id", parsed.data.id).eq("user_id", context.userId).is("deleted_at", null); if (deleteError) throw deleteError; return NextResponse.json({ ok: true }); }
+  try { const admin = createAdminClient(); const { data: current, error: currentError } = await admin.from("anime_library").select("is_adult").eq("id", parsed.data.id).eq("user_id", context.userId).is("deleted_at", null).maybeSingle(); if (currentError) throw currentError; if (!current) return error("找不到這部動漫。", 404); if (current.is_adult && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403); const { error: deleteError } = await admin.from("anime_library").update({ deleted_at: new Date().toISOString() }).eq("id", parsed.data.id).eq("user_id", context.userId).is("deleted_at", null); if (deleteError) throw deleteError; return NextResponse.json({ ok: true }); }
   catch { return error("無法移除動漫。", 503); }
 }

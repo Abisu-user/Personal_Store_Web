@@ -60,6 +60,7 @@ const empty: AnimeWorkspaceData = {
   folders: [],
   logs: [],
   preferences: defaultPreferences,
+  adultPermissions: { adultContentAccess: false, adultContentAdmin: false },
 };
 // `title` is the user's editable display name.  Provider names remain in the
 // detail view, but must never override a name the user has changed.
@@ -827,10 +828,14 @@ function AnimeCollectionList({
 
 export function AnimeWorkspace({
   initialData,
+  initialAdultOpen = false,
 }: {
   initialData?: AnimeWorkspaceData;
+  initialAdultOpen?: boolean;
 }) {
   const [data, setData] = useState(initialData ?? empty);
+  const hasAdultAccess = data.adultPermissions?.adultContentAccess === true;
+  const initialAdultHandled = useRef(false);
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [tab, setTab] = useState<Tab>("library");
   const [filter, setFilter] = useState<Filter>("all");
@@ -894,7 +899,9 @@ export function AnimeWorkspace({
     let active = true;
     const cached = readClientResource<AnimeWorkspaceData>("anime:standard");
     if (cached) {
-      setData(cached);
+      // Permission is security-sensitive and is never trusted from the local
+      // resource cache.  The fresh server response below restores it.
+      setData({ ...cached, adultPermissions: empty.adultPermissions });
       setPreferences(cached.preferences);
       setLoaded(true);
     }
@@ -905,6 +912,11 @@ export function AnimeWorkspace({
         setData(next);
         setPreferences(next.preferences);
         setLoaded(true);
+        if (!next.adultPermissions.adultContentAccess) {
+          setAdultUnlocked(false);
+          setAdultData(null);
+          setTab((current) => current === "adult" ? "library" : current);
+        }
         writeClientResource("anime:standard", next);
       } catch (cause) {
         if (active && !cached)
@@ -936,6 +948,11 @@ export function AnimeWorkspace({
     setData(next);
     setPreferences(next.preferences);
     setLoaded(true);
+    if (!next.adultPermissions.adultContentAccess) {
+      setAdultUnlocked(false);
+      setAdultData(null);
+      setTab((current) => current === "adult" ? "library" : current);
+    }
     writeClientResource("anime:standard", next);
   };
   const refreshAdult = async () => {
@@ -1046,6 +1063,13 @@ export function AnimeWorkspace({
       setPending(null);
     }
   };
+  useEffect(() => {
+    if (!initialAdultOpen || initialAdultHandled.current || !loaded || !hasAdultAccess) return;
+    initialAdultHandled.current = true;
+    void openAdult();
+    // Opening the protected tab is a one-time response to the direct route.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAdultAccess, initialAdultOpen, loaded]);
   const unlockAdultWithPin = async (value = adultPin) => {
     const length = preferences.adultAccessMode === "pin6" ? 6 : 4;
     if (!new RegExp(`^\\d{${length}}$`).test(value)) {
@@ -1259,7 +1283,7 @@ export function AnimeWorkspace({
           >
             統計
           </button>
-          {preferences.adultModeEnabled && (
+          {hasAdultAccess && (
             <button
               className={tab === "adult" ? "active" : ""}
               onClick={() => void openAdult()}
