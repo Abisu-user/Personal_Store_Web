@@ -1,5 +1,8 @@
 import "server-only";
 
+import { quotaConfig } from "@/lib/system/quota-config";
+import { usagePercentage } from "@/lib/format-bytes";
+
 export { formatBytes } from "@/lib/format-bytes";
 
 const MB = 1024 * 1024;
@@ -11,8 +14,8 @@ function readLimit(value: string | undefined, fallback: number) {
 
 /** Defaults live server-side and are also installed in user_storage_quotas. */
 export const userStorageQuotaDefaults = {
-  databaseBytes: readLimit(process.env.USER_DATABASE_QUOTA_BYTES, 100 * MB),
-  storageBytes: readLimit(process.env.USER_STORAGE_QUOTA_BYTES, 200 * MB),
+  databaseBytes: readLimit(process.env.USER_DATABASE_QUOTA_BYTES, quotaConfig.defaultDatabaseBytes),
+  storageBytes: readLimit(process.env.USER_STORAGE_QUOTA_BYTES, quotaConfig.defaultStorageBytes),
 };
 
 /** Legacy project limits remain available only to the administrator overview. */
@@ -24,7 +27,7 @@ export const projectStorageUsageLimits = {
 export type CapacityStatus = "healthy" | "growing" | "high" | "critical" | "exceeded";
 
 export function capacityStatus(usedBytes: number, limitBytes: number): CapacityStatus {
-  const percent = limitBytes ? (usedBytes / limitBytes) * 100 : 0;
+  const percent = usagePercentage(usedBytes, limitBytes);
   if (percent >= 100) return "exceeded";
   if (percent >= 95) return "critical";
   if (percent >= 80) return "high";
@@ -33,7 +36,7 @@ export function capacityStatus(usedBytes: number, limitBytes: number): CapacityS
 }
 
 export function quota(usedBytes: number, limitBytes: number) {
-  const usagePercent = limitBytes ? Math.round((usedBytes / limitBytes) * 1000) / 10 : 0;
+  const usagePercent = usagePercentage(usedBytes, limitBytes);
   return {
     usedBytes,
     limitBytes,

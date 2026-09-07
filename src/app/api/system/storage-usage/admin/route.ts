@@ -25,12 +25,14 @@ export async function GET(request: NextRequest) {
   }
 
   const q = request.nextUrl.searchParams.get("q")?.trim().slice(0, 100) ?? "";
+  const requestedFilter = request.nextUrl.searchParams.get("filter") ?? "all";
+  const filter = ["all", "user", "admin", "database-near", "storage-near", "full"].includes(requestedFilter) ? requestedFilter : "all";
   const page = Math.max(1, Number.parseInt(request.nextUrl.searchParams.get("page") ?? "1", 10) || 1);
   try {
     const admin = createAdminClient();
     const [projectResult, accountsResult] = await Promise.all([
       admin.rpc("vault_project_storage_usage"),
-      admin.rpc("vault_admin_user_capacity_page", { search_term: q, page_number: page, page_size: 20 }),
+      admin.rpc("vault_admin_user_capacity_page_v2", { search_term: q, page_number: page, page_size: 20, filter_mode: filter }),
     ]);
     if (projectResult.error || !projectResult.data) throw projectResult.error ?? new Error("PROJECT_USAGE_UNAVAILABLE");
     if (accountsResult.error || !accountsResult.data) throw accountsResult.error ?? new Error("ACCOUNT_USAGE_UNAVAILABLE");

@@ -2,14 +2,15 @@
 
 import { CSSProperties, FormEvent, useCallback, useEffect, useState } from "react";
 
-import { formatBytes } from "@/lib/format-bytes";
+import { formatBytes, usagePercentage } from "@/lib/format-bytes";
+import { QuotaAccount, QuotaEditorDialog } from "@/components/system/quota-editor-dialog";
 
 type Status = "healthy" | "growing" | "high" | "critical" | "exceeded";
 type Quota = { usedBytes: number; limitBytes: number; remainingBytes: number; overageBytes: number; usagePercent: number; status: Status };
 type StorageGroup = { category: string; usedBytes: number };
 type TableUsage = { name: string; group: "system" | "personal"; dataBytes: number; indexBytes: number; otherBytes: number; totalBytes: number };
 type Usage = { scope: "self"; isAdmin: boolean; database: Quota | null; databaseGroups: StorageGroup[]; storage: Quota | null; storageGroups: StorageGroup[]; errors: { database?: string; storage?: string }; updatedAt: string };
-type AccountUsage = { userId: string; email: string; displayName: string | null; capacity: { databaseUsedBytes: number; databaseQuotaBytes: number; storageUsedBytes: number; storageQuotaBytes: number } };
+type AccountUsage = QuotaAccount & { username?: string | null };
 type AdminUsage = { project: { database: Quota | null; storage: Quota | null; tables: TableUsage[]; databaseGroups: StorageGroup[]; storageGroups: StorageGroup[]; errors: Record<string, string>; updatedAt: string }; accounts: { total: number; users: AccountUsage[] }; page: number };
 
 const storageLabels: Record<string, string> = { photos: "照片", files: "一般檔案", "content-covers": "內容封面", "workspace-backgrounds": "工作區背景", avatars: "個人頭像" };
@@ -52,16 +53,25 @@ function ResourcePanel({ title, quota, groups, labels, error, updatedAt }: { tit
   return <section className="storage-resource-panel"><CapacityCard error={error} groups={groups} quota={quota} title={title} updatedAt={updatedAt} />{quota && <UsageBreakdown groups={groups} labels={labels} quotaBytes={quota.limitBytes} resource={title} title="使用明細" />}</section>;
 }
 
+function AccountQuotaMetric({ label, used, limit }: { label: string; used: number; limit: number }) {
+  const percentage = usagePercentage(used, limit);
+  const state = percentage >= 100 ? "容量已滿" : percentage >= 95 ? "嚴重警告" : percentage >= 90 ? "警告" : percentage >= 80 ? "提醒" : "正常";
+  return <div className="storage-account-metric"><span><strong>{label}</strong><b>{formatBytes(used)} / {formatBytes(limit)}</b></span><div className={`quota-mini-progress ${percentage >= 95 ? "critical" : percentage >= 90 ? "warning" : percentage >= 80 ? "notice" : "normal"}`}><i style={{ width: `${Math.min(100, percentage)}%` }} /></div><small>{percentage.toFixed(1)}% · {state}</small></div>;
+}
+
 function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
   const [data, setData] = useState<AdminUsage | null>(null);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(initialPage);
+  const [filter, setFilter] = useState("all");
+  const [selectedAccount, setSelectedAccount] = useState<AccountUsage | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async (nextPage: number, q: string) => {
+  const load = useCallback(async (nextPage: number, q: string, nextFilter: string) => {
     setLoading(true); setError(null);
     try {
-      const response = await fetch(`/api/system/storage-usage/admin?page=${nextPage}&q=${encodeURIComponent(q)}`, { cache: "no-store" });
+      const response = await fetch(`/api/system/storage-usage/admin?page=${nextPage}&q=${encodeURIComponent(q)}&filter=${encodeURIComponent(nextFilter)}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "目前無法取得管理員統計。");
       setData(result); setPage(nextPage);
@@ -69,16 +79,23 @@ function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
     finally { setLoading(false); }
   }, []);
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(initialPage, ""), 0);
+    const timer = window.setTimeout(() => void load(initialPage, "", "all"), 0);
     return () => window.clearTimeout(timer);
   }, [initialPage, load]);
-  function submit(event: FormEvent) { event.preventDefault(); void load(1, query.trim()); }
+  function submit(event: FormEvent) { event.preventDefault(); void load(1, query.trim(), filter); }
+  function saved(account: QuotaAccount) {
+    setData((current) => current ? { ...current, accounts: { ...current.accounts, users: current.accounts.users.map((item) => item.userId === account.userId ? { ...item, ...account } : item) } } : current);
+    setNotice("✓ 配額設定已更新");
+    window.setTimeout(() => setNotice(null), 3000);
+  }
   const pages = Math.max(1, Math.ceil((data?.accounts.total ?? 0) / 20));
   return <section className="storage-admin-panel">
     <header><div><p className="eyebrow">SYSTEM OVERVIEW</p><h2>系統儲存空間</h2><p>先顯示整理後的系統分類；技術明細與個別帳號配額可視需要展開。</p></div></header>
     {error && <p className="notice error" role="alert">{error}</p>}
+    {notice && <p className="notice success" role="status">{notice}</p>}
     {data?.project && <><div className="storage-system-grid"><ResourcePanel error={data.project.errors.database} groups={data.project.databaseGroups} labels={systemDatabaseLabels} quota={data.project.database} title="Database" updatedAt={data.project.updatedAt} /><ResourcePanel error={data.project.errors.storage} groups={data.project.storageGroups} labels={storageLabels} quota={data.project.storage} title="Storage" updatedAt={data.project.updatedAt} /></div><details className="storage-admin-details"><summary>查看 Database 資料表技術明細</summary><div className="storage-table-list">{data.project.tables.map((table) => <div className="storage-table-row" key={table.name}><span>{table.name}</span><strong>{formatBytes(table.totalBytes)}</strong></div>)}</div></details></>}
-    <details className="storage-admin-details"><summary>查看個別帳號配額</summary><div className="storage-account-heading"><div><h3>使用者配額</h3><small>每頁最多 20 個帳號</small></div><form onSubmit={submit}><input aria-label="搜尋帳號或 Email" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋帳號或 Email" value={query} /><button className="secondary-button compact" type="submit">搜尋</button></form></div>{loading && !data ? <p>正在讀取管理員資料…</p> : <div className="storage-account-list">{data?.accounts.users.map((account) => <article key={account.userId}><div><strong>{account.displayName || account.email.split("@")[0]}</strong><small>{account.email}</small></div><span>Database <b>{formatBytes(account.capacity.databaseUsedBytes)} / {formatBytes(account.capacity.databaseQuotaBytes)}</b></span><span>Storage <b>{formatBytes(account.capacity.storageUsedBytes)} / {formatBytes(account.capacity.storageQuotaBytes)}</b></span></article>)}</div>}<div className="storage-pagination"><button className="secondary-button compact" disabled={loading || page <= 1} onClick={() => void load(page - 1, query.trim())} type="button">上一頁</button><span>{page} / {pages}</span><button className="secondary-button compact" disabled={loading || page >= pages} onClick={() => void load(page + 1, query.trim())} type="button">下一頁</button></div></details>
+    <details className="storage-admin-details"><summary>查看個別帳號配額</summary><div className="storage-account-heading"><div><h3>使用者配額</h3><small>每頁最多 20 個帳號，管理員自己的配額也可調整。</small></div><form onSubmit={submit}><input aria-label="搜尋帳號或 Email" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋 Email 或使用者名稱" value={query} /><select aria-label="篩選帳號" onChange={(event) => { const value = event.target.value; setFilter(value); void load(1, query.trim(), value); }} value={filter}><option value="all">全部</option><option value="user">一般使用者</option><option value="admin">管理員</option><option value="database-near">Database 接近滿額</option><option value="storage-near">Storage 接近滿額</option><option value="full">容量已滿</option></select><button className="secondary-button compact" type="submit">搜尋</button></form></div>{loading && !data ? <p>正在讀取管理員資料…</p> : <div className="storage-account-list">{data?.accounts.users.map((account) => <article key={account.userId}><div className="storage-account-identity"><strong>{account.displayName || account.username || account.email.split("@")[0]}</strong><small>{account.email}</small><em>{account.role === "admin" ? "管理員" : "一般使用者"}</em></div><AccountQuotaMetric label="Database" limit={account.capacity.databaseQuotaBytes} used={account.capacity.databaseUsedBytes} /><AccountQuotaMetric label="Storage" limit={account.capacity.storageQuotaBytes} used={account.capacity.storageUsedBytes} /><button className="secondary-button compact" onClick={() => setSelectedAccount(account)} type="button">調整</button></article>)}</div>}<div className="storage-pagination"><button className="secondary-button compact" disabled={loading || page <= 1} onClick={() => void load(page - 1, query.trim(), filter)} type="button">上一頁</button><span>{page} / {pages}</span><button className="secondary-button compact" disabled={loading || page >= pages} onClick={() => void load(page + 1, query.trim(), filter)} type="button">下一頁</button></div></details>
+    <QuotaEditorDialog account={selectedAccount} onClose={() => setSelectedAccount(null)} onSaved={saved} />
   </section>;
 }
 

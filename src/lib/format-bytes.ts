@@ -5,3 +5,8 @@ export function formatBytes(value: number) {
   const number = value / 1024 ** index;
   return `${number >= 100 || index === 0 ? Math.round(number) : number.toFixed(number >= 10 ? 1 : 2)} ${units[index]}`;
 }
+
+export function usagePercentage(usedBytes: number, limitBytes: number) {
+  if (!Number.isFinite(usedBytes) || !Number.isFinite(limitBytes) || limitBytes <= 0) return 0;
+  return Math.round((Math.max(0, usedBytes) / limitBytes) * 1000) / 10;
+}

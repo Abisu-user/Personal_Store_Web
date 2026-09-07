@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { formatBytes } from "../../src/lib/format-bytes.ts";
+import { formatBytes, usagePercentage } from "../../src/lib/format-bytes.ts";
+import { parseQuotaInput } from "../../src/lib/system/quota-values.ts";
 
 const root = new URL("../../", import.meta.url);
 const source = (path) => readFile(new URL(path, root), "utf8");
@@ -11,6 +12,8 @@ test("byte formatting is shared and stable", () => {
   assert.equal(formatBytes(0), "0 B");
   assert.equal(formatBytes(1024), "1.00 KB");
   assert.equal(formatBytes(100 * 1024 * 1024), "100 MB");
+  assert.equal(usagePercentage(25, 100), 25);
+  assert.equal(usagePercentage(1, 0), 0);
 });
 
 test("appearance cache key is scoped by account and device", async () => {
@@ -84,4 +87,47 @@ test("project Storage totals aggregate grouped bytes instead of a missing inner 
   const migration = await source("supabase/migrations/20260907213000_fix_project_storage_usage.sql");
   assert.match(migration, /coalesce\(sum\(used_bytes\), 0\)/);
   assert.doesNotMatch(migration, /select\s+coalesce\(sum\(byte_size\), 0\),\s+coalesce\(jsonb_agg/);
+});
+
+test("quota management uses central defaults and enforces safe atomic updates", async () => {
+  const config = await source("src/lib/system/quota-config.ts");
+  const migration = await source("supabase/migrations/20260907220000_add_user_quota_management.sql");
+  assert.match(config, /defaultDatabaseBytes:\s*25\s*\*\s*MB/);
+  assert.match(config, /defaultStorageBytes:\s*500\s*\*\s*MB/);
+  assert.match(config, /maximumDatabaseBytes:\s*500\s*\*\s*MB/);
+  assert.match(config, /maximumStorageBytes:\s*10\s*\*\s*GB/);
+  assert.match(migration, /create table if not exists public\.quota_change_logs/i);
+  assert.match(migration, /for update/i);
+  assert.match(migration, /QUOTA_CONFLICT/);
+  assert.match(migration, /QUOTA_BELOW_USAGE:database/);
+  assert.match(migration, /QUOTA_BELOW_USAGE:storage/);
+  assert.match(migration, /updated_by = acting_admin_id/);
+  assert.doesNotMatch(migration, /update public\.user_storage_quotas\s+set database_quota_bytes/i);
+});
+
+test("quota input accepts decimal units and rejects blank, zero, negative, text, exponent, and unsafe values", () => {
+  const MB = 1024 * 1024;
+  assert.equal(parseQuotaInput("37", "MB"), 37 * MB);
+  assert.equal(parseQuotaInput("1.5", "GB"), 1536 * MB);
+  for (const value of ["", "0", "-10", "abc", "--", "1e999", "Infinity", "NaN"]) {
+    assert.equal(parseQuotaInput(value, "MB"), null);
+  }
+  assert.equal(parseQuotaInput("999999999999999999999999", "GB"), null);
+});
+
+test("quota update API is administrator-only and validates all server input", async () => {
+  const route = await source("src/app/api/system/storage-usage/admin/[userId]/quota/route.ts");
+  assert.match(route, /isSystemAdmin\(context\.userId\)/);
+  assert.match(route, /z\.number\(\)\.int\(\)\.positive\(\)\.safe\(\)/);
+  assert.match(route, /expectedUpdatedAt/);
+  assert.match(route, /acting_admin_id:\s*authorization\.context\.userId/);
+  assert.match(route, /"UNAUTHORIZED",\s*403/);
+});
+
+test("actual Supabase Storage metadata is the authoritative quota gate", async () => {
+  const migration = await source("supabase/migrations/20260907220000_add_user_quota_management.sql");
+  assert.match(migration, /before insert or update of name, metadata on storage\.objects/i);
+  assert.match(migration, /new\.metadata ->> 'size'/);
+  assert.match(migration, /vault_user_storage_usage\(account_id\)/);
+  assert.match(migration, /quota_exceeded:storage/);
 });
