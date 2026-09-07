@@ -79,3 +79,9 @@ test("account deletion requires an exact confirmation and removes owned storage 
   assert.match(deletion, /auth\.admin\.deleteUser\(userId, false\)/);
   assert.ok(deletion.indexOf("removeOwnedStorage(admin, userId)") < deletion.indexOf("auth.admin.deleteUser(userId, false)"));
 });
+
+test("project Storage totals aggregate grouped bytes instead of a missing inner column", async () => {
+  const migration = await source("supabase/migrations/20260907213000_fix_project_storage_usage.sql");
+  assert.match(migration, /coalesce\(sum\(used_bytes\), 0\)/);
+  assert.doesNotMatch(migration, /select\s+coalesce\(sum\(byte_size\), 0\),\s+coalesce\(jsonb_agg/);
+});

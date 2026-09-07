@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useState } from "react";
 
 import { formatBytes } from "@/lib/format-bytes";
 
@@ -16,31 +16,40 @@ const storageLabels: Record<string, string> = { photos: "照片", files: "一般
 const databaseLabels: Record<string, string> = { bookmarks: "網站收藏", notes: "筆記與想法", code: "程式碼", files: "檔案資料", photos: "照片資料", anime: "動漫收藏", vocabulary: "單字學習", vault: "私密保管庫", calendar: "日曆", organization: "資料夾與類別", account: "帳號與安全", other: "其他資料" };
 const systemDatabaseLabels: Record<string, string> = { "system-data": "系統資料", "user-data": "用戶資料", indexes: "Index 與資料庫開銷", "auth-metadata-other": "Auth、Metadata 與其他" };
 const statusCopy: Record<Status, string> = { healthy: "容量充足", growing: "使用量增加", high: "儲存空間即將用完", critical: "儲存空間即將用完", exceeded: "已超出限額" };
+const databaseColors: Record<string, string> = { bookmarks: "#2f67c7", notes: "#7958c7", code: "#1688a8", files: "#2d966f", photos: "#cf5d91", anime: "#e36a32", vocabulary: "#d79b19", vault: "#c44855", calendar: "#248f91", organization: "#60718f", account: "#5568b8", other: "#8b96a8", "system-data": "#2f67c7", "user-data": "#7958c7", indexes: "#d69132", "auth-metadata-other": "#7d899c" };
+const storageColors: Record<string, string> = { photos: "#d35491", files: "#3274cf", "content-covers": "#e07a32", "workspace-backgrounds": "#21938e", avatars: "#7958c7", other: "#8390a5" };
 
-function Progress({ quota }: { quota: Quota }) {
-  return <div aria-label={`已使用 ${quota.usagePercent.toFixed(1)}%`} aria-valuemax={100} aria-valuemin={0} aria-valuenow={Math.min(quota.usagePercent, 100)} className={`storage-progress ${quota.status}`} role="progressbar"><span style={{ width: `${Math.min(100, Math.max(0, quota.usagePercent))}%` }} /></div>;
+function groupColor(resource: "Database" | "Storage", category: string, index: number) {
+  const colors = resource === "Database" ? databaseColors : storageColors;
+  const fallback = resource === "Database" ? ["#2f67c7", "#7958c7", "#1688a8", "#d69132"] : ["#3274cf", "#d35491", "#e07a32", "#21938e"];
+  return colors[category] ?? fallback[index % fallback.length];
 }
 
-function CapacityCard({ title, quota, error, updatedAt }: { title: "Database" | "Storage"; quota: Quota | null; error?: string; updatedAt?: string }) {
+function Progress({ quota, groups, resource }: { quota: Quota; groups: StorageGroup[]; resource: "Database" | "Storage" }) {
+  const total = groups.reduce((sum, group) => sum + group.usedBytes, 0);
+  return <div aria-label={`已使用 ${quota.usagePercent.toFixed(1)}%`} aria-valuemax={100} aria-valuemin={0} aria-valuenow={Math.min(quota.usagePercent, 100)} className={`storage-progress ${quota.status}`} role="progressbar">{total > 0 ? <div className="storage-progress-segments" style={{ width: `${Math.min(100, Math.max(0, quota.usagePercent))}%` }}>{groups.filter((group) => group.usedBytes > 0).map((group, index) => <i key={group.category} style={{ backgroundColor: groupColor(resource, group.category, index), flexGrow: group.usedBytes } as CSSProperties} />)}</div> : <span style={{ width: `${Math.min(100, Math.max(0, quota.usagePercent))}%` }} />}</div>;
+}
+
+function CapacityCard({ title, quota, groups, error, updatedAt }: { title: "Database" | "Storage"; quota: Quota | null; groups: StorageGroup[]; error?: string; updatedAt?: string }) {
   if (!quota) return <article className="storage-capacity-card storage-capacity-error"><p className="eyebrow">{title.toUpperCase()}</p><h2>{title}</h2><p>{error || "目前無法取得容量。"}</p></article>;
   const warning = quota.usagePercent >= 80;
   return <article className="storage-capacity-card">
     <div className="storage-card-heading"><p className="eyebrow">{title.toUpperCase()}</p><span className={`storage-status ${quota.status}`}>{warning ? "!" : "✓"} {statusCopy[quota.status]}</span></div>
     <h2>{title}</h2>
     <strong className="storage-capacity-value">{formatBytes(quota.usedBytes)} <small>/ {formatBytes(quota.limitBytes)}</small></strong>
-    <Progress quota={quota} />
+    <Progress groups={groups} quota={quota} resource={title} />
     <div className="storage-capacity-metrics"><span><strong>{quota.usagePercent.toFixed(1)}%</strong> 已使用</span><span><strong>{formatBytes(quota.remainingBytes)}</strong> 剩餘</span></div>
     {warning && <p className="storage-quota-warning">{title === "Database" ? "資料庫容量" : "檔案儲存空間"}即將用完，請整理不需要的資料。</p>}
     <small className="storage-updated">統計時間：{updatedAt ? new Date(updatedAt).toLocaleString("zh-TW") : "—"}</small>
   </article>;
 }
 
-function UsageBreakdown({ groups, labels, quotaBytes, title }: { groups: StorageGroup[]; labels: Record<string, string>; quotaBytes: number; title: string }) {
-  return <div className="storage-resource-breakdown"><h3>{title}</h3>{groups.length ? <ul>{groups.map((group) => <li key={group.category}><i /><span>{labels[group.category] ?? group.category}</span><strong>{formatBytes(group.usedBytes)}</strong><small>{quotaBytes ? `${((group.usedBytes / quotaBytes) * 100).toFixed(1)}% 配額` : "0% 配額"}</small></li>)}</ul> : <p>目前沒有可分類的使用量。</p>}</div>;
+function UsageBreakdown({ groups, labels, quotaBytes, resource, title }: { groups: StorageGroup[]; labels: Record<string, string>; quotaBytes: number; resource: "Database" | "Storage"; title: string }) {
+  return <div className="storage-resource-breakdown"><h3>{title}</h3>{groups.length ? <ul>{groups.map((group, index) => <li key={group.category}><i style={{ backgroundColor: groupColor(resource, group.category, index) }} /><span>{labels[group.category] ?? group.category}</span><strong>{formatBytes(group.usedBytes)}</strong><small>{quotaBytes ? `${((group.usedBytes / quotaBytes) * 100).toFixed(1)}% 配額` : "0% 配額"}</small></li>)}</ul> : <p>目前沒有可分類的使用量。</p>}</div>;
 }
 
 function ResourcePanel({ title, quota, groups, labels, error, updatedAt }: { title: "Database" | "Storage"; quota: Quota | null; groups: StorageGroup[]; labels: Record<string, string>; error?: string; updatedAt?: string }) {
-  return <section className="storage-resource-panel"><CapacityCard error={error} quota={quota} title={title} updatedAt={updatedAt} />{quota && <UsageBreakdown groups={groups} labels={labels} quotaBytes={quota.limitBytes} title="使用明細" />}</section>;
+  return <section className="storage-resource-panel"><CapacityCard error={error} groups={groups} quota={quota} title={title} updatedAt={updatedAt} />{quota && <UsageBreakdown groups={groups} labels={labels} quotaBytes={quota.limitBytes} resource={title} title="使用明細" />}</section>;
 }
 
 function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
@@ -68,7 +77,7 @@ function AdminPanel({ initialPage = 1 }: { initialPage?: number }) {
   return <section className="storage-admin-panel">
     <header><div><p className="eyebrow">SYSTEM OVERVIEW</p><h2>系統儲存空間</h2><p>先顯示整理後的系統分類；技術明細與個別帳號配額可視需要展開。</p></div></header>
     {error && <p className="notice error" role="alert">{error}</p>}
-    {data?.project && <><div className="storage-system-grid"><ResourcePanel groups={data.project.databaseGroups} labels={systemDatabaseLabels} quota={data.project.database} title="Database" updatedAt={data.project.updatedAt} /><ResourcePanel groups={data.project.storageGroups} labels={storageLabels} quota={data.project.storage} title="Storage" updatedAt={data.project.updatedAt} /></div><details className="storage-admin-details"><summary>查看 Database 資料表技術明細</summary><div className="storage-table-list">{data.project.tables.map((table) => <div className="storage-table-row" key={table.name}><span>{table.name}</span><strong>{formatBytes(table.totalBytes)}</strong></div>)}</div></details></>}
+    {data?.project && <><div className="storage-system-grid"><ResourcePanel error={data.project.errors.database} groups={data.project.databaseGroups} labels={systemDatabaseLabels} quota={data.project.database} title="Database" updatedAt={data.project.updatedAt} /><ResourcePanel error={data.project.errors.storage} groups={data.project.storageGroups} labels={storageLabels} quota={data.project.storage} title="Storage" updatedAt={data.project.updatedAt} /></div><details className="storage-admin-details"><summary>查看 Database 資料表技術明細</summary><div className="storage-table-list">{data.project.tables.map((table) => <div className="storage-table-row" key={table.name}><span>{table.name}</span><strong>{formatBytes(table.totalBytes)}</strong></div>)}</div></details></>}
     <details className="storage-admin-details"><summary>查看個別帳號配額</summary><div className="storage-account-heading"><div><h3>使用者配額</h3><small>每頁最多 20 個帳號</small></div><form onSubmit={submit}><input aria-label="搜尋帳號或 Email" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋帳號或 Email" value={query} /><button className="secondary-button compact" type="submit">搜尋</button></form></div>{loading && !data ? <p>正在讀取管理員資料…</p> : <div className="storage-account-list">{data?.accounts.users.map((account) => <article key={account.userId}><div><strong>{account.displayName || account.email.split("@")[0]}</strong><small>{account.email}</small></div><span>Database <b>{formatBytes(account.capacity.databaseUsedBytes)} / {formatBytes(account.capacity.databaseQuotaBytes)}</b></span><span>Storage <b>{formatBytes(account.capacity.storageUsedBytes)} / {formatBytes(account.capacity.storageQuotaBytes)}</b></span></article>)}</div>}<div className="storage-pagination"><button className="secondary-button compact" disabled={loading || page <= 1} onClick={() => void load(page - 1, query.trim())} type="button">上一頁</button><span>{page} / {pages}</span><button className="secondary-button compact" disabled={loading || page >= pages} onClick={() => void load(page + 1, query.trim())} type="button">下一頁</button></div></details>
   </section>;
 }
