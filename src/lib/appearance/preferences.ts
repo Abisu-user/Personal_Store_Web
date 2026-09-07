@@ -1,6 +1,4 @@
-const legacyAppearanceStorageKey = "personal-vault:appearance:v7";
-const desktopAppearanceStorageKey = "personal-vault:appearance:desktop:v1";
-const mobileAppearanceStorageKey = "personal-vault:appearance:mobile:v1";
+const accountAppearanceStoragePrefix = "personal-vault:appearance:account:v1";
 
 export type Theme = "light" | "dark" | "system";
 export type Accent = "blue" | "violet" | "emerald" | "rose" | "custom";
@@ -26,22 +24,34 @@ const rotations: BackgroundRotation[] = ["manual", "login", "interval"];
 const fontFamilies: FontFamily[] = ["system", "rounded", "serif", "mono"];
 const bookmarkDisplays: BookmarkDisplay[] = ["list", "grid", "text"];
 const imageReferencePrefix = "workspace-image:";
+const serverImageReferencePrefix = "workspace-storage:";
 const imageCache = new Map<string, string>();
 let databasePromise: Promise<IDBDatabase> | undefined;
 const appearanceStoreName = "appearance-settings";
+let appearanceUserId: string | null = null;
+let syncTimer: number | undefined;
 
 /** Appearance is intentionally device-class specific: a phone can use a
  * different workspace image and layout from a desktop browser. */
 export type AppearanceDevice = "desktop" | "mobile";
 export function isMobileAppearanceDevice() { return typeof window !== "undefined" && window.matchMedia("(max-width: 700px)").matches; }
 export function getAppearanceDevice(): AppearanceDevice { return isMobileAppearanceDevice() ? "mobile" : "desktop"; }
-export function getAppearanceStorageKey() { return getAppearanceDevice() === "mobile" ? mobileAppearanceStorageKey : desktopAppearanceStorageKey; }
+export function getAppearanceStorageKey() { return appearanceUserId ? `${accountAppearanceStoragePrefix}:${appearanceUserId}:${getAppearanceDevice()}` : ""; }
 export function appearanceDeviceLabel() { return isMobileAppearanceDevice() ? "手機版" : "電腦版"; }
-export function hasScopedAppearance() { return typeof window !== "undefined" && Boolean(window.localStorage.getItem(getAppearanceStorageKey())); }
+export function hasScopedAppearance() { const key = getAppearanceStorageKey(); return typeof window !== "undefined" && Boolean(key && window.localStorage.getItem(key)); }
+export function setAppearanceIdentity(userId: string | null) { appearanceUserId = userId; }
+export function clearAppearanceIdentity() {
+  appearanceUserId = null;
+  window.clearTimeout(syncTimer);
+  imageCache.forEach((url, reference) => { if (reference.startsWith(imageReferencePrefix) && url.startsWith("blob:")) URL.revokeObjectURL(url); });
+  imageCache.clear();
+  applyAppearance(appearanceDefaults);
+}
 
 export function normalizeHexColor(value: unknown, fallback = appearanceDefaults.customColor) { return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback; }
 function clamp(value: unknown, min: number, max: number, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback; }
 function isStoredImage(value: string) { return value.startsWith(imageReferencePrefix); }
+function isServerImage(value: string) { return value.startsWith(serverImageReferencePrefix); }
 function isLegacyImage(value: string) { return value.startsWith("data:image/"); }
 function blobToDataUrl(blob: Blob) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.onerror = () => reject(reader.error ?? new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.readAsDataURL(blob); }); }
 function imageDb() {
@@ -60,11 +70,11 @@ function imageDb() {
 function requestResult<T>(request: IDBRequest<T>) { return new Promise<T>((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error ?? new Error("BACKGROUND_STORAGE_ERROR")); }); }
 
 type AppearanceBackup = { appearance: Appearance; updatedAt: number };
-const appearanceBackupKey = (device: AppearanceDevice) => `appearance:${device}`;
+const appearanceBackupKey = (device: AppearanceDevice) => `appearance:${appearanceUserId ?? "signed-out"}:${device}`;
 
 /**
  * iOS PWA can occasionally restore a tab before localStorage is ready. Keep a
- * second, device-scoped copy in IndexedDB so phone and desktop preferences stay
+ * second, account-and-device-scoped copy in IndexedDB so phone and desktop preferences stay
  * independent while surviving PWA relaunches.
  */
 export async function readAppearanceBackup(): Promise<Appearance | null> {
@@ -98,6 +108,22 @@ function persistAppearanceBackup(appearance: Appearance) {
 
 /** Stores image binaries outside localStorage so four high-quality backgrounds remain reliable. */
 export async function storeBackgroundImage(blob: Blob) {
+  if (appearanceUserId) {
+    const device = getAppearanceDevice();
+    const response = await fetch("/api/appearance/backgrounds", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device, byteSize: blob.size, mimeType: blob.type || "image/webp" }),
+    });
+    const ticket = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(ticket.error ?? "BACKGROUND_UPLOAD_PREPARE_FAILED");
+    const { createClient } = await import("@/lib/supabase/client");
+    const { error } = await createClient().storage.from("workspace-backgrounds").uploadToSignedUrl(ticket.storagePath, ticket.token, blob, { contentType: blob.type || "image/webp" });
+    if (error) throw error;
+    const reference = `${serverImageReferencePrefix}${ticket.storagePath}`;
+    imageCache.set(reference, URL.createObjectURL(blob));
+    return reference;
+  }
   try {
     // Added-to-home-screen iOS apps can discard best-effort storage sooner than
     // desktop browsers. Request persistent storage where the platform supports it.
@@ -115,12 +141,19 @@ export async function storeBackgroundImage(blob: Blob) {
   }
 }
 export async function removeBackgroundImage(reference: string) {
+  if (isServerImage(reference)) {
+    const url = imageCache.get(reference); if (url?.startsWith("blob:")) URL.revokeObjectURL(url); imageCache.delete(reference);
+    const response = await fetch("/api/appearance/backgrounds", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device: getAppearanceDevice(), reference }) });
+    if (!response.ok) throw new Error("BACKGROUND_DELETE_FAILED");
+    return;
+  }
   if (!isStoredImage(reference)) return;
   const url = imageCache.get(reference); if (url) URL.revokeObjectURL(url); imageCache.delete(reference);
   const db = await imageDb(); const transaction = db.transaction("images", "readwrite"); transaction.objectStore("images").delete(reference);
   await new Promise<void>((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error ?? new Error("BACKGROUND_STORAGE_ERROR")); });
 }
-export function getBackgroundImageUrl(reference: string | undefined) { return !reference ? undefined : isStoredImage(reference) ? imageCache.get(reference) : reference; }
+export function getBackgroundImageUrl(reference: string | undefined) { return !reference ? undefined : isStoredImage(reference) || isServerImage(reference) ? imageCache.get(reference) : reference; }
+export function registerBackgroundImageUrls(urls: Record<string, string>) { Object.entries(urls).forEach(([reference, url]) => { if (isServerImage(reference) && /^https:\/\//i.test(url)) imageCache.set(reference, url); }); }
 async function convertLegacyImage(dataUrl: string) { const response = await fetch(dataUrl); return storeBackgroundImage(await response.blob()); }
 /**
  * Resolves stored image references and performs a one-time conversion of prior
@@ -147,7 +180,7 @@ export async function hydrateAppearanceImages(appearance: Appearance, options: {
       }
       return;
     }
-    if (!isStoredImage(reference) || imageCache.has(reference)) return;
+    if (isServerImage(reference) || !isStoredImage(reference) || imageCache.has(reference)) return;
     const db = await imageDb();
     const transaction = db.transaction("images", "readonly");
     const blob = await requestResult(transaction.objectStore("images").get(reference)) as Blob | undefined;
@@ -164,13 +197,13 @@ export function normalizeAppearance(value: unknown): Appearance {
   const candidate = value as Partial<Appearance>;
   if (!themeValues.includes(candidate.theme as Theme) || !accentValues.includes(candidate.accent as Accent) || !backgroundValues.includes(candidate.background as Background) || !densityValues.includes(candidate.density as Density)) return appearanceDefaults;
   const legacyImage = typeof candidate.backgroundImage === "string" && candidate.backgroundImage.startsWith("data:image/") ? candidate.backgroundImage : undefined;
-  const backgroundImages = (Array.isArray(candidate.backgroundImages) ? candidate.backgroundImages : legacyImage ? [legacyImage] : []).filter((item): item is string => typeof item === "string" && (item.startsWith("data:image/") || isStoredImage(item))).slice(0, 10);
+  const backgroundImages = (Array.isArray(candidate.backgroundImages) ? candidate.backgroundImages : legacyImage ? [legacyImage] : []).filter((item): item is string => typeof item === "string" && (item.startsWith("data:image/") || isStoredImage(item) || isServerImage(item))).slice(0, 10);
   const legacyPosition = candidate.backgroundPosition; const position = legacyPosition === "left" ? [20, 50] : legacyPosition === "right" ? [80, 50] : legacyPosition === "top" ? [50, 20] : legacyPosition === "bottom" ? [50, 80] : [50, 50];
   const activeIndex = Math.floor(clamp(candidate.backgroundActiveIndex, 0, Math.max(0, backgroundImages.length - 1), 0));
   return { theme: candidate.theme as Theme, accent: candidate.accent as Accent, background: candidate.background as Background, density: candidate.density as Density, customColor: normalizeHexColor(candidate.customColor), backgroundImage: backgroundImages[activeIndex], backgroundImages, backgroundActiveIndex: activeIndex, backgroundPosition: positions.includes(legacyPosition as typeof positions[number]) ? legacyPosition : "center", backgroundPositionX: clamp(candidate.backgroundPositionX, 0, 100, position[0]), backgroundPositionY: clamp(candidate.backgroundPositionY, 0, 100, position[1]), backgroundZoom: clamp(candidate.backgroundZoom, 100, 180, 100), backgroundTint: normalizeHexColor(candidate.backgroundTint, "#FFFFFF"), canvasColor: normalizeHexColor(candidate.canvasColor, "#F4F6FB"), textColor: typeof candidate.textColor === "string" && /^#[0-9a-f]{6}$/i.test(candidate.textColor) ? candidate.textColor.toUpperCase() : undefined, fontFamily: fontFamilies.includes(candidate.fontFamily as FontFamily) ? candidate.fontFamily as FontFamily : "system", fontScale: Math.round(clamp(candidate.fontScale, 85, 120, 100)), backgroundBrightness: clamp(candidate.backgroundBrightness, 60, 150, 100), backgroundBlur: clamp(candidate.backgroundBlur, 0, 20, 0), surfaceOpacity: clamp(candidate.surfaceOpacity, 0, 100, 86), backgroundRotation: rotations.includes(candidate.backgroundRotation as BackgroundRotation) ? candidate.backgroundRotation as BackgroundRotation : "manual", backgroundRotationMinutes: Math.round(clamp(candidate.backgroundRotationMinutes, 1, 1440, 15)), bookmarkDisplay: bookmarkDisplays.includes(candidate.bookmarkDisplay as BookmarkDisplay) ? candidate.bookmarkDisplay as BookmarkDisplay : "list", bookmarkGridColumns: Math.round(clamp(candidate.bookmarkGridColumns, 1, 4, 2)) };
 }
 
-export function readAppearance(): Appearance { try { return normalizeAppearance(JSON.parse(window.localStorage.getItem(getAppearanceStorageKey()) ?? window.localStorage.getItem(legacyAppearanceStorageKey) ?? window.localStorage.getItem("personal-vault:appearance:v6") ?? window.localStorage.getItem("personal-vault:appearance:v5") ?? window.localStorage.getItem("personal-vault:appearance:v4") ?? window.localStorage.getItem("personal-vault:appearance:v3") ?? window.localStorage.getItem("personal-vault:appearance:v2") ?? window.localStorage.getItem("personal-vault:appearance:v1") ?? "{}")); } catch { return appearanceDefaults; } }
+export function readAppearance(): Appearance { try { const key = getAppearanceStorageKey(); return key ? normalizeAppearance(JSON.parse(window.localStorage.getItem(key) ?? "{}")) : appearanceDefaults; } catch { return appearanceDefaults; } }
 export function activeBackground(appearance: Appearance) { return getBackgroundImageUrl(appearance.backgroundImages[appearance.backgroundActiveIndex] ?? appearance.backgroundImage); }
 export function nextBackground(appearance: Appearance): Appearance { return appearance.backgroundImages.length > 1 ? { ...appearance, backgroundActiveIndex: (appearance.backgroundActiveIndex + 1) % appearance.backgroundImages.length } : appearance; }
 export function applyAppearance(appearance: Appearance) {
@@ -182,9 +215,30 @@ export function applyAppearance(appearance: Appearance) {
 export function saveAppearance(appearance: Appearance) {
   const normalized = normalizeAppearance(appearance);
   applyAppearance(normalized);
-  window.localStorage.setItem(getAppearanceStorageKey(), JSON.stringify(normalized));
-  persistAppearanceBackup(normalized);
+  const key = getAppearanceStorageKey();
+  if (key) {
+    window.localStorage.setItem(key, JSON.stringify(normalized));
+    persistAppearanceBackup(normalized);
+    window.clearTimeout(syncTimer);
+    syncTimer = window.setTimeout(async () => {
+      const response = await fetch("/api/appearance", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device: getAppearanceDevice(), appearance: normalized }) }).catch(() => null);
+      window.dispatchEvent(new CustomEvent(response?.ok ? "personal-vault:appearance-synced" : "personal-vault:appearance-sync-error"));
+    }, 350);
+  }
   window.dispatchEvent(new Event("personal-vault:appearance"));
 }
 export function migrateAppearanceForCurrentDevice(appearance: Appearance) { if (!hasScopedAppearance()) saveAppearance(appearance); }
-export function resetAppearanceForCurrentDevice() { window.localStorage.removeItem(getAppearanceStorageKey()); }
+export function resetAppearanceForCurrentDevice() { const key = getAppearanceStorageKey(); if (key) window.localStorage.removeItem(key); }
+
+export async function loadAccountAppearance(options: { all?: boolean } = {}) {
+  const device = getAppearanceDevice();
+  const response = await fetch(`/api/appearance?device=${device}`, { cache: "no-store" });
+  if (!response.ok) { clearAppearanceIdentity(); return { appearance: appearanceDefaults, userId: null }; }
+  const payload = await response.json() as { userId: string; appearance: unknown; imageUrls?: Record<string, string> };
+  setAppearanceIdentity(payload.userId);
+  registerBackgroundImageUrls(payload.imageUrls ?? {});
+  let appearance = normalizeAppearance(payload.appearance);
+  appearance = await hydrateAppearanceImages(appearance, options);
+  const key = getAppearanceStorageKey(); if (key) window.localStorage.setItem(key, JSON.stringify(appearance));
+  return { appearance, userId: payload.userId };
+}

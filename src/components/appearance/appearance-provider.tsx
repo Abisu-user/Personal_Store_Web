@@ -1,36 +1,49 @@
 "use client";
 
 import { useEffect } from "react";
-import { applyAppearance, hasScopedAppearance, hydrateAppearanceImages, migrateAppearanceForCurrentDevice, nextBackground, readAppearance, readAppearanceBackup, saveAppearance } from "@/lib/appearance/preferences";
 
-/** Applies the saved device preference and loads background binaries from IndexedDB. */
+import { appearanceDefaults, applyAppearance, clearAppearanceIdentity, loadAccountAppearance, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { createClient } from "@/lib/supabase/client";
+
+/** Loads the signed-in account's server preference before showing its background. */
 export function AppearanceProvider() {
   useEffect(() => {
-    let timer: number | undefined; let cancelled = false;
-    const rotateBackground = async () => {
-      let rotated = nextBackground(readAppearance());
-      try { rotated = await hydrateAppearanceImages(rotated); } catch { /* Keep the last available appearance. */ }
-      if (!cancelled) saveAppearance(rotated);
-    };
-    const applySaved = async (rotateForLogin = false) => {
-      window.clearInterval(timer); let appearance = readAppearance();
-      // On iOS PWA, localStorage may briefly be unavailable while the shell is
-      // restoring. Prefer the same device's IndexedDB backup in that case.
-      if (!hasScopedAppearance()) {
-        const backup = await readAppearanceBackup();
-        if (backup) appearance = backup;
+    let timer: number | undefined;
+    let cancelled = false;
+    const rotateBackground = () => { if (!cancelled) saveAppearance(nextBackground(readAppearance())); };
+    const resetTimer = (appearance = readAppearance()) => {
+      window.clearInterval(timer);
+      if (appearance.backgroundRotation === "interval" && appearance.backgroundImages.length > 1) {
+        timer = window.setInterval(rotateBackground, appearance.backgroundRotationMinutes * 60_000);
       }
-      // Choose the next image before hydrating so only the image that will be
-      // shown is read from IndexedDB.
-      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) appearance = nextBackground(appearance);
-      try { appearance = await hydrateAppearanceImages(appearance); } catch { /* Keep non-image preferences even when browser storage is unavailable. */ }
-      if (cancelled) return;
-      migrateAppearanceForCurrentDevice(appearance);
-      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) saveAppearance(appearance); else applyAppearance(appearance);
-      if (appearance.backgroundRotation === "interval" && appearance.backgroundImages.length > 1) timer = window.setInterval(() => { void rotateBackground(); }, appearance.backgroundRotationMinutes * 60_000);
     };
-    void applySaved(true); const onAppearanceChange = () => { void applySaved(); }; window.addEventListener("personal-vault:appearance", onAppearanceChange);
-    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener("personal-vault:appearance", onAppearanceChange); };
+    const load = async (rotateForLogin = false) => {
+      window.clearInterval(timer);
+      clearAppearanceIdentity();
+      let appearance = appearanceDefaults;
+      try { appearance = (await loadAccountAppearance()).appearance; } catch { applyAppearance(appearanceDefaults); }
+      if (cancelled) return;
+      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) {
+        appearance = nextBackground(appearance);
+        saveAppearance(appearance);
+      } else applyAppearance(appearance);
+      resetTimer(appearance);
+    };
+
+    applyAppearance(appearanceDefaults);
+    void load(true);
+    const onAppearanceChange = () => resetTimer();
+    window.addEventListener("personal-vault:appearance", onAppearanceChange);
+    const { data: authListener } = createClient().auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") clearAppearanceIdentity();
+      if (event === "SIGNED_IN" || event === "USER_UPDATED") window.setTimeout(() => void load(true), 0);
+    });
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      authListener.subscription.unsubscribe();
+      window.removeEventListener("personal-vault:appearance", onAppearanceChange);
+    };
   }, []);
   return null;
 }

@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearClientResources } from "@/lib/pwa/client-resource-cache";
+import { clearAppearanceIdentity } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, readMobileNavigationPreferences, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
 const moreItems = [["/notes", "□", "筆記"], ["/code", "⌘", "程式碼"], ["/photos", "▧", "照片"], ["/vocabulary", "文", "單字學習"], ["/anime", "◉", "動漫收藏"], ["/vault", "◈", "保管庫"], ["/calendar", "◌", "日曆"], ["/appearance", "◐", "外觀與布局"], ["/storage-usage", "▣", "儲存空間"], ["/security", "⌁", "安全中心"], ["/security/mfa", "◈", "雙因素驗證"], ["/profile", "●", "帳號設定"]] as const;
 export function MobileAppNavigation() {
@@ -29,7 +30,7 @@ export function MobileAppNavigation() {
     window.addEventListener("storage", syncNavigation);
     return () => { window.removeEventListener("personal-vault:mobile-navigation", syncNavigation); window.removeEventListener("storage", syncNavigation); };
   }, []);
-  async function signOut() { setSigningOut(true); clearClientResources(); await createClient().auth.signOut(); router.replace("/login"); router.refresh(); }
+  async function signOut() { setSigningOut(true); clearAppearanceIdentity(); clearClientResources(); await createClient().auth.signOut(); router.replace("/login"); router.refresh(); }
   const linkProps = (href: string) => ({
     onMouseEnter: () => prefetch(href),
     onFocus: () => prefetch(href),

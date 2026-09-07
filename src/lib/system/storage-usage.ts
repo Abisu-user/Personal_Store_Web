@@ -1,17 +1,24 @@
 import "server-only";
 
+export { formatBytes } from "@/lib/format-bytes";
+
 const MB = 1024 * 1024;
-const GB = 1024 * MB;
 
 function readLimit(value: string | undefined, fallback: number) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-/** Kept server-side so quota changes never require a component edit. */
-export const storageUsageLimits = {
+/** Defaults live server-side and are also installed in user_storage_quotas. */
+export const userStorageQuotaDefaults = {
+  databaseBytes: readLimit(process.env.USER_DATABASE_QUOTA_BYTES, 100 * MB),
+  storageBytes: readLimit(process.env.USER_STORAGE_QUOTA_BYTES, 200 * MB),
+};
+
+/** Legacy project limits remain available only to the administrator overview. */
+export const projectStorageUsageLimits = {
   databaseBytes: readLimit(process.env.DATABASE_LIMIT_BYTES, 500 * MB),
-  storageBytes: readLimit(process.env.STORAGE_LIMIT_BYTES, GB),
+  storageBytes: readLimit(process.env.STORAGE_LIMIT_BYTES, 1024 * MB),
 };
 
 export type CapacityStatus = "healthy" | "growing" | "high" | "critical" | "exceeded";
