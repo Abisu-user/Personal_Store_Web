@@ -20,8 +20,11 @@ function fixture(options = {}) {
   const calls = [];
   let pending = null;
   const metadata = {
-    createPending: async (values) => {
-      calls.push(["pending", values]);
+    reservePending: async (values, ttlSeconds) => {
+      calls.push(["reserve", values, ttlSeconds]);
+      if (options.quotaError) {
+        throw Object.assign(new Error("quota_exceeded:storage"), { code: "STORAGE_QUOTA_EXCEEDED" });
+      }
       pending = { id: objectId, status: "pending", ...values };
       return pending;
     },
@@ -80,12 +83,6 @@ function fixture(options = {}) {
       createStorageMetadataRepository: () => metadata,
     },
     "@/lib/system/quota": {
-      assertStorageQuota: async (ownerId, byteSize) => {
-        calls.push(["quota", ownerId, byteSize]);
-        if (options.quotaError) {
-          throw Object.assign(new Error("quota"), { code: "STORAGE_QUOTA_EXCEEDED" });
-        }
-      },
       quotaExceededResponse: (cause) => cause?.code === "STORAGE_QUOTA_EXCEEDED"
         ? { error: "儲存空間配額不足。", code: cause.code }
         : null,
@@ -115,7 +112,7 @@ async function prepare(fixtureValue, overrides = {}) {
   return { response, data: await response.json() };
 }
 
-test("B2 prepare uses the session owner, reserves metadata, then signs", async () => {
+test("B2 prepare atomically reserves for the session owner, then signs", async () => {
   const f = fixture();
   const { response, data } = await prepare(f);
   assert.equal(response.status, 200);
@@ -123,8 +120,9 @@ test("B2 prepare uses the session owner, reserves metadata, then signs", async (
   assert.equal(data.storageObjectId, objectId);
   assert.equal(data.headers["Content-Type"], "image/png");
   assert.equal(data.headers["x-amz-meta-sha256"], sha256);
-  assert.deepEqual(f.calls.slice(0, 3).map(([name]) => name), ["quota", "pending", "sign"]);
-  const values = f.calls[1][1];
+  assert.deepEqual(f.calls.slice(0, 2).map(([name]) => name), ["reserve", "sign"]);
+  const values = f.calls[0][1];
+  assert.equal(f.calls[0][2], 3600);
   assert.equal(values.userId, userId);
   assert.equal(values.provider, "b2");
   assert.match(values.objectKey, new RegExp(`^${userId}/photo/[0-9a-f-]{36}$`));
@@ -141,7 +139,7 @@ test("B2 prepare never signs for invalid, unauthenticated, or over-quota request
     const { response } = await prepare(f, overrides);
     assert.equal(response.status, expected);
     assert.equal(f.calls.some(([name]) => name === "sign"), false);
-    assert.equal(f.calls.some(([name]) => name === "pending"), false);
+    assert.equal(f.calls.some(([name]) => name === "sign"), false);
   }
 });
 
@@ -159,7 +157,7 @@ test("B2 finalize HEAD-verifies the object before activating metadata", async ()
     mimeType: "image/png",
     checksum: sha256,
   });
-  assert.deepEqual(f.calls.slice(3).map(([name]) => name), ["find-pending", "head", "active"]);
+  assert.deepEqual(f.calls.slice(2).map(([name]) => name), ["find-pending", "head", "active"]);
   assert.equal(f.getPending().status, "active");
 });
 

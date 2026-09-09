@@ -15,6 +15,10 @@ export type StorageObjectMetadata = {
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
+  reservationExpiresAt: string | null;
+  cleanupClaimedAt: string | null;
+  cleanupAttempts: number;
+  cleanupLastError: string | null;
 };
 
 export type StorageObjectLocation = Pick<StorageObjectMetadata, "provider" | "bucket" | "objectKey">;
@@ -42,6 +46,9 @@ export interface StorageMetadataReader {
 
 export interface StorageMetadataWriter extends StorageMetadataReader {
   createPending(input: CreatePendingStorageObject): Promise<StorageObjectMetadata>;
+  reservePending(input: CreatePendingStorageObject, ttlSeconds?: number): Promise<StorageObjectMetadata>;
   activateOwned(input: ActivateStorageObject): Promise<StorageObjectMetadata>;
   markFailed(id: string, userId: string): Promise<void>;
+  claimExpired(limit?: number): Promise<StorageObjectMetadata[]>;
+  finishCleanup(id: string, succeeded: boolean, failureReason?: string | null): Promise<StorageObjectMetadata>;
 }

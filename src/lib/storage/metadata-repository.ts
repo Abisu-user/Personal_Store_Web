@@ -12,7 +12,7 @@ import type {
   StorageProviderName,
 } from "./metadata-contract";
 
-const metadataColumns = "id,user_id,provider,bucket,object_key,category,byte_size,mime_type,checksum,status,created_at,updated_at,deleted_at";
+const metadataColumns = "id,user_id,provider,bucket,object_key,category,byte_size,mime_type,checksum,status,created_at,updated_at,deleted_at,reservation_expires_at,cleanup_claimed_at,cleanup_attempts,cleanup_last_error";
 
 type StorageObjectRow = {
   id: string;
@@ -28,6 +28,10 @@ type StorageObjectRow = {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  reservation_expires_at: string | null;
+  cleanup_claimed_at: string | null;
+  cleanup_attempts: number | string;
+  cleanup_last_error: string | null;
 };
 
 function toMetadata(value: unknown): StorageObjectMetadata {
@@ -46,6 +50,10 @@ function toMetadata(value: unknown): StorageObjectMetadata {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at,
+    reservationExpiresAt: row.reservation_expires_at,
+    cleanupClaimedAt: row.cleanup_claimed_at,
+    cleanupAttempts: Number(row.cleanup_attempts ?? 0),
+    cleanupLastError: row.cleanup_last_error,
   };
 }
 
@@ -75,14 +83,31 @@ export class SupabaseStorageMetadataRepository implements StorageMetadataWriter 
     return toMetadata(data);
   }
 
+  async reservePending(input: CreatePendingStorageObject, ttlSeconds = 3600) {
+    validateOwnedInput(input.userId, input.objectKey);
+    const { data, error } = await this.client.rpc("vault_reserve_storage_object", {
+      target_user_id: input.userId,
+      target_provider: input.provider,
+      target_bucket: input.bucket,
+      target_object_key: input.objectKey,
+      target_category: input.category,
+      reserved_byte_size: input.byteSize,
+      target_mime_type: input.mimeType ?? null,
+      target_checksum: input.checksum ?? null,
+      reservation_ttl_seconds: ttlSeconds,
+    }).single();
+    if (error || !data) throw error ?? new Error("Storage capacity was not reserved.");
+    return toMetadata(data);
+  }
+
   async activateOwned(input: ActivateStorageObject) {
-    const { data, error } = await this.client.from("storage_objects").update({
-      byte_size: input.byteSize,
-      mime_type: input.mimeType ?? null,
-      checksum: input.checksum ?? null,
-      status: "active",
-      deleted_at: null,
-    }).eq("id", input.id).eq("user_id", input.userId).eq("status", "pending").is("deleted_at", null).select(metadataColumns).maybeSingle();
+    const { data, error } = await this.client.rpc("vault_activate_storage_object", {
+      target_id: input.id,
+      target_user_id: input.userId,
+      actual_byte_size: input.byteSize,
+      target_mime_type: input.mimeType ?? null,
+      target_checksum: input.checksum ?? null,
+    }).single();
     if (error || !data) throw error ?? new Error("Owned pending Storage metadata was not found.");
     return toMetadata(data);
   }
@@ -102,9 +127,29 @@ export class SupabaseStorageMetadataRepository implements StorageMetadataWriter 
   }
 
   async markFailed(id: string, userId: string) {
-    const { error } = await this.client.from("storage_objects").update({ status: "failed" })
+    const { error } = await this.client.from("storage_objects").update({
+      status: "failed",
+      reservation_expires_at: null,
+      cleanup_claimed_at: null,
+    })
       .eq("id", id).eq("user_id", userId).eq("status", "pending").is("deleted_at", null);
     if (error) throw error;
+  }
+
+  async claimExpired(limit = 25) {
+    const { data, error } = await this.client.rpc("vault_claim_expired_storage_objects", { batch_size: limit });
+    if (error) throw error;
+    return Array.isArray(data) ? data.map(toMetadata) : [];
+  }
+
+  async finishCleanup(id: string, succeeded: boolean, failureReason?: string | null) {
+    const { data, error } = await this.client.rpc("vault_finish_storage_cleanup", {
+      target_id: id,
+      deletion_succeeded: succeeded,
+      failure_reason: failureReason ?? null,
+    }).single();
+    if (error || !data) throw error ?? new Error("Storage cleanup claim was not completed.");
+    return toMetadata(data);
   }
 }
 

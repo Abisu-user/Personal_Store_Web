@@ -11,9 +11,11 @@ test("metadata repository stays server-only and filters every lookup by user_id"
   assert.doesNotMatch(repository, /NEXT_PUBLIC_.*SECRET|process\.env/);
 });
 
-test("pending activation is state constrained and cannot activate another account", () => {
-  assert.match(repository, /\.eq\("id", input\.id\)\.eq\("user_id", input\.userId\)\.eq\("status", "pending"\)/);
-  assert.match(repository, /status: "active"/);
+test("pending activation and reservation use owner-scoped atomic RPCs", () => {
+  assert.match(repository, /rpc\("vault_reserve_storage_object"/);
+  assert.match(repository, /rpc\("vault_activate_storage_object"/);
+  assert.match(repository, /target_id: input\.id/);
+  assert.match(repository, /target_user_id: input\.userId/);
   assert.match(repository, /status: "failed"/);
 });
 

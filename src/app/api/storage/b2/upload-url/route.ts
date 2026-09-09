@@ -7,7 +7,7 @@ import { getSecurityContext } from "@/lib/security/activity";
 import { createB2StorageManager } from "@/lib/storage/b2-server";
 import { b2ObjectKey, b2UploadPurposes, validateB2UploadPolicy } from "@/lib/storage/b2-upload-policy";
 import { createStorageMetadataRepository } from "@/lib/storage/metadata-repository";
-import { assertStorageQuota, quotaExceededResponse } from "@/lib/system/quota";
+import { quotaExceededResponse } from "@/lib/system/quota";
 
 const uploadSchema = z.object({
   purpose: z.enum(b2UploadPurposes),
@@ -37,9 +37,8 @@ export async function POST(request: NextRequest) {
   const metadata = createStorageMetadataRepository();
   let pendingId: string | null = null;
   try {
-    await assertStorageQuota(context.userId, parsed.data.byteSize);
     const objectKey = b2ObjectKey(context.userId, parsed.data.purpose, randomUUID());
-    const pending = await metadata.createPending({
+    const pending = await metadata.reservePending({
       userId: context.userId,
       provider: "b2",
       bucket,
@@ -48,7 +47,7 @@ export async function POST(request: NextRequest) {
       byteSize: parsed.data.byteSize,
       mimeType: parsed.data.mimeType,
       checksum: parsed.data.sha256 ?? null,
-    });
+    }, 3600);
     pendingId = pending.id;
 
     const { data: signed, error } = await createB2StorageManager().createSignedUploadUrl(bucket, objectKey, {
