@@ -75,12 +75,13 @@ test("the designated system administrator receives the system role", async () =>
 test("account deletion requires an exact confirmation and removes owned storage before Auth", async () => {
   const route = await source("src/app/api/security/account/route.ts");
   const deletion = await source("src/lib/security/account-deletion.ts");
+  const cleanup = await source("src/lib/storage/cleanup.ts");
   assert.match(route, /z\.literal\("DELETE"\)/);
   assert.match(route, /getSecurityContext/);
-  assert.match(deletion, /storage\.listBuckets/);
-  assert.match(deletion, /removeOwnedStorage\(admin, userId\)/);
+  assert.match(cleanup, /storage\.listBuckets/);
+  assert.match(deletion, /removeOwnedStorage\(createStorageManager\(admin\), userId\)/);
   assert.match(deletion, /auth\.admin\.deleteUser\(userId, false\)/);
-  assert.ok(deletion.indexOf("removeOwnedStorage(admin, userId)") < deletion.indexOf("auth.admin.deleteUser(userId, false)"));
+  assert.ok(deletion.indexOf("removeOwnedStorage(createStorageManager(admin), userId)") < deletion.indexOf("auth.admin.deleteUser(userId, false)"));
 });
 
 test("project Storage totals aggregate grouped bytes instead of a missing inner column", async () => {

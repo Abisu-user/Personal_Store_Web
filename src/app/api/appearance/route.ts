@@ -4,6 +4,7 @@ import { z } from "zod";
 import { appearanceDefaults, normalizeAppearance, type AppearanceDevice } from "@/lib/appearance/preferences";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,11 @@ function ownedAppearance(value: unknown, userId: string, device: AppearanceDevic
 }
 
 async function signedImageUrls(userId: string, device: AppearanceDevice, references: string[]) {
-  const admin = createAdminClient();
+  const storage = createStorageManager();
   const entries = await Promise.all(references.map(async (reference) => {
     const path = reference.slice(prefix.length);
     if (!path.startsWith(`${userId}/${device}/`)) return null;
-    const { data, error } = await admin.storage.from("workspace-backgrounds").createSignedUrl(path, 86400);
+    const { data, error } = await storage.getSignedUrl("workspace-backgrounds", path, 86400);
     return error || !data?.signedUrl ? null : [reference, data.signedUrl] as const;
   }));
   return Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => Boolean(entry)));

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 import { verifyCoverUploadTicket } from "@/lib/security/cover-upload-ticket";
 
 export type ContentKind = "note" | "code" | "file" | "photo";
@@ -19,5 +20,5 @@ export function verifiedCoverPath(ownerId: string, ticket: string | null | undef
 }
 
 export async function deleteCover(path: string | null | undefined) {
-  if (path) await createAdminClient().storage.from("content-covers").remove([path]);
+  if (path) await createStorageManager().delete("content-covers", [path]);
 }

@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createFileUploadTicket } from "@/lib/security/file-upload-ticket";
 import { getSecurityContext } from "@/lib/security/activity";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 import { assertStorageQuota, quotaExceededResponse } from "@/lib/system/quota";
 
 const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"] as const;
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
   try {
     await assertStorageQuota(context.userId, parsed.data.byteSize);
     const storagePath = `${context.userId}/photos/${randomUUID()}`;
-    const { data, error } = await createAdminClient().storage.from("vault-files").createSignedUploadUrl(storagePath);
+    const { data, error } = await createStorageManager().createSignedUploadUrl("vault-files", storagePath);
     if (error || !data) throw error;
     const ticket = createFileUploadTicket({ ownerId: context.userId, storagePath, originalFilename: parsed.data.originalFilename, mimeType: parsed.data.mimeType, byteSize: parsed.data.byteSize, sha256: parsed.data.sha256.toLowerCase(), expiresAt: Date.now() + 10 * 60 * 1000 });
     return NextResponse.json({ storagePath, token: data.token, ticket }, { headers: { "Cache-Control": "private, no-store" } });

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 import { assertStorageQuota, quotaExceededResponse } from "@/lib/system/quota";
 
 const uploadSchema = z.object({
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
     await assertStorageQuota(context.userId, parsed.data.byteSize);
     const extension = parsed.data.mimeType === "image/png" ? "png" : parsed.data.mimeType === "image/jpeg" ? "jpg" : "webp";
     const path = `${context.userId}/${parsed.data.device}/${randomUUID()}.${extension}`;
-    const { data, error } = await createAdminClient().storage.from("workspace-backgrounds").createSignedUploadUrl(path);
+    const { data, error } = await createStorageManager().createSignedUploadUrl("workspace-backgrounds", path);
     if (error || !data) throw error ?? new Error("UPLOAD_TICKET_FAILED");
     return NextResponse.json({ storagePath: path, token: data.token }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (cause) {
@@ -49,7 +50,7 @@ export async function DELETE(request: NextRequest) {
       const activeIndex = Math.min(currentIndex, Math.max(0, images.length - 1));
       await admin.from("user_appearance_settings").update({ preferences: { ...preferences, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] } }).eq("user_id", context.userId).eq("device_type", parsed.data.device);
     }
-    const { error } = await admin.storage.from("workspace-backgrounds").remove([path]);
+    const { error } = await createStorageManager(admin).delete("workspace-backgrounds", [path]);
     if (error) throw error;
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {

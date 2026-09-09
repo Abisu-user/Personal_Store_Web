@@ -117,8 +117,8 @@ export async function storeBackgroundImage(blob: Blob) {
     });
     const ticket = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(ticket.error ?? "BACKGROUND_UPLOAD_PREPARE_FAILED");
-    const { createClient } = await import("@/lib/supabase/client");
-    const { error } = await createClient().storage.from("workspace-backgrounds").uploadToSignedUrl(ticket.storagePath, ticket.token, blob, { contentType: blob.type || "image/webp" });
+    const { createBrowserStorageManager } = await import("@/lib/storage/client");
+    const { error } = await createBrowserStorageManager().uploadToSignedUrl("workspace-backgrounds", ticket.storagePath, ticket.token, blob, { contentType: blob.type || "image/webp" });
     if (error) throw error;
     const reference = `${serverImageReferencePrefix}${ticket.storagePath}`;
     imageCache.set(reference, URL.createObjectURL(blob));

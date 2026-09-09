@@ -17,15 +17,24 @@
     "test:vocabulary:translations": "node --test scripts/vocabulary/tomoshi-zhtw.test.mjs",
     "test:vocabulary:examples": "node --test scripts/vocabulary/system-examples-regression.test.mjs",
     "test:auth:otp": "node --experimental-strip-types --test scripts/auth/otp-policy.test.mjs",
-    "test:account-isolation": "node --experimental-strip-types --test scripts/system/account-isolation-quota.test.mjs"
+    "test:account-isolation": "node --experimental-strip-types --test scripts/system/account-isolation-quota.test.mjs",
+    "test:storage": "node --conditions=react-server --experimental-strip-types --test scripts/storage/*.test.mjs",
+    "test:storage:live": "node --experimental-strip-types scripts/storage/live-validation.mjs",
+    "test:storage:r2": "node --conditions=react-server --experimental-strip-types --test scripts/storage/r2-provider.test.mjs",
+    "test:storage:r2:live": "node --conditions=react-server --experimental-strip-types scripts/storage/r2-live-validation.mjs",
+    "test:storage:b2": "node --conditions=react-server --experimental-strip-types --test scripts/storage/b2-provider.test.mjs",
+    "test:storage:b2:live": "node --conditions=react-server --experimental-strip-types scripts/storage/b2-live-validation.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1128.0",
+    "@aws-sdk/s3-request-presigner": "^3.1128.0",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.3",
     "next": "16.3.1",
     "opencc-js": "^1.4.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "sql.js": "^1.14.2",
     "zod": "4.4.3"
   },

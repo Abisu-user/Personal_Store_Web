@@ -4,6 +4,7 @@ import { getPhotosWorkspaceData } from "@/lib/photos/data";
 import { verifyFileUploadTicket } from "@/lib/security/file-upload-ticket";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 import { validateContentFolder } from "@/lib/content/server";
 
 const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"] as const;
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
     const { data, error: queryError } = await admin.from("entries").select("file_details(storage_path, mime_type)").eq("id", requestedImage).eq("owner_id", context.userId).eq("kind", "photo").maybeSingle();
     const detail = data && (Array.isArray(data.file_details) ? data.file_details[0] : data.file_details); if (queryError) throw queryError;
     if (!detail) return error("找不到照片。", 404);
-    const { data: object, error: objectError } = await admin.storage.from("vault-files").download(detail.storage_path);
+    const { data: object, error: objectError } = await createStorageManager(admin).download("vault-files", detail.storage_path);
     if (objectError || !object) throw objectError;
     return new NextResponse(object, { headers: { "Content-Type": detail.mime_type || object.type || "image/jpeg", "Cache-Control": "private, no-store" } });
   } catch { return error("暫時無法讀取照片。", 503); }
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
   let entryId: string | null = null;
   try {
     const admin = createAdminClient(); const fileName = ticket.storagePath.split("/").at(-1) ?? "";
-    const { data: objectRows, error: objectError } = await admin.storage.from("vault-files").list(`${context.userId}/photos`, { limit: 20, search: fileName });
+    const { data: objectRows, error: objectError } = await createStorageManager(admin).list("vault-files", `${context.userId}/photos`, { limit: 20, search: fileName });
     if (objectError || !objectRows?.some((item) => item.name === fileName)) return error("找不到已上傳照片，請重新選擇。", 400);
     const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "photo", title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null, content_folder_id: parsed.data.contentFolderId ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived }).select("id").single();
     if (entryError) throw entryError; entryId = entry.id;
@@ -80,5 +81,5 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const parsed = deleteSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("Invalid request", 400);
-  try { const admin = createAdminClient(); const { data, error: queryError } = await admin.from("entries").select("id, file_details(storage_path)").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "photo").not("deleted_at", "is", null).maybeSingle(); const detail = data && (Array.isArray(data.file_details) ? data.file_details[0] : data.file_details); if (queryError) throw queryError; if (!data || !detail) return error("請先將照片移至垃圾桶。", 404); const { error: storageError } = await admin.storage.from("vault-files").remove([detail.storage_path]); if (storageError) throw storageError; const { error: deleteError } = await admin.from("entries").delete().eq("id", data.id).eq("owner_id", context.userId); if (deleteError) throw deleteError; return NextResponse.json({ ok: true }); } catch { return error("無法永久刪除照片。", 503); }
+  try { const admin = createAdminClient(); const { data, error: queryError } = await admin.from("entries").select("id, file_details(storage_path)").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "photo").not("deleted_at", "is", null).maybeSingle(); const detail = data && (Array.isArray(data.file_details) ? data.file_details[0] : data.file_details); if (queryError) throw queryError; if (!data || !detail) return error("請先將照片移至垃圾桶。", 404); const { error: storageError } = await createStorageManager(admin).delete("vault-files", [detail.storage_path]); if (storageError) throw storageError; const { error: deleteError } = await admin.from("entries").delete().eq("id", data.id).eq("owner_id", context.userId); if (deleteError) throw deleteError; return NextResponse.json({ ok: true }); } catch { return error("無法永久刪除照片。", 503); }
 }

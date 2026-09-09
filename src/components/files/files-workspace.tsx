@@ -4,7 +4,7 @@ import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createBrowserStorageManager } from "@/lib/storage/client";
 import {
   CollectionCategory,
   CollectionNavigation,
@@ -127,9 +127,8 @@ export function FilesWorkspace({
       });
       const ticket = await ticketResponse.json();
       if (!ticketResponse.ok) throw new Error(ticket.error ?? "無法準備上傳。");
-      const { error: uploadError } = await createClient()
-        .storage.from("vault-files")
-        .uploadToSignedUrl(ticket.storagePath, ticket.token, file, {
+      const { error: uploadError } = await createBrowserStorageManager()
+        .uploadToSignedUrl("vault-files", ticket.storagePath, ticket.token, file, {
           contentType: file.type || "application/octet-stream",
         });
       if (uploadError) throw uploadError;

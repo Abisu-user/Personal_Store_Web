@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createCoverUploadTicket } from "@/lib/security/cover-upload-ticket";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createStorageManager } from "@/lib/storage/server";
 import { assertStorageQuota, quotaExceededResponse } from "@/lib/system/quota";
 
 const uploadSchema = z.object({
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   try {
     await assertStorageQuota(context.userId, parsed.data.byteSize);
     const storagePath = `${context.userId}/covers/${randomUUID()}`;
-    const { data, error } = await createAdminClient().storage.from("content-covers").createSignedUploadUrl(storagePath);
+    const { data, error } = await createStorageManager().createSignedUploadUrl("content-covers", storagePath);
     if (error || !data) throw error;
     return NextResponse.json({
       storagePath,

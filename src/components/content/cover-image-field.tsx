@@ -84,6 +84,6 @@ export async function uploadCover(selection: CoverSelection) {
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", .92)); if (!blob) throw new Error("無法處理封面圖片。");
   const ticketResponse = await fetch("/api/content-covers/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mimeType: "image/webp", byteSize: blob.size }) });
   const ticket = await ticketResponse.json().catch(() => null); if (!ticketResponse.ok || !ticket?.token) throw new Error(ticket?.error ?? "無法準備封面上傳。");
-  const { createClient } = await import("@/lib/supabase/client"); const { error } = await createClient().storage.from("content-covers").uploadToSignedUrl(ticket.storagePath, ticket.token, blob, { contentType: "image/webp" }); if (error) throw error;
+  const { createBrowserStorageManager } = await import("@/lib/storage/client"); const { error } = await createBrowserStorageManager().uploadToSignedUrl("content-covers", ticket.storagePath, ticket.token, blob, { contentType: "image/webp" }); if (error) throw error;
   return ticket.ticket as string;
 }
