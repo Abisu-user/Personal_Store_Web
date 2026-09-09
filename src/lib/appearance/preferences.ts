@@ -25,6 +25,7 @@ const fontFamilies: FontFamily[] = ["system", "rounded", "serif", "mono"];
 const bookmarkDisplays: BookmarkDisplay[] = ["list", "grid", "text"];
 const imageReferencePrefix = "workspace-image:";
 const serverImageReferencePrefix = "workspace-storage:";
+const objectImageReferencePrefix = "workspace-object:";
 const imageCache = new Map<string, string>();
 let databasePromise: Promise<IDBDatabase> | undefined;
 const appearanceStoreName = "appearance-settings";
@@ -51,7 +52,7 @@ export function clearAppearanceIdentity() {
 export function normalizeHexColor(value: unknown, fallback = appearanceDefaults.customColor) { return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value.toUpperCase() : fallback; }
 function clamp(value: unknown, min: number, max: number, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback; }
 function isStoredImage(value: string) { return value.startsWith(imageReferencePrefix); }
-function isServerImage(value: string) { return value.startsWith(serverImageReferencePrefix); }
+function isServerImage(value: string) { return value.startsWith(serverImageReferencePrefix) || value.startsWith(objectImageReferencePrefix); }
 function isLegacyImage(value: string) { return value.startsWith("data:image/"); }
 function blobToDataUrl(blob: Blob) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.onerror = () => reject(reader.error ?? new Error("BACKGROUND_IMAGE_READ_FAILED")); reader.readAsDataURL(blob); }); }
 function imageDb() {
@@ -110,17 +111,21 @@ function persistAppearanceBackup(appearance: Appearance) {
 export async function storeBackgroundImage(blob: Blob) {
   if (appearanceUserId) {
     const device = getAppearanceDevice();
+    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
     const response = await fetch("/api/appearance/backgrounds", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device, byteSize: blob.size, mimeType: blob.type || "image/webp" }),
+      body: JSON.stringify({ device, byteSize: blob.size, mimeType: blob.type || "image/webp", sha256 }),
     });
     const ticket = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(ticket.error ?? "BACKGROUND_UPLOAD_PREPARE_FAILED");
-    const { createBrowserStorageManager } = await import("@/lib/storage/client");
-    const { error } = await createBrowserStorageManager().uploadToSignedUrl("workspace-backgrounds", ticket.storagePath, ticket.token, blob, { contentType: blob.type || "image/webp" });
-    if (error) throw error;
-    const reference = `${serverImageReferencePrefix}${ticket.storagePath}`;
+    const upload = await fetch(ticket.uploadUrl, { method: ticket.method ?? "PUT", headers: ticket.headers ?? { "Content-Type": blob.type || "image/webp" }, body: blob });
+    if (!upload.ok) throw new Error("BACKGROUND_UPLOAD_FAILED");
+    const finalized = await fetch("/api/storage/b2/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket }) });
+    const result = await finalized.json().catch(() => ({}));
+    if (!finalized.ok || typeof result.storageObjectId !== "string") throw new Error(result.error ?? "BACKGROUND_UPLOAD_FINALIZE_FAILED");
+    const reference = `${objectImageReferencePrefix}${result.storageObjectId}`;
     imageCache.set(reference, URL.createObjectURL(blob));
     return reference;
   }

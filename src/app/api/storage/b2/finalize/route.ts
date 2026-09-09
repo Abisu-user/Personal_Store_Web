@@ -5,6 +5,7 @@ import { verifyB2UploadTicket } from "@/lib/security/b2-upload-ticket";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createB2StorageManager } from "@/lib/storage/b2-server";
 import { createStorageMetadataRepository } from "@/lib/storage/metadata-repository";
+import { b2MetadataCategory } from "@/lib/storage/b2-upload-policy";
 
 const finalizeSchema = z.object({ ticket: z.string().min(1).max(4000) });
 
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
   const metadata = createStorageMetadataRepository();
   try {
     const pending = await metadata.findOwnedPending(ticket.storageObjectId, context.userId);
-    if (!pending || pending.provider !== "b2" || pending.bucket !== ticket.bucket || pending.objectKey !== ticket.objectKey || pending.category !== ticket.purpose) {
+    if (!pending || pending.provider !== "b2" || pending.bucket !== ticket.bucket || pending.objectKey !== ticket.objectKey || pending.category !== b2MetadataCategory(ticket.purpose)) {
       return NextResponse.json({ error: "找不到等待確認的上傳資料。" }, { status: 409 });
     }
     if (pending.byteSize !== ticket.byteSize || normalizedMime(pending.mimeType) !== normalizedMime(ticket.mimeType) || pending.checksum !== ticket.sha256) {

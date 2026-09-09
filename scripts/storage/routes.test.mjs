@@ -11,6 +11,7 @@ const request = (path, method = "GET", body) => new NextRequest(`https://vault.i
 
 function fixture(options = {}) {
   const calls = [];
+  let pendingObject = null;
   const storage = {
     listBuckets: async () => { calls.push(["buckets"]); return { data: [{ id: "vault-files" }], error: null }; },
     from: (bucket) => ({
@@ -31,14 +32,33 @@ function fixture(options = {}) {
       deleteUser: async (...args) => { calls.push(["delete-user", ...args]); return { error: null }; },
     } },
   };
+  const metadata = {
+    reservePending: async (values, ttlSeconds) => {
+      calls.push(["reserve", values, ttlSeconds]);
+      if (options.capacity?.storageUsedBytes >= options.capacity?.storageQuotaBytes) throw new Error("quota_exceeded:storage");
+      pendingObject = { id: entryId, status: "pending", ...values };
+      return pendingObject;
+    },
+    findOwnedPending: async (id, ownerId) => pendingObject?.id === id && pendingObject?.userId === ownerId ? pendingObject : null,
+    findOwnedActive: async (id, ownerId) => options.storageObject?.id === id && options.storageObject?.userId === ownerId ? options.storageObject : null,
+    markFailed: async (id, ownerId) => { calls.push(["metadata-failed", id, ownerId]); },
+    activateOwned: async (values) => ({ ...pendingObject, ...values, status: "active" }),
+  };
+  const b2 = {
+    createSignedUploadUrl: async (bucket, path, signedOptions) => { calls.push(["b2-sign-upload", bucket, path, signedOptions]); return { data: { signedUrl: "https://b2.invalid/upload", headers: { "Content-Type": signedOptions.contentType, "x-amz-meta-sha256": signedOptions.checksumSha256 } }, error: null }; },
+    getSignedUrl: async (bucket, path, expiresIn) => { calls.push(["b2-sign-read", bucket, path, expiresIn]); return { data: { signedUrl: "https://b2.invalid/read" }, error: null }; },
+    delete: async (bucket, paths) => { calls.push(["b2-remove", bucket, paths]); return options.removeError ? { data: null, error: new Error("remove failed") } : { data: undefined, error: null }; },
+  };
   const load = loadApp({
     "@/lib/security/activity": { getSecurityContext: async () => options.unauthorized ? null : { userId, ipHash: "test-ip" } },
     "@/lib/security/adult-content": { hasAdultContentAccess: async () => options.adultAllowed ?? true },
     "@/lib/supabase/admin": { createAdminClient: () => admin },
     "@/lib/supabase/client": { createClient: () => ({ storage }) },
+    "@/lib/storage/b2-server": { createB2StorageManager: () => b2 },
+    "@/lib/storage/metadata-repository": { createStorageMetadataRepository: () => metadata },
     "@/lib/files/data": { getFilesWorkspaceData: async () => { throw new Error("Unexpected workspace reload"); } },
     "@/lib/photos/data": { getPhotosWorkspaceData: async () => { throw new Error("Unexpected workspace reload"); } },
-  }, options.globals);
+  }, { process: { env: { SUPABASE_SECRET_KEY: "phase-6-test-secret", B2_BUCKET_NAME: "personal-vault-storage" } }, ...options.globals });
   return { calls, load };
 }
 
@@ -46,8 +66,6 @@ const uploadCases = [
   ["files", "/api/files/upload-url", "vault-files", `${userId}/`, { originalFilename: "檔案.pdf", mimeType: "application/pdf", byteSize: 4, sha256: "a".repeat(64) }],
   ["photos", "/api/photos/upload-url", "vault-files", `${userId}/photos/`, { originalFilename: "照片.png", mimeType: "image/png", byteSize: 4, sha256: "b".repeat(64) }],
   ["covers", "/api/content-covers/upload-url", "content-covers", `${userId}/covers/`, { mimeType: "image/webp", byteSize: 4 }],
-  ["desktop", "/api/appearance/backgrounds", "workspace-backgrounds", `${userId}/desktop/`, { device: "desktop", mimeType: "image/webp", byteSize: 4 }],
-  ["mobile", "/api/appearance/backgrounds", "workspace-backgrounds", `${userId}/mobile/`, { device: "mobile", mimeType: "image/png", byteSize: 4 }],
 ];
 
 for (const [label, path, bucket, prefix, body] of uploadCases) {
@@ -78,6 +96,38 @@ for (const [label, path, bucket, prefix, body] of uploadCases) {
       assert.equal(response.status, expected);
       assert.equal(calls.some(([op]) => op === "sign-upload"), false);
       if (expected === 413) assert.equal((await response.json()).code, "STORAGE_QUOTA_EXCEEDED");
+    }
+  });
+}
+
+for (const device of ["desktop", "mobile"]) {
+  test(`${device} background upload reserves quota and returns a device-scoped B2 ticket`, async () => {
+    const { load, calls } = fixture();
+    const sha256 = "c".repeat(64);
+    const route = load("src/app/api/appearance/backgrounds/route.ts");
+    const response = await route.POST(request("/api/appearance/backgrounds", "POST", { device, mimeType: "image/webp", byteSize: 4, sha256 }));
+    assert.equal(response.status, 200);
+    const data = await response.json();
+    assert.equal(data.method, "PUT");
+    assert.equal(data.storageObjectId, entryId);
+    assert.equal(data.uploadUrl, "https://b2.invalid/upload");
+    const reserved = calls.find(([op]) => op === "reserve");
+    assert.equal(reserved[1].userId, userId);
+    assert.equal(reserved[1].provider, "b2");
+    assert.equal(reserved[1].category, "workspace-backgrounds");
+    assert.match(reserved[1].objectKey, new RegExp(`^${userId}/workspace-background-${device}/`));
+    assert.ok(calls.some(([op]) => op === "b2-sign-upload"));
+    const ticket = load("src/lib/security/b2-upload-ticket.ts").verifyB2UploadTicket(data.ticket);
+    assert.equal(ticket.ownerId, userId);
+    assert.equal(ticket.purpose, `workspace-background-${device}`);
+  });
+
+  test(`${device} background quota failure or missing session never signs a B2 upload`, async () => {
+    for (const [options, expected] of [[{ capacity: { storageUsedBytes: 100, storageQuotaBytes: 100 } }, 413], [{ unauthorized: true }, 401]]) {
+      const { load, calls } = fixture(options);
+      const response = await load("src/app/api/appearance/backgrounds/route.ts").POST(request("/api/appearance/backgrounds", "POST", { device, mimeType: "image/png", byteSize: 4, sha256: "d".repeat(64) }));
+      assert.equal(response.status, expected);
+      assert.equal(calls.some(([op]) => op === "b2-sign-upload"), false);
     }
   });
 }
@@ -132,18 +182,23 @@ test("adult cover authorization still prevents a Storage read", async () => {
   assert.equal(calls.some(([op]) => op === "download"), false);
 });
 
-test("background URLs stay account/device scoped, use existing prefix and one-day expiry", async () => {
+test("background URLs keep legacy Supabase references and add account/device-scoped B2 references", async () => {
   const own = `workspace-storage:${userId}/desktop/bg`;
+  const objectReference = `workspace-object:${entryId}`;
   const foreign = "workspace-storage:other/desktop/bg";
   const mobile = `workspace-storage:${userId}/mobile/bg`;
   const { load, calls } = fixture();
   const defaults = load("src/lib/appearance/preferences.ts").appearanceDefaults;
-  const target = fixture({ row: { preferences: { ...defaults, backgroundImages: [own, foreign, mobile] } } });
+  const target = fixture({
+    row: { preferences: { ...defaults, backgroundImages: [own, objectReference, foreign, mobile] } },
+    storageObject: { id: entryId, userId, provider: "b2", bucket: "personal-vault-storage", category: "workspace-backgrounds", objectKey: `${userId}/workspace-background-desktop/background-id`, status: "active" },
+  });
   const response = await target.load("src/app/api/appearance/route.ts").GET(request("/api/appearance?device=desktop"));
   const data = await response.json();
-  assert.deepEqual(data.appearance.backgroundImages, [own]);
-  assert.deepEqual(data.imageUrls, { [own]: "https://storage.invalid/read" });
+  assert.deepEqual(data.appearance.backgroundImages, [own, objectReference]);
+  assert.deepEqual(data.imageUrls, { [own]: "https://storage.invalid/read", [objectReference]: "https://b2.invalid/read" });
   assert.deepEqual(target.calls.filter(([op]) => op === "sign-read"), [["sign-read", "workspace-backgrounds", `${userId}/desktop/bg`, 86400, undefined]]);
+  assert.deepEqual(target.calls.filter(([op]) => op === "b2-sign-read"), [["b2-sign-read", "personal-vault-storage", `${userId}/workspace-background-desktop/background-id`, 86400]]);
   assert.equal(calls.length, 0);
 });
 
@@ -156,6 +211,19 @@ test("background removal blocks wrong account/device and still removes the owned
   assert.equal(calls.length, 0);
   assert.equal((await route.DELETE(request("/api/appearance/backgrounds", "DELETE", { device: "desktop", reference: `workspace-storage:${userId}/desktop/bg` }))).status, 200);
   assert.deepEqual(calls.find(([op]) => op === "remove"), ["remove", "workspace-backgrounds", [`${userId}/desktop/bg`]]);
+});
+
+test("B2 background removal validates ownership and device before deleting", async () => {
+  const reference = `workspace-object:${entryId}`;
+  const { load, calls } = fixture({
+    row: null,
+    storageObject: { id: entryId, userId, provider: "b2", bucket: "personal-vault-storage", category: "workspace-backgrounds", objectKey: `${userId}/workspace-background-desktop/background-id`, status: "active" },
+  });
+  const route = load("src/app/api/appearance/backgrounds/route.ts");
+  assert.equal((await route.DELETE(request("/api/appearance/backgrounds", "DELETE", { device: "mobile", reference }))).status, 403);
+  assert.equal(calls.some(([op]) => op === "b2-remove"), false);
+  assert.equal((await route.DELETE(request("/api/appearance/backgrounds", "DELETE", { device: "desktop", reference }))).status, 200);
+  assert.deepEqual(calls.find(([op]) => op === "b2-remove"), ["b2-remove", "personal-vault-storage", [`${userId}/workspace-background-desktop/background-id`]]);
 });
 
 for (const kind of ["files", "photos"]) {
@@ -190,19 +258,32 @@ test("account deletion still removes Storage before verification flows and Auth,
 });
 
 for (const device of ["desktop", "mobile"]) {
-  test(`${device} background client uses shared browser manager without changing persisted reference`, async () => {
-    let preparation;
+  test(`${device} background client uploads to B2, finalizes, and persists the metadata reference`, async () => {
+    const requests = [];
     const blob = new Blob(["background"], { type: "image/webp" });
     const { load, calls } = fixture({ globals: {
       window: { matchMedia: () => ({ matches: device === "mobile" }) },
       URL: { createObjectURL: () => "blob:test" },
-      fetch: async (url, options) => { preparation = [url, JSON.parse(options.body)]; return Response.json({ storagePath: `${userId}/${device}/bg.webp`, token: "upload-token" }); },
+      fetch: async (url, options) => {
+        requests.push([url, options]);
+        if (url === "/api/appearance/backgrounds") return Response.json({ method: "PUT", uploadUrl: "https://b2.invalid/upload", headers: { "Content-Type": "image/webp", "x-amz-meta-sha256": "signed" }, ticket: "finalize-ticket" });
+        if (url === "https://b2.invalid/upload") return new Response(null, { status: 200 });
+        if (url === "/api/storage/b2/finalize") return Response.json({ storageObjectId: entryId, status: "active" });
+        return new Response(null, { status: 404 });
+      },
     } });
     const preferences = load("src/lib/appearance/preferences.ts");
     preferences.setAppearanceIdentity(userId);
-    assert.equal(await preferences.storeBackgroundImage(blob), `workspace-storage:${userId}/${device}/bg.webp`);
-    assert.deepEqual(preparation, ["/api/appearance/backgrounds", { device, byteSize: blob.size, mimeType: "image/webp" }]);
-    assert.deepEqual(calls.find(([op]) => op === "upload"), ["upload", "workspace-backgrounds", `${userId}/${device}/bg.webp`, "upload-token", blob, { contentType: "image/webp" }]);
+    assert.equal(await preferences.storeBackgroundImage(blob), `workspace-object:${entryId}`);
+    const preparation = JSON.parse(requests[0][1].body);
+    assert.equal(preparation.device, device);
+    assert.equal(preparation.byteSize, blob.size);
+    assert.equal(preparation.mimeType, "image/webp");
+    assert.match(preparation.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(requests[1][0], "https://b2.invalid/upload");
+    assert.equal(requests[1][1].body, blob);
+    assert.deepEqual(JSON.parse(requests[2][1].body), { ticket: "finalize-ticket" });
+    assert.equal(calls.some(([op]) => op === "upload"), false);
   });
 }
 

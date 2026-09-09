@@ -1,33 +1,48 @@
-import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
+import { createB2UploadTicket } from "@/lib/security/b2-upload-ticket";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createB2StorageManager } from "@/lib/storage/b2-server";
+import { b2MetadataCategory, b2ObjectKey, type B2UploadPurpose, validateB2UploadPolicy } from "@/lib/storage/b2-upload-policy";
+import { createStorageMetadataRepository } from "@/lib/storage/metadata-repository";
 import { createStorageManager } from "@/lib/storage/server";
-import { assertStorageQuota, quotaExceededResponse } from "@/lib/system/quota";
+import { quotaExceededResponse } from "@/lib/system/quota";
 
 const uploadSchema = z.object({
   device: z.enum(["desktop", "mobile"]),
   byteSize: z.number().int().positive().max(8_388_608),
   mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  sha256: z.string().trim().toLowerCase().regex(/^[a-f0-9]{64}$/).nullable().optional(),
 });
 const deleteSchema = z.object({ device: z.enum(["desktop", "mobile"]), reference: z.string().max(600) });
-const referencePrefix = "workspace-storage:";
+const legacyReferencePrefix = "workspace-storage:";
+const objectReferencePrefix = "workspace-object:";
+const objectIdPattern = /^[0-9a-f-]{36}$/i;
+const purposeFor = (device: "desktop" | "mobile") => `workspace-background-${device}` as B2UploadPurpose;
 
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = uploadSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "背景圖片必須是 8 MB 以下的 JPG、PNG 或 WebP。" }, { status: 400 });
+  const purpose = purposeFor(parsed.data.device);
+  const bucket = process.env.B2_BUCKET_NAME?.trim();
+  if (!bucket) return NextResponse.json({ error: "B2 儲存服務尚未設定。" }, { status: 503 });
+  const metadata = createStorageMetadataRepository();
+  let pendingId: string | null = null;
   try {
-    await assertStorageQuota(context.userId, parsed.data.byteSize);
-    const extension = parsed.data.mimeType === "image/png" ? "png" : parsed.data.mimeType === "image/jpeg" ? "jpg" : "webp";
-    const path = `${context.userId}/${parsed.data.device}/${randomUUID()}.${extension}`;
-    const { data, error } = await createStorageManager().createSignedUploadUrl("workspace-backgrounds", path);
-    if (error || !data) throw error ?? new Error("UPLOAD_TICKET_FAILED");
-    return NextResponse.json({ storagePath: path, token: data.token }, { headers: { "Cache-Control": "private, no-store" } });
+    validateB2UploadPolicy(purpose, parsed.data.byteSize, parsed.data.mimeType);
+    const objectKey = b2ObjectKey(context.userId, purpose, crypto.randomUUID());
+    const pending = await metadata.reservePending({ userId: context.userId, provider: "b2", bucket, objectKey, category: b2MetadataCategory(purpose), byteSize: parsed.data.byteSize, mimeType: parsed.data.mimeType, checksum: parsed.data.sha256 ?? null }, 3600);
+    pendingId = pending.id;
+    const { data: signed, error } = await createB2StorageManager().createSignedUploadUrl(bucket, objectKey, { contentType: parsed.data.mimeType, checksumSha256: parsed.data.sha256 ?? undefined });
+    if (error || !signed) throw error ?? new Error("B2 signed upload URL was not created.");
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    return NextResponse.json({ storageObjectId: pending.id, method: "PUT", uploadUrl: signed.signedUrl, headers: signed.headers ?? {}, ticket: createB2UploadTicket({ ownerId: context.userId, storageObjectId: pending.id, bucket, objectKey, purpose, byteSize: parsed.data.byteSize, mimeType: parsed.data.mimeType, sha256: parsed.data.sha256 ?? null, expiresAt }), expiresAt }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (cause) {
+    if (pendingId) await metadata.markFailed(pendingId, context.userId).catch(() => undefined);
     const quotaError = quotaExceededResponse(cause);
     return NextResponse.json(quotaError ?? { error: "目前無法準備背景上傳。" }, { status: quotaError ? 413 : 503 });
   }
@@ -38,10 +53,23 @@ export async function DELETE(request: NextRequest) {
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = deleteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "背景圖片資料無效。" }, { status: 400 });
-  const path = parsed.data.reference.startsWith(referencePrefix) ? parsed.data.reference.slice(referencePrefix.length) : "";
-  if (!path.startsWith(`${context.userId}/${parsed.data.device}/`)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const objectId = parsed.data.reference.startsWith(objectReferencePrefix) ? parsed.data.reference.slice(objectReferencePrefix.length) : "";
+  const legacyPath = parsed.data.reference.startsWith(legacyReferencePrefix) ? parsed.data.reference.slice(legacyReferencePrefix.length) : "";
+  if (!objectIdPattern.test(objectId) && !legacyPath.startsWith(`${context.userId}/${parsed.data.device}/`)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const admin = createAdminClient();
+    if (objectId) {
+      const object = await createStorageMetadataRepository(admin).findOwnedActive(objectId, context.userId);
+      const expectedPrefix = `${context.userId}/${purposeFor(parsed.data.device)}/`;
+      if (!object || object.provider !== "b2" || object.category !== "workspace-backgrounds" || !object.objectKey.startsWith(expectedPrefix)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      const { error: deleteError } = await createB2StorageManager().delete(object.bucket, [object.objectKey]);
+      if (deleteError) throw deleteError;
+      const { error: metadataError } = await admin.from("storage_objects").update({ status: "failed", deleted_at: new Date().toISOString(), reservation_expires_at: null }).eq("id", object.id).eq("user_id", context.userId).eq("status", "active");
+      if (metadataError) throw metadataError;
+    } else {
+      const { error: deleteError } = await createStorageManager(admin).delete("workspace-backgrounds", [legacyPath]);
+      if (deleteError) throw deleteError;
+    }
     const { data: row } = await admin.from("user_appearance_settings").select("preferences").eq("user_id", context.userId).eq("device_type", parsed.data.device).maybeSingle();
     if (row?.preferences && typeof row.preferences === "object") {
       const preferences = row.preferences as Record<string, unknown>;
@@ -50,8 +78,6 @@ export async function DELETE(request: NextRequest) {
       const activeIndex = Math.min(currentIndex, Math.max(0, images.length - 1));
       await admin.from("user_appearance_settings").update({ preferences: { ...preferences, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] } }).eq("user_id", context.userId).eq("device_type", parsed.data.device);
     }
-    const { error } = await createStorageManager(admin).delete("workspace-backgrounds", [path]);
-    if (error) throw error;
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     return NextResponse.json({ error: "目前無法移除背景圖片。" }, { status: 503 });

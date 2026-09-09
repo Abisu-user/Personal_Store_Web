@@ -5,7 +5,7 @@ import { z } from "zod";
 import { createB2UploadTicket } from "@/lib/security/b2-upload-ticket";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createB2StorageManager } from "@/lib/storage/b2-server";
-import { b2ObjectKey, b2UploadPurposes, validateB2UploadPolicy } from "@/lib/storage/b2-upload-policy";
+import { b2MetadataCategory, b2ObjectKey, b2UploadPurposes, validateB2UploadPolicy } from "@/lib/storage/b2-upload-policy";
 import { createStorageMetadataRepository } from "@/lib/storage/metadata-repository";
 import { quotaExceededResponse } from "@/lib/system/quota";
 
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       provider: "b2",
       bucket,
       objectKey,
-      category: parsed.data.purpose,
+      category: b2MetadataCategory(parsed.data.purpose),
       byteSize: parsed.data.byteSize,
       mimeType: parsed.data.mimeType,
       checksum: parsed.data.sha256 ?? null,
