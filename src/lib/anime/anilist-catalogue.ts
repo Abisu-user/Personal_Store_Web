@@ -1,6 +1,7 @@
 import "server-only";
 import type { ExternalAnime } from "@/lib/anime/types";
 import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
+import { getKitsuCatalogue, getKitsuTaxonomy } from "@/lib/anime/kitsu-catalogue";
 
 const ANILIST_URL = process.env.ANIME_ANILIST_API_URL || "https://graphql.anilist.co";
 const CATALOGUE_TTL = 45 * 60_000;
@@ -113,14 +114,22 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
   for (const [key, value] of Object.entries({ season: filters.season, seasonYear: filters.seasonYear, genre: filters.genre, tag: filters.tag, format: filters.format, status: filters.status, search: filters.search })) {
     if (value !== undefined && value !== null && value !== "") variables[key] = value;
   }
-  const data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
+  let data: any;
+  try {
+    data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
+  } catch (cause) {
+    console.warn("[anime-catalogue] AniList unavailable; using Kitsu fallback", { message: cause instanceof Error ? cause.message : "unknown" });
+    return getKitsuCatalogue({ ...filters, page, perPage });
+  }
   const info = data?.Page?.pageInfo;
   const items = Array.isArray(data?.Page?.media) ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id) : [];
   return { items: await localizeAnimeTitles(items), page: Number(info?.currentPage ?? page), hasNextPage: Boolean(info?.hasNextPage), total: Number(info?.total ?? 0) };
 }
 
 export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
-  const data = await request<any>(taxonomyQuery, {}, TAXONOMY_TTL);
+  let data: any;
+  try { data = await request<any>(taxonomyQuery, {}, TAXONOMY_TTL); }
+  catch { return getKitsuTaxonomy(); }
   const genres = Array.isArray(data?.GenreCollection) ? data.GenreCollection.filter((item: unknown): item is string => typeof item === "string").sort() : [];
   const tags = Array.isArray(data?.MediaTagCollection) ? data.MediaTagCollection.filter((item: any) => typeof item?.name === "string" && !item.isMediaSpoiler && !String(item.category ?? "").includes("Sexual")).sort((left: any, right: any) => Number(right.rank ?? 0) - Number(left.rank ?? 0) || String(left.name).localeCompare(String(right.name))).slice(0, 100).map((item: any) => item.name) : [];
   return { genres, tags };
