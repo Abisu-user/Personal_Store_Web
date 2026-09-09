@@ -125,7 +125,10 @@ export class B2StorageProvider implements StorageProvider {
       const signedUrl = await this.signer(this.signingClient, new PutObjectCommand({
         Bucket: this.bucket(bucket), Key: path, ContentType: options?.contentType,
         Metadata: options?.checksumSha256 ? { sha256: options.checksumSha256 } : undefined,
-      }), { expiresIn: 600 });
+      }), {
+        expiresIn: 600,
+        unhoistableHeaders: new Set(["x-amz-meta-sha256"]),
+      });
       return { data: { path, token: signedUrl, signedUrl, headers }, error: null };
     } catch (cause) { return resultError(cause); }
   }

@@ -46,11 +46,14 @@ test("B2 provider supports Put, HEAD, Get, Delete and bucket-scoped list", async
 
 test("B2 signed PUT and GET use short lifetimes and preserve the download filename", async () => {
   const { value, calls } = provider(() => ({}));
-  const upload = await value.createSignedUploadUrl(bucket, "test/phase-3/signed.txt");
+  const upload = await value.createSignedUploadUrl(bucket, "test/phase-3/signed.txt", { contentType: "text/plain", checksumSha256: "a".repeat(64) });
   assert.equal(upload.data?.token, upload.data?.signedUrl);
   const download = await value.getSignedUrl(bucket, "test/phase-3/signed.txt", 60, { download: "測試 檔案.txt" });
   assert.match(download.data?.signedUrl ?? "", /^https:\/\/signed\.example/);
   assert.equal(calls[0].options.expiresIn, 600);
+  assert.equal(calls[0].input.Metadata.sha256, "a".repeat(64));
+  assert.equal(calls[0].options.unhoistableHeaders.has("x-amz-meta-sha256"), true);
+  assert.equal(upload.data?.headers["x-amz-meta-sha256"], "a".repeat(64));
   assert.equal(calls[1].options.expiresIn, 60);
   assert.match(calls[1].input.ResponseContentDisposition, /%E6%B8%AC%E8%A9%A6%20%E6%AA%94%E6%A1%88\.txt/);
 });
