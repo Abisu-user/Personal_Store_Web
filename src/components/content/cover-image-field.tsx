@@ -82,8 +82,29 @@ export async function uploadCover(selection: CoverSelection) {
   try { image = await loadImage(sourceUrl); } finally { URL.revokeObjectURL(sourceUrl); }
   const canvas = drawCover(image, crop, size);
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", .92)); if (!blob) throw new Error("無法處理封面圖片。");
-  const ticketResponse = await fetch("/api/content-covers/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mimeType: "image/webp", byteSize: blob.size }) });
-  const ticket = await ticketResponse.json().catch(() => null); if (!ticketResponse.ok || !ticket?.token) throw new Error(ticket?.error ?? "無法準備封面上傳。");
-  const { createBrowserStorageManager } = await import("@/lib/storage/client"); const { error } = await createBrowserStorageManager().uploadToSignedUrl("content-covers", ticket.storagePath, ticket.token, blob, { contentType: "image/webp" }); if (error) throw error;
-  return ticket.ticket as string;
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const ticketResponse = await fetch("/api/content-covers/upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mimeType: "image/webp", byteSize: blob.size, sha256 }),
+  });
+  const ticket = await ticketResponse.json().catch(() => null);
+  if (!ticketResponse.ok || !ticket?.ticket) throw new Error(ticket?.error ?? "無法準備封面上傳。");
+  if (ticket.provider === "b2") {
+    if (!ticket.uploadUrl) throw new Error("無法準備封面上傳。");
+    const upload = await fetch(ticket.uploadUrl, { method: ticket.method ?? "PUT", headers: ticket.headers ?? { "Content-Type": "image/webp" }, body: blob });
+    if (!upload.ok) throw new Error("封面上傳失敗，請稍後再試。");
+    const finalizedResponse = await fetch("/api/storage/b2/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket }) });
+    const finalized = await finalizedResponse.json().catch(() => null);
+    if (!finalizedResponse.ok || typeof finalized?.storageObjectId !== "string") throw new Error(finalized?.error ?? "無法確認封面上傳。");
+    return `storage-object:${finalized.storageObjectId}`;
+  }
+  if (ticket.provider === "supabase" && ticket.storagePath && ticket.token) {
+    const { createBrowserStorageManager } = await import("@/lib/storage/client");
+    const { error } = await createBrowserStorageManager().uploadToSignedUrl("content-covers", ticket.storagePath, ticket.token, blob, { contentType: "image/webp" });
+    if (error) throw error;
+    return ticket.ticket as string;
+  }
+  throw new Error("封面儲存服務回應無效。");
 }

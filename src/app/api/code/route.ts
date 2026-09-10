@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getCodeWorkspaceData } from "@/lib/code/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSecurityContext } from "@/lib/security/activity";
-import { deleteCover, validateContentFolder, verifiedCoverPath } from "@/lib/content/server";
+import { deleteCover, entryCoverFields, storedEntryCover, validateContentFolder, verifiedCover } from "@/lib/content/server";
 
 const snippetSchema = z.object({
   title: z.string().trim().min(1).max(300),
@@ -63,12 +63,12 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return jsonError("請檢查程式碼片段欄位。", 400);
   if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "code", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
-  const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
-  if (coverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+  const cover = await verifiedCover(context.userId, parsed.data.coverTicket);
+  if (cover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
   let entryId: string | null = null;
   try {
     const admin = createAdminClient(); const tags = await resolveTags(context.userId, parsed.data.tags);
-    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "code", title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null, content_folder_id: parsed.data.contentFolderId ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived, cover_image_path: coverPath }).select("id").single();
+    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "code", title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null, content_folder_id: parsed.data.contentFolderId ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived, ...entryCoverFields(cover) }).select("id").single();
     if (entryError) throw entryError;
     entryId = entry.id;
     const { error: detailError } = await admin.from("code_details").insert({ entry_id: entry.id, language: parsed.data.language, source_code: parsed.data.sourceCode });
@@ -106,16 +106,16 @@ export async function PATCH(request: NextRequest) {
   if (!parsed.success) return jsonError("請檢查程式碼片段欄位。", 400);
   if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "code", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
-  const newCoverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
-  if (newCoverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+  const newCover = await verifiedCover(context.userId, parsed.data.coverTicket);
+  if (newCover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     const admin = createAdminClient(); const tags = await resolveTags(context.userId, parsed.data.tags);
-    const { data: existing, error: existingError } = await admin.from("entries").select("id, cover_image_path").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "code").is("deleted_at", null).maybeSingle();
+    const { data: existing, error: existingError } = await admin.from("entries").select("id, cover_image_path, cover_storage_object_id").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "code").is("deleted_at", null).maybeSingle();
     if (existingError) throw existingError; if (!existing) return jsonError("找不到程式碼片段。", 404);
-    const { data: entry, error: entryError } = await admin.from("entries").update({ title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null, content_folder_id: parsed.data.contentFolderId ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived, ...(newCoverPath ? { cover_image_path: newCoverPath } : {}) }).eq("id", existing.id).eq("owner_id", context.userId).eq("kind", "code").select("id").maybeSingle();
+    const { data: entry, error: entryError } = await admin.from("entries").update({ title: parsed.data.title, description: parsed.data.description || null, category_id: parsed.data.categoryId ?? null, content_folder_id: parsed.data.contentFolderId ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived, ...(newCover ? entryCoverFields(newCover) : {}) }).eq("id", existing.id).eq("owner_id", context.userId).eq("kind", "code").select("id").maybeSingle();
     if (entryError) throw entryError;
     if (!entry) return jsonError("找不到程式碼片段。", 404);
-    if (newCoverPath && newCoverPath !== existing.cover_image_path) await deleteCover(existing.cover_image_path);
+    if (newCover) await deleteCover(context.userId, storedEntryCover(existing));
     const { error: detailError } = await admin.from("code_details").update({ language: parsed.data.language, source_code: parsed.data.sourceCode }).eq("entry_id", entry.id);
     if (detailError) throw detailError;
     await replaceTags(entry.id, tags.map((tag) => tag.id));
@@ -131,10 +131,10 @@ export async function DELETE(request: NextRequest) {
   if (!parsed.success) return jsonError("Invalid request", 400);
   try {
     const admin = createAdminClient();
-    const { data: entry, error } = await admin.from("entries").select("id, cover_image_path").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "code").not("deleted_at", "is", null).maybeSingle();
+    const { data: entry, error } = await admin.from("entries").select("id, cover_image_path, cover_storage_object_id").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "code").not("deleted_at", "is", null).maybeSingle();
     if (error) throw error;
     if (!entry) return jsonError("請先將程式碼移至垃圾桶。", 404);
-    await deleteCover(entry.cover_image_path);
+    await deleteCover(context.userId, storedEntryCover(entry));
     const { error: deleteError } = await admin.from("entries").delete().eq("id", entry.id).eq("owner_id", context.userId); if (deleteError) throw deleteError;
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: "code_deleted", metadata: {}, ip_hash: context.ipHash });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });

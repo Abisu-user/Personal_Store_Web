@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createB2StorageManager } from "@/lib/storage/b2-server";
 import { createStorageManager } from "@/lib/storage/server";
 import { removeOwnedStorage } from "@/lib/storage/cleanup";
 
@@ -10,6 +11,7 @@ export async function permanentlyDeleteAccount(userId: string) {
   if (accountError || !accountResult.user) throw accountError ?? new Error("Account not found.");
 
   await removeOwnedStorage(createStorageManager(admin), userId);
+  await removeOwnedStorage(createB2StorageManager(), userId);
 
   if (accountResult.user.email) {
     const { error: flowError } = await admin

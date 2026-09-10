@@ -3,7 +3,7 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBookmarksWorkspaceData } from "@/lib/bookmarks/data";
 import { getLinkPreview } from "@/lib/bookmarks/preview";
-import { deleteCover, verifiedCoverPath } from "@/lib/content/server";
+import { deleteCover, entryCoverFields, storedEntryCover, verifiedCover } from "@/lib/content/server";
 import { getSecurityContext } from "@/lib/security/activity";
 
 const bookmarkSchema = z.object({
@@ -80,13 +80,13 @@ export async function POST(request: NextRequest) {
     const previewPromise = getLinkPreview(normalizedUrl);
     if (!(await validateBookmarkCategory(context.userId, parsed.data.categoryId, parsed.data.bookmarkFolderId))) return jsonError("找不到指定分類。", 400);
     try { await validateBookmarkFolder(context.userId, parsed.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
-    const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
-    if (coverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+    const cover = await verifiedCover(context.userId, parsed.data.coverTicket);
+    if (cover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
     const tagRows = await resolveTags(context.userId, parsed.data.tags);
     const preview = await previewPromise;
     const title = parsed.data.title || preview.title || preview.hostname;
     const description = parsed.data.description || preview.description || null;
-    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "bookmark", title, description, category_id: parsed.data.categoryId ?? null, bookmark_folder_id: parsed.data.bookmarkFolderId ?? null, cover_image_path: coverPath ?? null, is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived }).select("id").single();
+    const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "bookmark", title, description, category_id: parsed.data.categoryId ?? null, bookmark_folder_id: parsed.data.bookmarkFolderId ?? null, ...entryCoverFields(cover), is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived }).select("id").single();
     if (entryError) throw entryError;
     const { error: detailsError } = await admin.from("bookmark_details").insert({ entry_id: entry.id, url: normalizedUrl, site_title: preview.title, favicon_url: preview.imageUrl ?? preview.faviconUrl, notes: description });
     if (detailsError) { await admin.from("entries").delete().eq("id", entry.id).eq("owner_id", context.userId); throw detailsError; }
@@ -115,28 +115,33 @@ export async function PATCH(request: NextRequest) {
         if (error) throw error;
         return NextResponse.json({ count: bulk.data.ids.length }, { headers: { "Cache-Control": "private, no-store" } });
       }
+      const covers = bulk.data.action === "permanent"
+        ? await admin.from("entries").select("id,cover_image_path,cover_storage_object_id").in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null)
+        : { data: [], error: null };
+      if (covers.error) throw covers.error;
       const query = bulk.data.action === "trash"
         ? admin.from("entries").update({ deleted_at: new Date().toISOString(), is_pinned: false }).in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null).select("id")
         : admin.from("entries").delete().in("id", bulk.data.ids).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id");
       const { data, error } = await query;
       if (error) throw error;
       if (!data?.length) return jsonError("找不到可處理的書籤。", 404);
+      if (bulk.data.action === "permanent") await Promise.all((covers.data ?? []).map((entry) => deleteCover(context.userId, storedEntryCover(entry))));
       await admin.from("audit_logs").insert({ owner_id: context.userId, action: `bookmark_bulk_${bulk.data.action}`, metadata: { count: data.length }, ip_hash: context.ipHash });
       return NextResponse.json({ count: data.length }, { headers: { "Cache-Control": "private, no-store" } });
     }
     if (update.success) {
       if (!(await validateBookmarkCategory(context.userId, update.data.categoryId, update.data.bookmarkFolderId))) return jsonError("找不到指定分類。", 400);
       try { await validateBookmarkFolder(context.userId, update.data.bookmarkFolderId); } catch (error) { if (error instanceof Error && error.message === "BOOKMARK_FOLDER_NOT_FOUND") return jsonError("找不到指定收藏資料夾。", 400); throw error; }
-      const newCoverPath = verifiedCoverPath(context.userId, update.data.coverTicket);
-      if (newCoverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
-      const { data: current, error: currentError } = await admin.from("entries").select("id, cover_image_path").eq("id", update.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null).maybeSingle();
+      const newCover = await verifiedCover(context.userId, update.data.coverTicket);
+      if (newCover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+      const { data: current, error: currentError } = await admin.from("entries").select("id, cover_image_path, cover_storage_object_id").eq("id", update.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").is("deleted_at", null).maybeSingle();
       if (currentError) throw currentError;
       if (!current) return jsonError("找不到書籤。", 404);
       const tagRows = await resolveTags(context.userId, update.data.tags);
-      const { error: entryError } = await admin.from("entries").update({ title: update.data.title || "未命名書籤", description: update.data.description || null, category_id: update.data.categoryId ?? null, bookmark_folder_id: update.data.bookmarkFolderId ?? null, is_favorite: update.data.favorite, is_pinned: update.data.pinned && !update.data.archived, is_archived: update.data.archived, ...(newCoverPath ? { cover_image_path: newCoverPath } : {}) }).eq("id", current.id).eq("owner_id", context.userId);
+      const { error: entryError } = await admin.from("entries").update({ title: update.data.title || "未命名書籤", description: update.data.description || null, category_id: update.data.categoryId ?? null, bookmark_folder_id: update.data.bookmarkFolderId ?? null, is_favorite: update.data.favorite, is_pinned: update.data.pinned && !update.data.archived, is_archived: update.data.archived, ...(newCover ? entryCoverFields(newCover) : {}) }).eq("id", current.id).eq("owner_id", context.userId);
       if (entryError) throw entryError;
       await replaceTags(current.id, tagRows.map((tag) => tag.id));
-      if (newCoverPath && newCoverPath !== current.cover_image_path) await deleteCover(current.cover_image_path);
+      if (newCover) await deleteCover(context.userId, storedEntryCover(current));
       await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_updated", entry_id: current.id, metadata: { tag_count: tagRows.length }, ip_hash: context.ipHash });
       return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
     }
@@ -183,9 +188,13 @@ export async function DELETE(request: NextRequest) {
   if (!parsed.success) return jsonError("Invalid request", 400);
   try {
     const admin = createAdminClient();
-    const { data: entry, error } = await admin.from("entries").delete().eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id").maybeSingle();
+    const { data: existing, error: existingError } = await admin.from("entries").select("id,cover_image_path,cover_storage_object_id").eq("id", parsed.data.id).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).maybeSingle();
+    if (existingError) throw existingError;
+    if (!existing) return jsonError("Not found", 404);
+    const { data: entry, error } = await admin.from("entries").delete().eq("id", existing.id).eq("owner_id", context.userId).eq("kind", "bookmark").not("deleted_at", "is", null).select("id").maybeSingle();
     if (error) throw error;
     if (!entry) return jsonError("Not found", 404);
+    await deleteCover(context.userId, storedEntryCover(existing));
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_permanently_deleted", metadata: {}, ip_hash: context.ipHash });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch { return jsonError("無法刪除書籤。", 503); }

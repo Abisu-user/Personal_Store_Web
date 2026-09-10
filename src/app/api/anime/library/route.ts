@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { deleteCover, verifiedCoverPath } from "@/lib/content/server";
+import { animeCoverFields, deleteCover, storedAnimeCover, verifiedCover } from "@/lib/content/server";
 import { getAnimePreferences, getAnimeWorkspaceData } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -110,14 +110,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const parsed = createSchema.safeParse(await request.json().catch(() => null)); if (!parsed.success) return error("請檢查動漫名稱、連結與其他欄位。", 400);
-  const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
+  const cover = await verifiedCover(context.userId, parsed.data.coverTicket); if (cover === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     if (parsed.data.isAdult && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     if (parsed.data.isAdult && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("請先在成人內容設定中啟用成人模式。", 403);
     const scope = parsed.data.isAdult ? "adult" : "standard" as const;
     const folderIds = await validateFolderIds(context.userId, scope, normalizedFolderIds(parsed.data));
     const admin = createAdminClient();
-    const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, coverPath), folder_id: folderIds[0] ?? null }).select("id").single();
+    const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, cover?.legacyPath ?? null), ...(cover?.storageObjectId ? { cover_storage_object_id: cover.storageObjectId } : {}), folder_id: folderIds[0] ?? null }).select("id").single();
     if (insertError) throw insertError;
     await replaceFolders(data.id, folderIds);
     await replaceCategories(context.userId, data.id, parsed.data.categoryIds, scope, folderIds);
@@ -134,7 +134,7 @@ export async function PATCH(request: NextRequest) {
     if (scope === "adult" && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     if (scope === "adult" && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
     const admin = createAdminClient();
-    let target = admin.from("anime_library").select("id,cover_url").eq("user_id", context.userId).in("id", ids);
+    let target = admin.from("anime_library").select("id,cover_url,cover_storage_object_id").eq("user_id", context.userId).in("id", ids);
     target = scope === "adult" ? target.eq("is_adult", true) : target.or("is_adult.is.null,is_adult.eq.false");
     target = action === "restore" || action === "permanent" ? target.not("deleted_at", "is", null) : target.is("deleted_at", null);
     const { data: matches, error: matchError } = await target;
@@ -153,7 +153,7 @@ export async function PATCH(request: NextRequest) {
       } else if (action === "permanent") {
         const { error: removeError } = await admin.from("anime_library").delete().eq("user_id", context.userId).in("id", targetIds);
         if (removeError) throw removeError;
-        await Promise.all((matches ?? []).flatMap((item) => item.cover_url?.startsWith(`${context.userId}/covers/`) ? [deleteCover(item.cover_url)] : []));
+        await Promise.all((matches ?? []).map((item) => deleteCover(context.userId, storedAnimeCover(context.userId, item))));
       } else {
         const { error: updateError } = await admin.from("anime_library").update({ deleted_at: action === "trash" ? new Date().toISOString() : null }).eq("user_id", context.userId).in("id", targetIds);
         if (updateError) throw updateError;
@@ -162,16 +162,16 @@ export async function PATCH(request: NextRequest) {
     } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); return error(action === "permanent" ? "無法永久刪除動漫。" : action === "restore" ? "無法還原動漫。" : action === "organize" ? "無法整理動漫。" : "無法移除動漫。", 503); }
   }
   const parsed = updateSchema.safeParse(input); if (!parsed.success) return error("請檢查動漫資料。", 400);
-  const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket); if (coverPath === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
+  const cover = await verifiedCover(context.userId, parsed.data.coverTicket); if (cover === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     const admin = createAdminClient(); const { id: animeId, categoryIds } = parsed.data; const changes = parsed.data;
-    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,watch_status,is_adult,folder_id").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
+    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,cover_storage_object_id,watch_status,is_adult,folder_id").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
     if (currentError) throw currentError; if (!current) return error("找不到這部動漫。", 404);
     if ((current.is_adult || changes.isAdult === true) && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     const updates: Record<string, unknown> = {};
     if (changes.title !== undefined) updates.title = changes.title;
     if (changes.sourceUrl !== undefined) updates.source_url = changes.sourceUrl || null;
-    if (changes.coverUrl !== undefined && !coverPath) updates.cover_url = changes.coverUrl || null;
+    if (changes.coverUrl !== undefined && !cover) updates.cover_url = changes.coverUrl || null;
     if (changes.watchStatus !== undefined) { updates.watch_status = changes.watchStatus; if (changes.watchStatus === "watching" && current.watch_status !== "watching") updates.started_watching_at = new Date().toISOString().slice(0, 10); if (changes.watchStatus === "completed") updates.completed_at = new Date().toISOString().slice(0, 10); }
     if (changes.rating !== undefined) updates.rating = changes.rating;
     if (changes.notes !== undefined) updates.notes = changes.notes || null;
@@ -193,10 +193,10 @@ export async function PATCH(request: NextRequest) {
         ? await validateFolderIds(context.userId, effectiveScope, normalizedFolderIds(changes))
         : currentFolderIds;
     if (folderAssignmentChanged || scopeChanged) updates.folder_id = effectiveFolderIds[0] ?? null;
-    if (coverPath) updates.cover_url = coverPath;
+    if (cover) Object.assign(updates, animeCoverFields(cover));
     if (Object.keys(updates).length) { const { error: updateError } = await admin.from("anime_library").update(updates).eq("id", animeId).eq("user_id", context.userId); if (updateError) throw updateError; }
     if (folderAssignmentChanged || scopeChanged) await replaceFolders(animeId, effectiveFolderIds);
-    if (coverPath && coverPath !== current.cover_url && current.cover_url?.startsWith(`${context.userId}/covers/`)) await deleteCover(current.cover_url);
+    if (cover) await deleteCover(context.userId, storedAnimeCover(context.userId, current));
     if (categoryIds !== undefined || scopeChanged) await replaceCategories(context.userId, animeId, categoryIds ?? [], effectiveScope, effectiveFolderIds);
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); return error("無法儲存動漫資料，請稍後再試。", 503); }

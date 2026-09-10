@@ -47,7 +47,9 @@ function fixture(options = {}) {
   const b2 = {
     createSignedUploadUrl: async (bucket, path, signedOptions) => { calls.push(["b2-sign-upload", bucket, path, signedOptions]); return { data: { signedUrl: "https://b2.invalid/upload", headers: { "Content-Type": signedOptions.contentType, "x-amz-meta-sha256": signedOptions.checksumSha256 } }, error: null }; },
     getSignedUrl: async (bucket, path, expiresIn) => { calls.push(["b2-sign-read", bucket, path, expiresIn]); return { data: { signedUrl: "https://b2.invalid/read" }, error: null }; },
-    delete: async (bucket, paths) => { calls.push(["b2-remove", bucket, paths]); return options.removeError ? { data: null, error: new Error("remove failed") } : { data: undefined, error: null }; },
+    listBuckets: async () => { calls.push(["b2-buckets"]); return { data: [{ id: "personal-vault-storage" }], error: null }; },
+    list: async (bucket, prefix) => { calls.push(["b2-list", bucket, prefix]); return { data: options.b2Objects ?? [], error: null }; },
+    delete: async (bucket, paths) => { calls.push(["b2-remove", bucket, paths]); return options.removeError || options.b2RemoveError ? { data: null, error: new Error("remove failed") } : { data: undefined, error: null }; },
   };
   const load = loadApp({
     "@/lib/security/activity": { getSecurityContext: async () => options.unauthorized ? null : { userId, ipHash: "test-ip" } },
@@ -58,7 +60,7 @@ function fixture(options = {}) {
     "@/lib/storage/metadata-repository": { createStorageMetadataRepository: () => metadata },
     "@/lib/files/data": { getFilesWorkspaceData: async () => { throw new Error("Unexpected workspace reload"); } },
     "@/lib/photos/data": { getPhotosWorkspaceData: async () => { throw new Error("Unexpected workspace reload"); } },
-  }, { process: { env: { SUPABASE_SECRET_KEY: "phase-6-test-secret", B2_BUCKET_NAME: "personal-vault-storage" } }, ...options.globals });
+  }, { process: { env: { SUPABASE_SECRET_KEY: "phase-6-test-secret", B2_BUCKET_NAME: "personal-vault-storage", CONTENT_COVER_STORAGE_PROVIDER: "supabase" } }, ...options.globals });
   return { calls, load };
 }
 
@@ -76,7 +78,7 @@ for (const [label, path, bucket, prefix, body] of uploadCases) {
     const data = await response.json();
     assert.equal(data.token, "upload-token");
     assert.ok(data.storagePath.startsWith(prefix));
-    assert.deepEqual(Object.keys(data).sort(), path.includes("backgrounds") ? ["storagePath", "token"] : ["storagePath", "ticket", "token"]);
+    assert.deepEqual(Object.keys(data).sort(), label === "covers" ? ["provider", "storagePath", "ticket", "token"] : ["storagePath", "ticket", "token"]);
     assert.match(response.headers.get("Cache-Control"), /private, no-store/);
     assert.deepEqual(calls[0], ["rpc", "vault_user_capacity", { target_user_id: userId }]);
     assert.deepEqual(calls[1], ["sign-upload", bucket, data.storagePath]);
@@ -99,6 +101,17 @@ for (const [label, path, bucket, prefix, body] of uploadCases) {
     }
   });
 }
+
+test("cover upload API selects B2 on the server and atomically reserves quota", async () => {
+  const { load, calls } = fixture({ globals: { process: { env: { SUPABASE_SECRET_KEY: "phase-7-test-secret", B2_BUCKET_NAME: "personal-vault-storage", CONTENT_COVER_STORAGE_PROVIDER: "b2" } } } });
+  const response = await load("src/app/api/content-covers/upload-url/route.ts").POST(request("/api/content-covers/upload-url", "POST", { mimeType: "image/webp", byteSize: 4, sha256: "e".repeat(64), userId: "attacker" }));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.provider, "b2");
+  assert.ok(calls.some(([op, values]) => op === "reserve" && values.userId === userId && values.category === "content-cover" && values.objectKey.startsWith(`${userId}/content-cover/`)));
+  assert.ok(calls.some(([op]) => op === "b2-sign-upload"));
+  assert.equal(calls.some(([op]) => op === "sign-upload"), false);
+});
 
 for (const device of ["desktop", "mobile"]) {
   test(`${device} background upload reserves quota and returns a device-scoped B2 ticket`, async () => {
@@ -255,6 +268,10 @@ test("account deletion still removes Storage before verification flows and Auth,
       assert.ok(calls.some(([op, table]) => op === "table" && table === "auth_verification_flows"));
     }
   }
+  const b2Failure = fixture({ b2Objects: [{ name: "cover", id: "etag" }], b2RemoveError: true });
+  await assert.rejects(b2Failure.load("src/lib/security/account-deletion.ts").permanentlyDeleteAccount(userId), /remove failed/);
+  assert.ok(b2Failure.calls.some(([op]) => op === "b2-remove"));
+  assert.equal(b2Failure.calls.some(([op]) => op === "delete-user"), false);
 });
 
 for (const device of ["desktop", "mobile"]) {
@@ -287,15 +304,50 @@ for (const device of ["desktop", "mobile"]) {
   });
 }
 
-test("shared cover client still crops to WebP and returns the existing signed finalize ticket", async () => {
+test("shared cover client crops to WebP, uploads to B2, finalizes, and returns the metadata reference", async () => {
   const blob = new Blob(["cropped-cover"], { type: "image/webp" });
+  const requests = [];
   const { load, calls } = fixture({ globals: {
+    process: { env: { SUPABASE_SECRET_KEY: "phase-7-test-secret", B2_BUCKET_NAME: "personal-vault-storage", CONTENT_COVER_STORAGE_PROVIDER: "b2" } },
     Image: class { naturalWidth = 100; naturalHeight = 100; set src(value) { queueMicrotask(() => this.onload()); } },
     document: { createElement: () => ({ getContext: () => ({ drawImage() {} }), toBlob: (callback) => callback(blob) }) },
     URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
-    fetch: async () => Response.json({ storagePath: `${userId}/covers/cropped`, token: "upload-token", ticket: "finalize-ticket" }),
+    fetch: async (url, options) => {
+      requests.push([url, options]);
+      if (url === "/api/content-covers/upload-url") return Response.json({ provider: "b2", method: "PUT", uploadUrl: "https://b2.invalid/cover", headers: { "Content-Type": "image/webp", "x-amz-meta-sha256": "signed" }, ticket: "finalize-ticket" });
+      if (url === "https://b2.invalid/cover") return new Response(null, { status: 200 });
+      if (url === "/api/storage/b2/finalize") return Response.json({ storageObjectId: entryId, status: "active" });
+      return new Response(null, { status: 404 });
+    },
   } });
   const result = await load("src/components/content/cover-image-field.tsx").uploadCover({ file: new File(["original"], "cover.jpg"), crop: { x: 50, y: 50, zoom: 100 } });
-  assert.equal(result, "finalize-ticket");
-  assert.deepEqual(calls.find(([op]) => op === "upload"), ["upload", "content-covers", `${userId}/covers/cropped`, "upload-token", blob, { contentType: "image/webp" }]);
+  assert.equal(result, `storage-object:${entryId}`);
+  const preparation = JSON.parse(requests[0][1].body);
+  assert.equal(preparation.mimeType, "image/webp");
+  assert.equal(preparation.byteSize, blob.size);
+  assert.match(preparation.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(requests[1][0], "https://b2.invalid/cover");
+  assert.equal(requests[1][1].body, blob);
+  assert.deepEqual(JSON.parse(requests[2][1].body), { ticket: "finalize-ticket" });
+  assert.equal(calls.some(([op]) => op === "upload"), false);
+});
+
+for (const [label, module, url, row] of [
+  ["content cover", "src/app/api/content-covers/route.ts", `/api/content-covers?entry=${entryId}`, { cover_image_path: null, cover_storage_object_id: entryId }],
+  ["anime cover", "src/app/api/anime/library/[id]/cover/route.ts", `/api/anime/library/${entryId}/cover`, { cover_url: null, cover_storage_object_id: entryId, is_adult: false }],
+]) {
+  test(`${label} resolves an owned B2 metadata row to a short-lived signed URL`, async () => {
+    const { load, calls } = fixture({ row, storageObject: { id: entryId, userId, provider: "b2", bucket: "personal-vault-storage", category: "content-cover", objectKey: `${userId}/content-cover/cover-id`, status: "active" } });
+    const response = await load(module).GET(request(url), { params: Promise.resolve({ id: entryId }) });
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get("location"), "https://b2.invalid/read");
+    assert.deepEqual(calls.find(([op]) => op === "b2-sign-read"), ["b2-sign-read", "personal-vault-storage", `${userId}/content-cover/cover-id`, 60]);
+  });
+}
+
+test("a foreign or missing B2 cover metadata row never produces a signed URL", async () => {
+  const { load, calls } = fixture({ row: { cover_image_path: null, cover_storage_object_id: entryId }, storageObject: null });
+  const response = await load("src/app/api/content-covers/route.ts").GET(request(`/api/content-covers?entry=${entryId}`));
+  assert.equal(response.status, 404);
+  assert.equal(calls.some(([op]) => op === "b2-sign-read"), false);
 });

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getNotesWorkspaceData } from "@/lib/notes/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSecurityContext } from "@/lib/security/activity";
-import { deleteCover, validateContentFolder, verifiedCoverPath } from "@/lib/content/server";
+import { deleteCover, entryCoverFields, storedEntryCover, validateContentFolder, verifiedCover } from "@/lib/content/server";
 
 const noteSchema = z.object({
   title: z.string().trim().min(1).max(300),
@@ -77,8 +77,8 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return jsonError("請檢查筆記欄位。", 400);
   if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "note", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
-  const coverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
-  if (coverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+  const cover = await verifiedCover(context.userId, parsed.data.coverTicket);
+  if (cover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
 
   let entryId: string | null = null;
   try {
@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
         is_favorite: parsed.data.favorite,
         is_pinned: parsed.data.pinned && !parsed.data.archived,
         is_archived: parsed.data.archived,
-        cover_image_path: coverPath,
+        ...entryCoverFields(cover),
       })
       .select("id")
       .single();
@@ -159,14 +159,14 @@ export async function PATCH(request: NextRequest) {
   if (!parsed.success) return jsonError("請檢查筆記欄位。", 400);
   if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
   if (!(await validateContentFolder(context.userId, "note", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
-  const newCoverPath = verifiedCoverPath(context.userId, parsed.data.coverTicket);
-  if (newCoverPath === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+  const newCover = await verifiedCover(context.userId, parsed.data.coverTicket);
+  if (newCover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
 
   try {
     const admin = createAdminClient();
     const { data: existing, error: existingError } = await admin
       .from("entries")
-      .select("id, cover_image_path, note_details(content_markdown, current_version)")
+      .select("id, cover_image_path, cover_storage_object_id, note_details(content_markdown, current_version)")
       .eq("id", parsed.data.id)
       .eq("owner_id", context.userId)
       .eq("kind", "note")
@@ -187,12 +187,12 @@ export async function PATCH(request: NextRequest) {
         is_favorite: parsed.data.favorite,
         is_pinned: parsed.data.pinned && !parsed.data.archived,
         is_archived: parsed.data.archived,
-        ...(newCoverPath ? { cover_image_path: newCoverPath } : {}),
+        ...(newCover ? entryCoverFields(newCover) : {}),
       })
       .eq("id", existing.id)
       .eq("owner_id", context.userId);
     if (entryError) throw entryError;
-    if (newCoverPath && newCoverPath !== existing.cover_image_path) await deleteCover(existing.cover_image_path);
+    if (newCover) await deleteCover(context.userId, storedEntryCover(existing));
     await replaceEntryTags(existing.id, tagRows.map((tag) => tag.id));
 
     const contentChanged = parsed.data.content !== detail.content_markdown;
@@ -244,7 +244,7 @@ export async function DELETE(request: NextRequest) {
     const admin = createAdminClient();
     const { data: entry, error } = await admin
       .from("entries")
-      .select("id, cover_image_path")
+      .select("id, cover_image_path, cover_storage_object_id")
       .eq("id", parsed.data.id)
       .eq("owner_id", context.userId)
       .eq("kind", "note")
@@ -252,7 +252,7 @@ export async function DELETE(request: NextRequest) {
       .maybeSingle();
     if (error) throw error;
     if (!entry) return jsonError("請先將筆記移至垃圾桶。", 404);
-    await deleteCover(entry.cover_image_path);
+    await deleteCover(context.userId, storedEntryCover(entry));
     const { error: deleteError } = await admin.from("entries").delete().eq("id", entry.id).eq("owner_id", context.userId);
     if (deleteError) throw deleteError;
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: "note_deleted", metadata: {}, ip_hash: context.ipHash });
