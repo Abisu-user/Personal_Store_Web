@@ -64,7 +64,8 @@ function mapKitsu(row: any, mappings: Map<string, string>): ExternalAnime | null
 
 export async function getKitsuCatalogue(filters: CatalogueFilters = {}): Promise<CataloguePage> {
   const page = Math.max(1, Math.floor(filters.page ?? 1));
-  const perPage = Math.min(30, Math.max(12, Math.floor(filters.perPage ?? 20)));
+  // Kitsu rejects page sizes above 20. The catalogue UI normally requests 24.
+  const perPage = Math.min(20, Math.max(1, Math.floor(filters.perPage ?? 20)));
   const response = await fetch(buildKitsuCatalogueUrl(filters, page, perPage), { headers: { Accept: "application/vnd.api+json" }, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), cache: "no-store" });
   if (!response.ok) throw new Error(`Kitsu catalogue returned ${response.status}`);
   const payload = await response.json().catch(() => null) as any;

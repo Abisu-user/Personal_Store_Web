@@ -2,6 +2,8 @@ import "server-only";
 import type { ExternalAnime } from "@/lib/anime/types";
 import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
 import { getKitsuCatalogue, getKitsuTaxonomy } from "@/lib/anime/kitsu-catalogue";
+import { getBangumiCatalogue } from "@/lib/anime/bangumi-catalogue";
+import { getShikimoriCatalogue } from "@/lib/anime/shikimori-catalogue";
 
 const ANILIST_URL = process.env.ANIME_ANILIST_API_URL || "https://graphql.anilist.co";
 const CATALOGUE_TTL = 45 * 60_000;
@@ -118,8 +120,15 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
   try {
     data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
   } catch (cause) {
-    console.warn("[anime-catalogue] AniList unavailable; using Kitsu fallback", { message: cause instanceof Error ? cause.message : "unknown" });
-    return getKitsuCatalogue({ ...filters, page, perPage });
+    console.warn("[anime-catalogue] AniList unavailable; using catalogue fallback", { message: cause instanceof Error ? cause.message : "unknown", adult: Boolean(filters.includeAdult) });
+    if (filters.includeAdult) return getShikimoriCatalogue({ ...filters, page, perPage });
+    try {
+      return await getBangumiCatalogue({ ...filters, page, perPage });
+    } catch (fallbackCause) {
+      console.warn("[anime-catalogue] Bangumi unavailable; using final fallback", { message: fallbackCause instanceof Error ? fallbackCause.message : "unknown" });
+      try { return await getShikimoriCatalogue({ ...filters, page, perPage }); }
+      catch { return getKitsuCatalogue({ ...filters, page, perPage }); }
+    }
   }
   const info = data?.Page?.pageInfo;
   const items = Array.isArray(data?.Page?.media) ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id) : [];
