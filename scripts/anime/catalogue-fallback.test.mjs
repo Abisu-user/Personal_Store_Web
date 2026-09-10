@@ -87,7 +87,8 @@ test("Bangumi catalogue uses the requested container page size and maps its subj
 test("Adult catalogue requests Rx only and preserves Chinese, Japanese, English title priority", async () => {
   const calls = [];
   const load = loadApp({
-    "@/lib/anime/bangumi-title-localizer": { localizeAnimeTitles: async (items) => items.map((item) => ({ ...item, titleChinese: "成人作品繁中標題" })) },
+    "@/lib/anime/bangumi-title-localizer": { localizeAnimeTitles: async (items) => items },
+    "@/lib/anime/adult-catalogue-enrichment": { enrichAdultCatalogue: async (items) => items.map((item) => ({ ...item, titleChinese: "成人作品繁中標題" })) },
   }, {
     fetch: async (url, init) => {
       calls.push({ url: String(url), body: JSON.parse(String(init.body)) });
@@ -106,6 +107,43 @@ test("Adult catalogue requests Rx only and preserves Chinese, Japanese, English 
   assert.match(calls[0].body.query, /rating: "rx"/);
   assert.doesNotMatch(calls[0].body.query, /r_plus/);
   assert.match(calls[0].body.query, /search: "Boku no Pico"/);
+});
+
+test("Adult catalogue enrichment obtains an exact mapped cover and Traditional Chinese title in batches", async () => {
+  const calls = [];
+  const load = loadApp({}, {
+    process: { env: {} },
+    fetch: async (url) => {
+      calls.push(String(url));
+      if (String(url).includes("kitsu.io")) return new Response(JSON.stringify({
+        data: [{ id: "mapping-1", attributes: { externalId: "1639" }, relationships: { item: { data: { id: "1474" } } } }],
+        included: [{ id: "1474", type: "anime", attributes: { posterImage: { large: "https://media.kitsu.app/anime/poster_images/1474/large.jpg" } } }],
+      }), { status: 200 });
+      if (String(url).includes("wikidata.org")) return new Response(JSON.stringify({ results: { bindings: [{ mal: { value: "1639" }, itemLabel: { value: "Pico系列" } }] } }), { status: 200 });
+      throw new Error("unexpected provider");
+    },
+  });
+  const enrichment = load("src/lib/anime/adult-catalogue-enrichment.ts");
+  const [result] = await enrichment.enrichAdultCatalogue([{ id: "1639", coverUrl: null, bannerUrl: null, titleChinese: null }]);
+  assert.equal(result.coverUrl, "https://media.kitsu.app/anime/poster_images/1474/large.jpg");
+  assert.equal(result.titleChinese, "Pico系列");
+  assert.equal(calls.filter((url) => url.includes("kitsu.io")).length, 1);
+  assert.equal(calls.filter((url) => url.includes("wikidata.org")).length, 1);
+});
+
+test("Adult title enrichment falls back to the free batch translator when no AI key is available", async () => {
+  const load = loadApp({}, {
+    process: { env: {} },
+    fetch: async (url) => {
+      if (String(url).includes("kitsu.io")) return new Response(JSON.stringify({ data: [], included: [] }), { status: 200 });
+      if (String(url).includes("wikidata.org")) return new Response(JSON.stringify({ results: { bindings: [] } }), { status: 200 });
+      if (String(url).includes("mymemory.translated.net")) return new Response(JSON.stringify({ responseStatus: 200, responseData: { translatedText: "1. 欣快感" } }), { status: 200 });
+      throw new Error("unexpected provider");
+    },
+  });
+  const enrichment = load("src/lib/anime/adult-catalogue-enrichment.ts");
+  const [result] = await enrichment.enrichAdultCatalogue([{ id: "999999", titleJapanese: "euphoria", titleEnglish: "Euphoria", originalTitle: "Euphoria", coverUrl: null, bannerUrl: null, titleChinese: null }]);
+  assert.equal(result.titleChinese, "欣快感");
 });
 
 test("AniList catalogue failure uses the MAL-style fallback for regular Explore", async () => {

@@ -2,6 +2,7 @@ import "server-only";
 import type { CatalogueFilters, CataloguePage } from "@/lib/anime/anilist-catalogue";
 import type { ExternalAnime } from "@/lib/anime/types";
 import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
+import { enrichAdultCatalogue } from "@/lib/anime/adult-catalogue-enrichment";
 
 const SHIKIMORI_ROOT = (process.env.ANIME_SHIKIMORI_API_URL || "https://shikimori.one/api").replace(/\/+$/, "");
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -67,5 +68,6 @@ export async function getShikimoriCatalogue(filters: CatalogueFilters = {}): Pro
   let items = rows.map((row) => mapShikimori(row, Boolean(filters.includeAdult))).filter((anime) => anime.id);
   if (filters.genre) items = items.filter((anime) => anime.genres.some((genre) => genre.toLocaleLowerCase().includes(filters.genre!.toLocaleLowerCase())));
   if (filters.tag) items = items.filter((anime) => anime.genres.some((genre) => genre.toLocaleLowerCase().includes(filters.tag!.toLocaleLowerCase())));
-  return { items: await localizeAnimeTitles(items), page, hasNextPage: rows.length === perPage, total: page * perPage + (rows.length === perPage ? 1 : 0) };
+  const localized = filters.includeAdult ? await enrichAdultCatalogue(items) : await localizeAnimeTitles(items);
+  return { items: localized, page, hasNextPage: rows.length === perPage, total: page * perPage + (rows.length === perPage ? 1 : 0) };
 }
