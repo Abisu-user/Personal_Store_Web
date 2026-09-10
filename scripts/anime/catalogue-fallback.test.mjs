@@ -84,32 +84,37 @@ test("Bangumi catalogue uses the requested container page size and maps its subj
   assert.match(calls[0], /offset=24/);
 });
 
-test("Adult catalogue requests R+ and Rx ratings and keeps results marked adult", async () => {
+test("Adult catalogue requests Rx only and preserves Chinese, Japanese, English title priority", async () => {
   const calls = [];
-  const load = loadApp({}, {
-    fetch: async (url) => {
-      calls.push(String(url));
-      return new Response(JSON.stringify([{ id: 11617, name: "High School DxD", kind: "tv", score: "7.3", status: "released", episodes: 12, aired_on: "2012-01-06", image: { original: "/cover.jpg" }, url: "/animes/11617" }]), { status: 200 });
+  const load = loadApp({
+    "@/lib/anime/bangumi-title-localizer": { localizeAnimeTitles: async (items) => items.map((item) => ({ ...item, titleChinese: "成人作品繁中標題" })) },
+  }, {
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ data: { animes: [{ id: "1639", name: "Boku no Pico", japanese: "ぼくのぴこ", english: "My Pico", kind: "ova", score: 4.2, rating: "rx", status: "released", episodes: 1, airedOn: { date: "2006-09-07" }, releasedOn: { date: null }, poster: { originalUrl: "https://example.test/cover.jpg" }, genres: [{ name: "Hentai" }] }] } }), { status: 200 });
     },
   });
   const catalogue = load("src/lib/anime/shikimori-catalogue.ts");
-  const result = await catalogue.getShikimoriCatalogue({ page: 1, perPage: 24, includeAdult: true, search: "Highschool DxD" });
+  const result = await catalogue.getShikimoriCatalogue({ page: 1, perPage: 24, includeAdult: true, search: "Boku no Pico" });
   assert.equal(result.items[0].source, "jikan");
   assert.equal(result.items[0].isAdult, true);
-  assert.equal(result.items[0].contentRating, "成人內容");
-  assert.match(calls[0], /rating=r_plus%2Crx/);
-  assert.match(calls[0], /search=Highschool\+DxD/);
+  assert.equal(result.items[0].contentRating, "成人內容（18+）");
+  assert.equal(result.items[0].titleChinese, "成人作品繁中標題");
+  assert.equal(result.items[0].titleJapanese, "ぼくのぴこ");
+  assert.equal(result.items[0].titleEnglish, "My Pico");
+  assert.match(calls[0].url, /\/graphql$/);
+  assert.match(calls[0].body.query, /rating: "rx"/);
+  assert.doesNotMatch(calls[0].body.query, /r_plus/);
+  assert.match(calls[0].body.query, /search: "Boku no Pico"/);
 });
 
-test("AniList catalogue failure uses Bangumi for regular Explore", async () => {
+test("AniList catalogue failure uses the MAL-style fallback for regular Explore", async () => {
   const fallbackCalls = [];
   const fallbackPage = { items: [{ id: "52991" }], page: 1, hasNextPage: true, total: 40 };
   const load = loadApp({
     "@/lib/anime/bangumi-title-localizer": { localizeAnimeTitles: async (items) => items },
-    "@/lib/anime/bangumi-catalogue": {
-      getBangumiCatalogue: async (filters) => { fallbackCalls.push(filters); return fallbackPage; },
-    },
-    "@/lib/anime/shikimori-catalogue": { getShikimoriCatalogue: async () => { throw new Error("unexpected"); } },
+    "@/lib/anime/bangumi-catalogue": { getBangumiCatalogue: async () => { throw new Error("unexpected"); } },
+    "@/lib/anime/shikimori-catalogue": { getShikimoriCatalogue: async (filters) => { fallbackCalls.push(filters); return fallbackPage; } },
     "@/lib/anime/kitsu-catalogue": {
       getKitsuCatalogue: async () => { throw new Error("unexpected"); },
       getKitsuTaxonomy: () => ({ genres: ["Action"], tags: [] }),

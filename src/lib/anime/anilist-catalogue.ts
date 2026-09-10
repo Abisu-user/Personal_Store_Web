@@ -123,10 +123,12 @@ export async function getCatalogue(filters: CatalogueFilters = {}): Promise<Cata
     console.warn("[anime-catalogue] AniList unavailable; using catalogue fallback", { message: cause instanceof Error ? cause.message : "unknown", adult: Boolean(filters.includeAdult) });
     if (filters.includeAdult) return getShikimoriCatalogue({ ...filters, page, perPage });
     try {
-      return await getBangumiCatalogue({ ...filters, page, perPage });
+      // Shikimori follows MAL-style popularity/ranking and exposes future
+      // seasons, which is much closer to the primary AniList catalogue.
+      return await getShikimoriCatalogue({ ...filters, page, perPage });
     } catch (fallbackCause) {
-      console.warn("[anime-catalogue] Bangumi unavailable; using final fallback", { message: fallbackCause instanceof Error ? fallbackCause.message : "unknown" });
-      try { return await getShikimoriCatalogue({ ...filters, page, perPage }); }
+      console.warn("[anime-catalogue] Shikimori unavailable; using final fallbacks", { message: fallbackCause instanceof Error ? fallbackCause.message : "unknown" });
+      try { return await getBangumiCatalogue({ ...filters, page, perPage }); }
       catch { return getKitsuCatalogue({ ...filters, page, perPage }); }
     }
   }
