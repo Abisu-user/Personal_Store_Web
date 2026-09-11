@@ -1,0 +1,100 @@
+.mobileTitle,
+.mobileSecuritySummary { display: none; }
+
+@media (max-width: 700px) {
+  :global(.app-main) .securityPage:global(.dashboard) {
+    width: calc(100% - 16px);
+    max-width: none;
+    margin: 8px auto 0;
+    padding: 0 0 16px;
+  }
+
+  :global(.app-main) .securityPage > :global(.dashboard-card) {
+    padding: 14px 12px;
+    border-radius: 22px;
+  }
+
+  .securityPage > :global(.dashboard-card) > :global(.eyebrow),
+  .securityPage > :global(.dashboard-card) > h1 + p,
+  .desktopTitle,
+  .desktopMfaLink { display: none; }
+  .mobileTitle { display: inline; }
+  .securityPage > :global(.dashboard-card) > h1 { margin: 0 0 12px; font-size: 1.55rem; line-height: 1.2; }
+
+  .mobileSecuritySummary {
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, #2fa873 38%, var(--line));
+    border-radius: 18px;
+    background: linear-gradient(135deg, color-mix(in srgb, #2fa873 12%, var(--surface)), color-mix(in srgb, var(--surface) 92%, transparent));
+    box-shadow: 0 7px 22px rgb(20 42 80 / 7%);
+  }
+  .mobileSecuritySummary > span {
+    display: grid;
+    width: 48px;
+    height: 48px;
+    place-items: center;
+    border-radius: 15px;
+    color: #14704e;
+    background: color-mix(in srgb, #2fa873 17%, var(--surface));
+  }
+  .mobileSecuritySummary :global(.app-icon) { width: 25px; height: 25px; }
+  .mobileSecuritySummary strong { display: block; font-size: .95rem; }
+  .mobileSecuritySummary p { margin: 3px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.4; }
+  .mobileSecuritySummary nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-column: 1 / -1; gap: 7px; }
+  .mobileSecuritySummary nav a { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--brand) 32%, var(--line)); border-radius: 12px; color: var(--brand); background: color-mix(in srgb, var(--surface) 87%, transparent); font-size: .78rem; font-weight: 800; }
+
+  .securityPage :global(.passkey-settings),
+  .securityPage :global(.folder-lock-security),
+  .securityPage :global(.security-activity),
+  .securityPage :global(.account-danger-zone) { max-width: none; margin-top: 10px; padding: 13px; border-radius: 17px; }
+
+  .securityPage :global(.passkey-settings) { gap: 11px; }
+  .securityPage :global(.passkey-heading) { gap: 9px; padding-top: 0; }
+  .securityPage :global(.passkey-heading + .passkey-heading) { padding-top: 10px; }
+  .securityPage :global(.passkey-heading h2),
+  .securityPage :global(.folder-lock-security h2),
+  .securityPage :global(.security-heading h2) { font-size: 1rem; }
+  .securityPage :global(.passkey-settings p:not(.eyebrow):not(.notice)),
+  .securityPage :global(.folder-lock-security > p:not(.eyebrow)),
+  .securityPage :global(.security-heading p) { font-size: .75rem; line-height: 1.45; }
+  .securityPage :global(.passkey-heading .button),
+  .securityPage :global(.passkey-heading .secondary-button),
+  .securityPage :global(.folder-lock-security button) { width: 100%; min-height: 44px; border-radius: 12px; }
+  .securityPage :global(.passkey-settings select),
+  .securityPage :global(.folder-lock-security select),
+  .securityPage :global(.folder-lock-security input) { min-height: 44px; font-size: 16px; }
+  .securityPage :global(.app-pin-settings) { gap: 9px; padding: 11px; border-radius: 13px; }
+  .securityPage :global(.app-pin-settings input),
+  .securityPage :global(.app-pin-settings select),
+  .securityPage :global(.app-pin-settings .button) { min-height: 44px; font-size: 16px; }
+  .securityPage :global(.passkey-list > div) { min-height: 54px; padding: 8px 10px; border-radius: 12px; }
+  .securityPage :global(.passkey-list button) { min-height: 44px; }
+
+  .securityPage :global(.folder-lock-security) { gap: 9px; }
+  .securityPage :global(.folder-lock-security .dialog-actions) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .securityPage :global(.security-activity) { gap: 10px; }
+  .securityPage :global(.security-heading) { align-items: stretch; gap: 8px; }
+  .securityPage :global(.security-heading .button) { width: 100%; min-height: 44px; border-radius: 12px; }
+  .securityPage :global(.activity-list) { display: grid; gap: 7px; overflow: visible; border: 0; border-radius: 0; }
+  .securityPage :global(.activity-row) { min-height: 56px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--surface) 88%, var(--brand-soft)); }
+  .securityPage :global(.activity-row strong) { font-size: .8rem; }
+  .securityPage :global(.activity-row span) { font-size: .7rem; }
+  .securityPage :global(.activity-row .status) { font-size: .7rem; }
+
+  .securityPage :global(.account-danger-zone) { align-items: stretch; gap: 10px; }
+  .securityPage :global(.account-danger-zone h2) { font-size: 1rem; }
+  .securityPage :global(.account-danger-zone p:not(.eyebrow)) { font-size: .75rem; line-height: 1.45; }
+  .securityPage :global(.account-danger-zone > button) { width: 100%; min-height: 44px; border-radius: 12px; }
+
+  :global(html[data-density="compact"]) .securityPage > :global(.dashboard-card) { padding-block: 10px; }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .mobileSecuritySummary nav a,
+  .securityPage :global(.activity-row) { transition: none; }
+}

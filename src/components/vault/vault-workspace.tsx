@@ -6,6 +6,8 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
+import { AppIcon } from "@/components/ui/app-icon";
+import mobileStyles from "@/components/vault/vault-mobile.module.css";
 
 type VaultStatus = { initialized: boolean; salt?: string; wrappedVaultKey?: string; wrappedKeyNonce?: string; kdfParameters?: { algorithm: "PBKDF2"; hash: "SHA-256"; iterations: number; keyLength: 256 } };
 type CipherItem = { id: string; ciphertext: string; nonce: string; aad: { entryId: string; version: 1 }; categoryId: string | null };
@@ -73,8 +75,8 @@ export function VaultWorkspace() {
   if (!status) return <p className="lead">正在準備保管庫…</p>;
   if (!status.initialized) return <VaultGate creating error={error} onSubmit={initialize} pending={pending} />;
   if (!vaultKey) return <VaultGate creating={false} error={error} onSubmit={unlock} pending={pending} />;
-  return <section className="vault-workspace">
-    <section className="vault-status-panel"><span aria-hidden="true" className="vault-status-icon">⌑</span><div><strong>保管庫已解鎖</strong><p>所有敏感文字皆在送往伺服器前由瀏覽器加密。</p></div><button className="secondary-button compact" onClick={lock} type="button">立即鎖定</button></section>
+  return <section className={`vault-workspace ${mobileStyles.vaultWorkspace}`}>
+    <section className="vault-status-panel"><span aria-hidden="true" className="vault-status-icon"><span className={mobileStyles.desktopStatusIcon}>⌑</span><AppIcon className={mobileStyles.mobileStatusIcon} name="lock" /></span><div><strong>保管庫已解鎖</strong><p>所有敏感文字皆在送往伺服器前由瀏覽器加密。</p></div><button className="secondary-button compact" onClick={lock} type="button">立即鎖定</button></section>
     <div className="vault-section-heading"><div><p className="eyebrow">PRIVATE RECORDS</p><h2>保管項目</h2><p>{items.length ? `已安全載入 ${items.length} 個項目。` : "新增第一筆加密保管項目。"}</p></div><button className="button vault-add-button" onClick={() => { setError(null); setEditing(null); setItemDialogOpen(true); }} type="button">＋ 新增保管項目</button></div>
     {error && <p className="notice error" role="alert">{error}</p>}{notice && <p className="notice success" role="status">{notice}</p>}
     <div className="vault-toolbar"><input aria-label="搜尋保管項目" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋名稱、帳號或備註…" value={query} /><span>{filteredItems.length} 筆</span><button className={selectionMode ? "secondary-button compact active" : "secondary-button compact"} onClick={() => selectionMode ? closeSelectionMode() : setSelectionMode(true)} type="button">{selectionMode ? "取消選取" : "整理"}</button></div>

@@ -1,0 +1,105 @@
+.mobileStatusIcon { display: none; }
+
+@media (max-width: 700px) {
+  :global(.app-main) .vaultPage:global(.dashboard) {
+    width: calc(100% - 16px);
+    max-width: none;
+    margin: 8px auto 0;
+    padding: 0 0 16px;
+  }
+
+  :global(.app-main) .vaultPage > :global(.dashboard-card) {
+    padding: 14px 12px;
+    border-radius: 22px;
+  }
+
+  .vaultPage > :global(.dashboard-card) > :global(.eyebrow),
+  .vaultPage > :global(.dashboard-card) > h1 + p { display: none; }
+  .vaultPage > :global(.dashboard-card) > h1 { margin: 0 0 14px; font-size: 1.55rem; line-height: 1.2; }
+
+  .vaultWorkspace { gap: 9px; margin-top: 0; }
+  .vaultWorkspace :global(.vault-status-panel) {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    border-radius: 16px;
+  }
+  .vaultWorkspace :global(.vault-status-icon) { width: 44px; height: 44px; flex-basis: 44px; border-radius: 13px; }
+  .desktopStatusIcon { display: none; }
+  .mobileStatusIcon { display: block; width: 21px; height: 21px; }
+  .vaultWorkspace :global(.vault-status-panel p) { overflow: hidden; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+  .vaultWorkspace :global(.vault-status-panel .secondary-button) { min-width: 44px; min-height: 44px; padding-inline: 9px; border-radius: 12px; font-size: .72rem; }
+
+  .vaultWorkspace :global(.vault-section-heading) { align-items: center; gap: 8px; padding-top: 4px; }
+  .vaultWorkspace :global(.vault-section-heading .eyebrow),
+  .vaultWorkspace :global(.vault-section-heading p) { display: none; }
+  .vaultWorkspace :global(.vault-section-heading h2) { margin: 0; font-size: 1.05rem; }
+  .vaultWorkspace :global(.vault-add-button) { min-width: 88px; min-height: 44px; padding-inline: 10px; border-radius: 13px; font-size: .75rem; }
+
+  .vaultWorkspace :global(.vault-toolbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; }
+  .vaultWorkspace :global(.vault-toolbar input) { min-height: 44px; border-radius: 14px; font-size: 16px; }
+  .vaultWorkspace :global(.vault-toolbar span) { font-size: .7rem; }
+  .vaultWorkspace :global(.vault-toolbar .secondary-button) { min-width: 52px; min-height: 44px; border-radius: 12px; }
+
+  .vaultWorkspace :global(.vault-categories) { gap: 3px; padding: 3px 0 5px; }
+  .vaultWorkspace :global(.vault-category-heading) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-category-heading > strong) { font-size: .73rem; }
+  .vaultWorkspace :global(.vault-category-heading > div) { gap: 6px; }
+  .vaultWorkspace :global(.vault-category-heading .button),
+  .vaultWorkspace :global(.vault-category-heading .secondary-button) { min-width: 44px; min-height: 44px; padding-inline: 9px; border-radius: 11px; font-size: .73rem; }
+  .vaultWorkspace :global(.vault-filter-chips) { min-width: 0; overflow: hidden; padding: 0; }
+  .vaultWorkspace :global(.vault-filter-chips-row) { gap: 6px; overflow: hidden; flex-wrap: nowrap; }
+  .vaultWorkspace :global(.vault-filter-chips-row > button) { min-width: 44px; min-height: 44px; padding-inline: 10px; border-radius: 13px; font-size: .75rem; }
+
+  .vaultWorkspace :global(.vault-batch-toolbar) { gap: 7px; padding: 8px; border-radius: 13px; }
+  .vaultWorkspace :global(.vault-batch-toolbar label) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-batch-toolbar > div button) { min-height: 44px; }
+
+  .vaultWorkspace :global(.vault-grid) { gap: 8px; }
+  .vaultWorkspace :global(.vault-item) {
+    min-height: 0;
+    gap: 9px;
+    padding: 11px;
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 90%, var(--brand-soft));
+  }
+  .vaultWorkspace :global(.vault-item > header) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-kind-badge) { padding: 5px 8px; font-size: .68rem; }
+  .vaultWorkspace :global(.vault-menu-trigger) { width: 44px; height: 44px; border-radius: 12px; }
+  .vaultWorkspace :global(.vault-item-content) { gap: 5px; }
+  .vaultWorkspace :global(.vault-item h3) { font-size: .98rem; }
+  .vaultWorkspace :global(.vault-username),
+  .vaultWorkspace :global(.vault-notes) { font-size: .75rem; }
+  .vaultWorkspace :global(.vault-item code) { padding: 8px 9px; font-size: .77rem; }
+  .vaultWorkspace :global(.vault-item > footer) { gap: 7px; margin-top: 0; }
+  .vaultWorkspace :global(.vault-item > footer .secondary-button) { min-height: 44px; border-radius: 11px; }
+  .vaultWorkspace :global(.vault-item-select) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-empty) { padding: 24px 14px; border-radius: 15px; }
+
+  .vaultPage :global(.vault-gate) { grid-template-columns: 1fr; gap: 10px; margin-top: 0; padding: 13px; border-radius: 18px; }
+  .vaultPage :global(.vault-gate-form) { gap: 9px; }
+  .vaultPage :global(.vault-gate-form h2) { font-size: 1.15rem; }
+  .vaultPage :global(.vault-gate-form > p:not(.eyebrow)) { font-size: .8rem; line-height: 1.5; }
+  .vaultPage :global(.vault-gate-form input),
+  .vaultPage :global(.vault-gate-form .button) { min-height: 44px; font-size: 16px; }
+  .vaultPage :global(.vault-gate-security) { padding: 11px; border-radius: 14px; }
+  .vaultPage :global(.vault-gate-security ul) { grid-template-columns: 1fr; gap: 7px; margin-top: 9px; }
+  .vaultPage :global(.vault-gate-security li) { padding-left: 9px; }
+  .vaultPage :global(.vault-gate-security span) { font-size: .74rem; }
+
+  :global(html[data-density="compact"]) .vaultPage > :global(.dashboard-card) { padding-block: 10px; }
+}
+
+@media (max-width: 350px) {
+  .vaultWorkspace :global(.vault-status-panel) { grid-template-columns: 40px minmax(0, 1fr) auto; padding-inline: 8px; }
+  .vaultWorkspace :global(.vault-status-icon) { width: 40px; height: 40px; flex-basis: 40px; }
+  .vaultWorkspace :global(.vault-toolbar) { grid-template-columns: minmax(0, 1fr) auto; }
+  .vaultWorkspace :global(.vault-toolbar span) { display: none; }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .vaultWorkspace :global(.vault-item),
+  .vaultWorkspace :global(.vault-menu-trigger) { transition: none; }
+}
