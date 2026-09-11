@@ -4,7 +4,7 @@
  * service worker only keeps static application resources so that an
  * authenticated user's records never end up in the Cache Storage API.
  */
-const CACHE_NAME = "personal-vault-shell-v2";
+const CACHE_NAME = "personal-vault-shell-v3";
 const BOOTSTRAP_ASSETS = ["/manifest.webmanifest", "/icon.svg", "/apple-icon"];
 
 self.addEventListener("install", (event) => {

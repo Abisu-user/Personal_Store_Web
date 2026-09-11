@@ -9,7 +9,7 @@ export function PwaClient() {
     syncNetwork();
     window.addEventListener("online", syncNetwork);
     window.addEventListener("offline", syncNetwork);
-    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).catch(() => undefined);
     return () => { window.removeEventListener("online", syncNetwork); window.removeEventListener("offline", syncNetwork); };
   }, []);
 
