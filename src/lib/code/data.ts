@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 import { getFolderLockState } from "@/lib/folder-locks/server";
+import { readEntryTaxonomyLinks } from "@/lib/content/entry-taxonomy";
 
 export async function getCodeWorkspaceData(ownerId: string): Promise<CodeWorkspaceData> {
   const admin = createAdminClient();
@@ -15,13 +16,15 @@ export async function getCodeWorkspaceData(ownerId: string): Promise<CodeWorkspa
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
   ]);
   if (entriesResult.error || categoriesResult.error || foldersResult.error || tagsResult.error) throw new Error("Unable to load code snippets.");
+  const taxonomyLinks = await readEntryTaxonomyLinks(ownerId, "content");
   const entries = entriesResult.data ?? [];
   const snippets: CodeSnippet[] = entries.flatMap((entry) => {
     const detail = Array.isArray(entry.code_details) ? entry.code_details[0] : entry.code_details;
     if (!detail) return [];
     const folder = Array.isArray(entry.content_folders) ? entry.content_folders[0] ?? null : entry.content_folders;
-    if (folder && lockState.locks.has(folder.id) && !lockState.unlockedFolderIds.has(folder.id)) return [];
-    return [{ id: entry.id, title: entry.title, description: entry.description, language: detail.language, sourceCode: detail.source_code, favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder, coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null, category: Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories, tags: (entry.entry_tags ?? []).flatMap((item) => Array.isArray(item.tags) ? item.tags : item.tags ? [item.tags] : []), updatedAt: entry.updated_at }];
+    const category = Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories; const links = taxonomyLinks.get(entry.id); const linkedFolders = links?.folders.length ? links.folders : folder ? [folder] : []; const linkedCategories = links?.categories.length ? links.categories : category ? [category] : [];
+    if (linkedFolders.some((item) => lockState.locks.has(item.id) && !lockState.unlockedFolderIds.has(item.id))) return [];
+    return [{ id: entry.id, title: entry.title, description: entry.description, language: detail.language, sourceCode: detail.source_code, favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder: linkedFolders[0] ?? folder, folders: linkedFolders, coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null, category: linkedCategories[0] ?? category, categories: linkedCategories, tags: (entry.entry_tags ?? []).flatMap((item) => Array.isArray(item.tags) ? item.tags : item.tags ? [item.tags] : []), updatedAt: entry.updated_at }];
   });
   return { snippets, categories: categoriesResult.data ?? [], folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })), tags: tagsResult.data ?? [] };
 }

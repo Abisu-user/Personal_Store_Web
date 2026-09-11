@@ -4,6 +4,7 @@ import { ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 type ResponsiveChipOverflowProps<T> = {
   activeId?: string | null;
+  activeIds?: readonly string[];
   className?: string;
   /** Number of fixed chips rendered before items (for example: 全部 / 未分類). */
   leadingCount?: number;
@@ -25,7 +26,7 @@ type ResponsiveChipOverflowProps<T> = {
  * calculation, so changing the visible row can never lose the dimensions that
  * are needed to decide whether the "更多" button is required.
  */
-export function ResponsiveChipOverflow<T>({ activeId, className, leading, leadingCount = 0, items, itemId, itemMeasureKey, renderItem, renderMore, rowClassName, trailing, trailingCount = 0 }: ResponsiveChipOverflowProps<T>) {
+export function ResponsiveChipOverflow<T>({ activeId, activeIds = [], className, leading, leadingCount = 0, items, itemId, itemMeasureKey, renderItem, renderMore, rowClassName, trailing, trailingCount = 0 }: ResponsiveChipOverflowProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(items.length);
@@ -90,7 +91,7 @@ export function ResponsiveChipOverflow<T>({ activeId, className, leading, leadin
     <div className={`responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`}>
       {leading}
       {items.slice(0, visibleCount).map(renderItem)}
-      {hidden.length > 0 && renderMore(hidden.some((item) => itemId(item) === activeId))}
+      {hidden.length > 0 && renderMore(hidden.some((item) => itemId(item) === activeId || activeIds.includes(itemId(item))))}
       {trailing}
     </div>
     <div aria-hidden="true" className={`responsive-chip-overflow-measure responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`} ref={measureRef}>

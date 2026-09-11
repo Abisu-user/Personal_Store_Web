@@ -15,7 +15,8 @@ import {
   type CoverSelection,
   uploadCover,
 } from "@/components/content/cover-image-field";
-import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
+import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import type { FilesWorkspaceData } from "@/lib/files/types";
@@ -50,7 +51,8 @@ export function FilesWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [view, setView] = useState<CollectionView>("all");
-  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [category, setCategory] = useState<CollectionCategory>([]);
+  const [folderIds, setFolderIds] = useState<string[]>([]);
   const [cover, setCover] = useState<CoverSelection>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [bulkConfirm, setBulkConfirm] = useState<
@@ -75,28 +77,28 @@ export function FilesWorkspace({
       data.files.filter((file) => {
         if (view === "trash" ? !file.deletedAt : Boolean(file.deletedAt))
           return false;
-        if (view === "all" && (file.archived || file.folder)) return false;
+        if (view === "all" && !folderIds.length && (file.archived || file.folders.length)) return false;
         if (view === "favorite" && (!file.favorite || file.archived))
           return false;
         if (view === "pinned" && (!file.pinned || file.archived)) return false;
         if (view === "archived" && !file.archived) return false;
         if (
-          view.startsWith("folder:") &&
-          (file.archived || file.folder?.id !== view.slice(7))
+          folderIds.length &&
+          (file.archived || !file.folders.some((folder) => folderIds.includes(folder.id)))
         )
           return false;
-        if (category === "unclassified" && file.category) return false;
+        if (category.includes("unclassified") && file.categories.length) return false;
         if (
-          category !== "all" &&
-          category !== "unclassified" &&
-          file.category?.id !== category
+          category.length &&
+          !category.includes("unclassified") &&
+          !file.categories.some((itemCategory) => category.includes(itemCategory.id))
         )
           return false;
         return `${file.title} ${file.description ?? ""} ${file.originalFilename}`
           .toLowerCase()
           .includes(query.toLowerCase());
       }),
-    [category, data.files, query, view],
+    [category, data.files, folderIds, query, view],
   );
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,8 +142,8 @@ export function FilesWorkspace({
           ticket: ticket.ticket,
           title: String(form.get("title") || file.name),
           description: String(form.get("description") || ""),
-          categoryId: String(form.get("categoryId") || "") || null,
-          contentFolderId: String(form.get("contentFolderId") || "") || null,
+          categoryIds: form.getAll("categoryIds").map(String),
+          folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
@@ -225,10 +227,7 @@ export function FilesWorkspace({
         ? new Set()
         : new Set(files.map((file) => file.id)),
     );
-  async function organizeSelection(
-    folderId: string | null,
-    categoryId: string | null,
-  ) {
+  async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenFiles.length) return;
     setPending(true);
     setError(null);
@@ -239,8 +238,9 @@ export function FilesWorkspace({
         body: JSON.stringify({
           ids: chosenFiles.map((file) => file.id),
           action: "organize",
-          contentFolderId: folderId,
-          categoryId,
+          folderIds: change.folderIds,
+          categoryIds: change.categoryIds,
+          relationMode: change.mode,
         }),
       });
       if (!response.ok)
@@ -306,16 +306,6 @@ export function FilesWorkspace({
         placeholder="說明（選填）"
         rows={2}
       />
-      <div className="file-upload-meta">
-        <select aria-label="分類" defaultValue="" name="categoryId">
-          <option value="">未分類</option>
-          {data.categories.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
       <details className="collection-settings">
         <summary>
           收藏設定 <small>可複選</small>
@@ -331,24 +321,7 @@ export function FilesWorkspace({
             <input name="archived" type="checkbox" /> 封存
           </label>
           <div className="collection-settings-divider" />
-          <span>資料夾（選擇一個）</span>
-          <label>
-            <input
-              defaultChecked
-              name="contentFolderId"
-              type="radio"
-              value=""
-            />{" "}
-            不放入資料夾
-          </label>
-          {data.folders
-            .filter((folder) => folder.is_visible)
-            .map((folder) => (
-              <label key={folder.id}>
-                <input name="contentFolderId" type="radio" value={folder.id} />{" "}
-                {folder.name}
-              </label>
-            ))}
+          <TaxonomyMultiSelect categories={data.categories} folders={data.folders} />
         </div>
       </details>
       <CoverImageField onChange={setCover} />
@@ -385,9 +358,11 @@ export function FilesWorkspace({
       <CollectionNavigation
         categories={data.categories}
         category={category}
+        folderIds={folderIds}
         folders={data.folders}
         items={data.files}
         setCategory={setCategory}
+        setFolderIds={setFolderIds}
         setView={setView}
         storageKey="personal-vault:file-system-folders:v1"
         view={view}
@@ -479,8 +454,8 @@ export function FilesWorkspace({
               )}
               <div>
                 <p className="bookmark-meta">
-                  {file.category?.name ?? "未分類"}
-                  {file.folder && ` · ${file.folder.name}`}
+                  {file.categories.map((category) => category.name).join("、") || "未分類"}
+                  {file.folders.length > 0 && ` · ${file.folders.map((folder) => folder.name).join("、")}`}
                 </p>
                 <h3>{file.title}</h3>
                 <p>

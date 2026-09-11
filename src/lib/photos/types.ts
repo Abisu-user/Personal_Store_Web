@@ -14,7 +14,9 @@ export type StoredPhoto = {
   archived: boolean;
   deletedAt: string | null;
   folder: Pick<PhotoFolder, "id" | "name" | "is_visible"> | null;
+  folders: Pick<PhotoFolder, "id" | "name" | "is_visible">[];
   category: Pick<PhotoCategory, "id" | "name"> | null;
+  categories: Pick<PhotoCategory, "id" | "name">[];
   imageUrl: string;
   updatedAt: string;
 };

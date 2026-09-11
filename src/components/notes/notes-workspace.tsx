@@ -9,7 +9,8 @@ import {
   CollectionNavigation,
   CollectionView,
 } from "@/components/content/collection-navigation";
-import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
+import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import {
   CoverImageField,
   type CoverSelection,
@@ -22,9 +23,11 @@ import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
 
 function CollectionSettings({
+  categories,
   folders,
   note,
 }: {
+  categories: NotesWorkspaceData["categories"];
   folders: NotesWorkspaceData["folders"];
   note?: Note;
 }) {
@@ -55,32 +58,7 @@ function CollectionSettings({
           封存
         </label>
         <div className="collection-settings-divider" />
-        <span>資料夾（選擇一個）</span>
-        <label>
-          <input
-            defaultChecked={!note?.folder}
-            name="contentFolderId"
-            type="radio"
-            value=""
-          />{" "}
-          不放入資料夾
-        </label>
-        {folders
-          .filter(
-            (folder) => folder.is_visible || folder.id === note?.folder?.id,
-          )
-          .map((folder) => (
-            <label key={folder.id}>
-              <input
-                defaultChecked={folder.id === note?.folder?.id}
-                name="contentFolderId"
-                type="radio"
-                value={folder.id}
-              />{" "}
-              {folder.name}
-              {folder.is_visible ? "" : "（已隱藏）"}
-            </label>
-          ))}
+        <TaxonomyMultiSelect categories={categories} defaultCategoryIds={note?.categories.map((item) => item.id) ?? []} defaultFolderIds={note?.folders.map((item) => item.id) ?? []} folders={folders} />
       </div>
     </details>
   );
@@ -97,7 +75,8 @@ export function NotesWorkspace({
   const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
   const [view, setView] = useState<CollectionView>("all");
-  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [category, setCategory] = useState<CollectionCategory>([]);
+  const [folderIds, setFolderIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -130,28 +109,28 @@ export function NotesWorkspace({
       data.notes.filter((note) => {
         if (view === "trash" ? !note.deletedAt : Boolean(note.deletedAt))
           return false;
-        if (view === "all" && (note.archived || note.folder)) return false;
+        if (view === "all" && !folderIds.length && (note.archived || note.folders.length)) return false;
         if (view === "favorite" && (!note.favorite || note.archived))
           return false;
         if (view === "pinned" && (!note.pinned || note.archived)) return false;
         if (view === "archived" && !note.archived) return false;
         if (
-          view.startsWith("folder:") &&
-          (note.archived || note.folder?.id !== view.slice(7))
+          folderIds.length &&
+          (note.archived || !note.folders.some((folder) => folderIds.includes(folder.id)))
         )
           return false;
-        if (category === "unclassified" && note.category) return false;
+        if (category.includes("unclassified") && note.categories.length) return false;
         if (
-          category !== "all" &&
-          category !== "unclassified" &&
-          note.category?.id !== category
+          category.length &&
+          !category.includes("unclassified") &&
+          !note.categories.some((itemCategory) => category.includes(itemCategory.id))
         )
           return false;
         return `${note.title} ${note.description ?? ""} ${note.content}`
           .toLowerCase()
           .includes(query.toLowerCase());
       }),
-    [category, data.notes, query, view],
+    [category, data.notes, folderIds, query, view],
   );
   async function save(event: FormEvent<HTMLFormElement>, note?: Note) {
     event.preventDefault();
@@ -165,8 +144,8 @@ export function NotesWorkspace({
         title: form.get("title"),
         description: form.get("description"),
         content: form.get("content"),
-        categoryId: form.get("categoryId") || null,
-        contentFolderId: form.get("contentFolderId") || null,
+        categoryIds: form.getAll("categoryIds").map(String),
+        folderIds: form.getAll("folderIds").map(String),
         favorite: form.get("favorite") === "on",
         pinned: form.get("pinned") === "on",
         archived: form.get("archived") === "on",
@@ -243,10 +222,7 @@ export function NotesWorkspace({
         ? new Set()
         : new Set(notes.map((note) => note.id)),
     );
-  async function organizeSelection(
-    folderId: string | null,
-    categoryId: string | null,
-  ) {
+  async function organizeSelection(change: BulkOrganizeChange) {
     setPending(true);
     setError(null);
     try {
@@ -256,8 +232,9 @@ export function NotesWorkspace({
         body: JSON.stringify({
           ids: chosenNotes.map((note) => note.id),
           action: "organize",
-          contentFolderId: folderId,
-          categoryId,
+          folderIds: change.folderIds,
+          categoryIds: change.categoryIds,
+          relationMode: change.mode,
         }),
       });
       if (!response.ok)
@@ -331,18 +308,7 @@ export function NotesWorkspace({
           rows={14}
         />
       </label>
-      <label>
-        類別
-        <select defaultValue={note?.category?.id ?? ""} name="categoryId">
-          <option value="">未分類</option>
-          {data.categories.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <CollectionSettings folders={data.folders} note={note} />
+      <CollectionSettings categories={data.categories} folders={data.folders} note={note} />
       <CoverImageField initialUrl={note?.coverImageUrl} onChange={setCover} />
       {createMode ? <CreateFormActions pending={pending} returnHref="/notes" label="儲存" pendingLabel="儲存中…" /> : (<div className="dialog-actions">
         <button className="button" disabled={pending} type="submit">
@@ -383,9 +349,11 @@ export function NotesWorkspace({
       <CollectionNavigation
         categories={data.categories}
         category={category}
+        folderIds={folderIds}
         folders={data.folders}
         items={data.notes}
         setCategory={setCategory}
+        setFolderIds={setFolderIds}
         setView={setView}
         storageKey="personal-vault:note-system-folders:v1"
         view={view}
@@ -492,8 +460,8 @@ export function NotesWorkspace({
               <div>
                 <div className={mobileStyles.mobileMetaRow}>{note.pinned && <span>置頂</span>}<time dateTime={note.updatedAt}>{new Date(note.updatedAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</time></div>
                 <p className="bookmark-meta">
-                  {note.category?.name ?? "未分類"}
-                  {note.folder && ` · ${note.folder.name}`}
+                  {note.categories.map((category) => category.name).join("、") || "未分類"}
+                  {note.folders.length > 0 && ` · ${note.folders.map((folder) => folder.name).join("、")}`}
                 </p>
                 <h3>{note.title}</h3>
                 <p>{note.description || note.content.slice(0, 90)}</p>

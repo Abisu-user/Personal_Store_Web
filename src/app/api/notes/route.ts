@@ -3,7 +3,8 @@ import { z } from "zod";
 import { getNotesWorkspaceData } from "@/lib/notes/data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSecurityContext } from "@/lib/security/activity";
-import { deleteCover, entryCoverFields, storedEntryCover, validateContentFolder, verifiedCover } from "@/lib/content/server";
+import { deleteCover, entryCoverFields, storedEntryCover, verifiedCover } from "@/lib/content/server";
+import { mutateEntryTaxonomy, replaceEntryTaxonomy, validateEntryTaxonomy } from "@/lib/content/entry-taxonomy";
 
 const noteSchema = z.object({
   title: z.string().trim().min(1).max(300),
@@ -11,6 +12,8 @@ const noteSchema = z.object({
   content: z.string().max(100_000),
   categoryId: z.string().uuid().nullable().optional(),
   contentFolderId: z.string().uuid().nullable().optional(),
+  categoryIds: z.array(z.string().uuid()).max(30).optional(),
+  folderIds: z.array(z.string().uuid()).max(30).optional(),
   favorite: z.boolean().optional().default(false),
   pinned: z.boolean().optional().default(false),
   archived: z.boolean().optional().default(false),
@@ -20,19 +23,12 @@ const noteSchema = z.object({
 const updateSchema = noteSchema.extend({ id: z.string().uuid() });
 const deleteSchema = z.object({ id: z.string().uuid() });
 const actionSchema = z.object({ id: z.string().uuid(), action: z.enum(["trash", "restore"]) });
-const bulkOrganizeSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(100), action: z.literal("organize"), contentFolderId: z.string().uuid().nullable().optional(), categoryId: z.string().uuid().nullable().optional() });
+const bulkOrganizeSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(100), action: z.literal("organize"), folderIds: z.array(z.string().uuid()).max(30), categoryIds: z.array(z.string().uuid()).max(30), relationMode: z.enum(["add", "remove", "replace"]) });
 
 export const dynamic = "force-dynamic";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
-}
-
-async function validateCategory(ownerId: string, categoryId: string | null | undefined, folderId: string | null | undefined) {
-  if (!categoryId) return true;
-  const admin = createAdminClient();
-  const { data } = await admin.from("categories").select("id, folder_id").eq("id", categoryId).eq("owner_id", ownerId).eq("content_kind", "note").maybeSingle();
-  return Boolean(data) && (data?.folder_id ?? null) === (folderId ?? null);
 }
 
 async function resolveTags(ownerId: string, inputTags: string[]) {
@@ -75,8 +71,8 @@ export async function POST(request: NextRequest) {
   if (!context) return jsonError("Unauthorized", 401);
   const parsed = noteSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("請檢查筆記欄位。", 400);
-  if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
-  if (!(await validateContentFolder(context.userId, "note", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
+  const categoryIds = parsed.data.categoryIds ?? (parsed.data.categoryId ? [parsed.data.categoryId] : []); const folderIds = parsed.data.folderIds ?? (parsed.data.contentFolderId ? [parsed.data.contentFolderId] : []);
+  if (!(await validateEntryTaxonomy(context.userId, "note", categoryIds, folderIds, "content"))) return jsonError("找不到指定分類或資料夾。", 400);
   const cover = await verifiedCover(context.userId, parsed.data.coverTicket);
   if (cover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
 
@@ -91,8 +87,8 @@ export async function POST(request: NextRequest) {
         kind: "note",
         title: parsed.data.title,
         description: parsed.data.description || null,
-        category_id: parsed.data.categoryId ?? null,
-        content_folder_id: parsed.data.contentFolderId ?? null,
+        category_id: categoryIds[0] ?? null,
+        content_folder_id: folderIds[0] ?? null,
         is_favorite: parsed.data.favorite,
         is_pinned: parsed.data.pinned && !parsed.data.archived,
         is_archived: parsed.data.archived,
@@ -114,6 +110,7 @@ export async function POST(request: NextRequest) {
     if (versionError) throw versionError;
 
     await replaceEntryTags(entry.id, tagRows.map((tag) => tag.id));
+    await replaceEntryTaxonomy(context.userId, entry.id, "note", categoryIds, folderIds, "content");
     await admin.from("audit_logs").insert({
       owner_id: context.userId,
       action: "note_created",
@@ -134,10 +131,8 @@ export async function PATCH(request: NextRequest) {
   const requestBody = await request.json().catch(() => null);
   const organize = bulkOrganizeSchema.safeParse(requestBody);
   if (organize.success) {
-    if (!(await validateContentFolder(context.userId, "note", organize.data.contentFolderId)) || !(await validateCategory(context.userId, organize.data.categoryId, organize.data.contentFolderId))) return jsonError("找不到指定分類或資料夾。", 400);
     try {
-      const { error } = await createAdminClient().from("entries").update({ content_folder_id: organize.data.contentFolderId ?? null, category_id: organize.data.categoryId ?? null }).in("id", organize.data.ids).eq("owner_id", context.userId).eq("kind", "note").is("deleted_at", null);
-      if (error) throw error;
+      await mutateEntryTaxonomy(context.userId, organize.data.ids, "note", organize.data.categoryIds, organize.data.folderIds, organize.data.relationMode, "content");
       return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
     } catch { return jsonError("無法移動選取的筆記。", 503); }
   }
@@ -157,8 +152,8 @@ export async function PATCH(request: NextRequest) {
   }
   const parsed = updateSchema.safeParse(requestBody);
   if (!parsed.success) return jsonError("請檢查筆記欄位。", 400);
-  if (!(await validateCategory(context.userId, parsed.data.categoryId, parsed.data.contentFolderId))) return jsonError("找不到指定分類。", 400);
-  if (!(await validateContentFolder(context.userId, "note", parsed.data.contentFolderId))) return jsonError("找不到指定資料夾。", 400);
+  const categoryIds = parsed.data.categoryIds ?? (parsed.data.categoryId ? [parsed.data.categoryId] : []); const folderIds = parsed.data.folderIds ?? (parsed.data.contentFolderId ? [parsed.data.contentFolderId] : []);
+  if (!(await validateEntryTaxonomy(context.userId, "note", categoryIds, folderIds, "content"))) return jsonError("找不到指定分類或資料夾。", 400);
   const newCover = await verifiedCover(context.userId, parsed.data.coverTicket);
   if (newCover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
 
@@ -182,8 +177,8 @@ export async function PATCH(request: NextRequest) {
       .update({
         title: parsed.data.title,
         description: parsed.data.description || null,
-        category_id: parsed.data.categoryId ?? null,
-        content_folder_id: parsed.data.contentFolderId ?? null,
+        category_id: categoryIds[0] ?? null,
+        content_folder_id: folderIds[0] ?? null,
         is_favorite: parsed.data.favorite,
         is_pinned: parsed.data.pinned && !parsed.data.archived,
         is_archived: parsed.data.archived,
@@ -194,6 +189,7 @@ export async function PATCH(request: NextRequest) {
     if (entryError) throw entryError;
     if (newCover) await deleteCover(context.userId, storedEntryCover(existing));
     await replaceEntryTags(existing.id, tagRows.map((tag) => tag.id));
+    await replaceEntryTaxonomy(context.userId, existing.id, "note", categoryIds, folderIds, "content");
 
     const contentChanged = parsed.data.content !== detail.content_markdown;
     if (contentChanged) {

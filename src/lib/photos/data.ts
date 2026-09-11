@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
 import { getFolderLockState } from "@/lib/folder-locks/server";
+import { readEntryTaxonomyLinks } from "@/lib/content/entry-taxonomy";
 
 export async function getPhotosWorkspaceData(ownerId: string): Promise<PhotosWorkspaceData> {
   const admin = createAdminClient();
@@ -14,12 +15,14 @@ export async function getPhotosWorkspaceData(ownerId: string): Promise<PhotosWor
     admin.from("content_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).eq("content_kind", "photo").order("sort_order").order("name").limit(100),
   ]);
   if (entriesResult.error || categoriesResult.error || foldersResult.error) throw new Error("Unable to load photos.");
+  const taxonomyLinks = await readEntryTaxonomyLinks(ownerId, "content");
   const photos: StoredPhoto[] = (entriesResult.data ?? []).flatMap((entry) => {
     const detail = Array.isArray(entry.file_details) ? entry.file_details[0] : entry.file_details;
     if (!detail) return [];
     const folder = Array.isArray(entry.content_folders) ? entry.content_folders[0] ?? null : entry.content_folders;
-    if (folder && lockState.locks.has(folder.id) && !lockState.unlockedFolderIds.has(folder.id)) return [];
-    return [{ id: entry.id, title: entry.title, description: entry.description, originalFilename: detail.original_filename, mimeType: detail.mime_type, byteSize: Number(detail.byte_size), favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder, category: Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories, imageUrl: `/api/photos?image=${entry.id}&v=${encodeURIComponent(entry.updated_at)}`, updatedAt: entry.updated_at }];
+    const category = Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories; const links = taxonomyLinks.get(entry.id); const linkedFolders = links?.folders.length ? links.folders : folder ? [folder] : []; const linkedCategories = links?.categories.length ? links.categories : category ? [category] : [];
+    if (linkedFolders.some((item) => lockState.locks.has(item.id) && !lockState.unlockedFolderIds.has(item.id))) return [];
+    return [{ id: entry.id, title: entry.title, description: entry.description, originalFilename: detail.original_filename, mimeType: detail.mime_type, byteSize: Number(detail.byte_size), favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder: linkedFolders[0] ?? folder, folders: linkedFolders, category: linkedCategories[0] ?? category, categories: linkedCategories, imageUrl: `/api/photos?image=${entry.id}&v=${encodeURIComponent(entry.updated_at)}`, updatedAt: entry.updated_at }];
   });
   return { photos, categories: categoriesResult.data ?? [], folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })) };
 }

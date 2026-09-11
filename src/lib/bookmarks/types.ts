@@ -15,6 +15,8 @@ export type Bookmark = {
   coverImageUrl: string | null;
   category: Pick<BookmarkCategory, "id" | "name"> | null;
   folder: Pick<BookmarkFolder, "id" | "name" | "is_visible"> | null;
+  categories: Pick<BookmarkCategory, "id" | "name">[];
+  folders: Pick<BookmarkFolder, "id" | "name" | "is_visible">[];
   detail: { url: string; favicon_url: string | null; site_title: string | null; notes: string | null } | null;
   tags: BookmarkTag[];
 };

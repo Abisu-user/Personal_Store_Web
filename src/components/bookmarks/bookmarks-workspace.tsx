@@ -17,6 +17,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
+import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import {
   CoverImageField,
   type CoverSelection,
@@ -196,6 +198,7 @@ function BookmarkCollectionSettings({
   folderId = "",
   categoryId = "",
   coverImageUrl,
+  compact = false,
 }: {
   categories?: BookmarksWorkspaceData["categories"];
   folders: BookmarksWorkspaceData["folders"];
@@ -205,84 +208,32 @@ function BookmarkCollectionSettings({
   folderId?: string;
   categoryId?: string;
   coverImageUrl?: string | null;
+  compact?: boolean;
 }) {
-  const [selectedFolderId, setSelectedFolderId] = useState(folderId);
-  const [selectedCategoryId, setSelectedCategoryId] = useState(categoryId);
-  const scopedCategories = categories.filter(
-    (item) => (item.folder_id ?? "") === selectedFolderId,
+  const organizationFields = (
+    <div className={compact ? "bookmark-organization-fields" : "collection-settings-menu"}>
+      {!compact && <>
+        <label><input defaultChecked={favorite} name="favorite" type="checkbox" /> 我的最愛</label>
+        <label><input defaultChecked={pinned} name="pinned" type="checkbox" /> 置頂</label>
+        <label><input defaultChecked={archived} name="archived" type="checkbox" /> 封存</label>
+        <div className="collection-settings-divider" />
+      </>}
+      {compact && <>
+        <input name="favorite" type="hidden" value={favorite ? "on" : ""} />
+        <input name="pinned" type="hidden" value={pinned ? "on" : ""} />
+        <input name="archived" type="hidden" value={archived ? "on" : ""} />
+      </>}
+      <TaxonomyMultiSelect categories={categories} defaultCategoryIds={categoryId ? [categoryId] : []} defaultFolderIds={folderId ? [folderId] : []} folders={folders} />
+    </div>
   );
-  const selectFolder = (nextFolderId: string) => {
-    setSelectedFolderId(nextFolderId);
-    setSelectedCategoryId("");
-  };
   return (
     <>
-      <details className="collection-settings">
+      {compact ? organizationFields : <details className="collection-settings">
         <summary>
           網站收藏設定 <small>可複選</small>
         </summary>
-        <div className="collection-settings-menu">
-          <label>
-            <input defaultChecked={favorite} name="favorite" type="checkbox" />{" "}
-            我的最愛
-          </label>
-          <label>
-            <input defaultChecked={pinned} name="pinned" type="checkbox" /> 置頂
-          </label>
-          <label>
-            <input defaultChecked={archived} name="archived" type="checkbox" />{" "}
-            封存
-          </label>
-          <div className="collection-settings-divider" />
-          <span>資料夾（選擇一個）</span>
-          <label>
-            <input
-              checked={!selectedFolderId}
-              name="bookmarkFolderId"
-              onChange={() => selectFolder("")}
-              type="radio"
-              value=""
-            />{" "}
-            不放入資料夾
-          </label>
-          {folders
-            .filter((item) => item.is_visible || item.id === folderId)
-            .map((item) => (
-              <label key={item.id}>
-                <input
-                  checked={selectedFolderId === item.id}
-                  name="bookmarkFolderId"
-                  onChange={() => selectFolder(item.id)}
-                  type="radio"
-                  value={item.id}
-                />{" "}
-                {item.name}
-                {item.is_visible ? "" : "（已隱藏）"}
-              </label>
-            ))}
-          <div className="collection-settings-divider" />
-          <label>
-            類別
-            <select
-              name="categoryId"
-              onChange={(event) => setSelectedCategoryId(event.target.value)}
-              value={
-                scopedCategories.some((item) => item.id === selectedCategoryId)
-                  ? selectedCategoryId
-                  : ""
-              }
-            >
-              <option value="">未分類</option>
-              {scopedCategories.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!scopedCategories.length && <small>此資料夾尚未建立類別。</small>}
-        </div>
-      </details>
+        {organizationFields}
+      </details>}
       <BookmarkCoverField initialUrl={coverImageUrl} />
     </>
   );
@@ -368,8 +319,8 @@ function BookmarkResultCard({
         type="button"
       >
         <p className="bookmark-meta">
-          {item.category?.name ?? "未分類"}
-          {item.folder && ` · ${item.folder.name}`}
+          {item.categories.map((category) => category.name).join("、") || "未分類"}
+          {item.folders.length > 0 && ` · ${item.folders.map((folder) => folder.name).join("、")}`}
         </p>
         <h3 className="bookmark-title">{item.title}</h3>
         {item.description && (
@@ -431,8 +382,8 @@ export function BookmarksWorkspace({
   const [data, setData] = useState(initialData ?? emptyBookmarks);
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [view, setView] = useState<View>("all");
-  const [category, setCategory] = useState("all");
-  const [bookmarkFolder, setBookmarkFolder] = useState("all");
+  const [category, setCategory] = useState<string[]>([]);
+  const [folderFilters, setFolderFilters] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -460,6 +411,7 @@ export function BookmarksWorkspace({
   const [folderAddOpen, setFolderAddOpen] = useState(false);
   const [folderMoreOpen, setFolderMoreOpen] = useState(false);
   const [folderManagerOpen, setFolderManagerOpen] = useState(false);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState("");
   const [folderQuery, setFolderQuery] = useState("");
   const [dragging, setDragging] = useState<{
@@ -548,42 +500,33 @@ export function BookmarksWorkspace({
     const timer = window.setTimeout(() => setSuccess(null), 3000);
     return () => window.clearTimeout(timer);
   }, [success]);
-  const activeFolderId = view.startsWith("folder:") ? view.slice(7) : null;
+  const activeFolderId = folderFilters[0] ?? null;
   const scopedCategories = useMemo(
     () =>
       data.categories.filter(
-        (item) => (item.folder_id ?? null) === activeFolderId,
+        (item) => item.folder_id === null || folderFilters.includes(item.folder_id),
       ),
-    [activeFolderId, data.categories],
+    [data.categories, folderFilters],
   );
   const list = useMemo(
     () =>
       data.bookmarks.filter((item) => {
-        const quickFolderId = view.startsWith("folder:") ? view.slice(7) : null;
         if (view === "trash" ? !item.deletedAt : item.deletedAt) return false;
-        if (view === "all" && (item.archived || item.folder)) return false;
+        if (view === "all" && !folderFilters.length && (item.archived || item.folders.length)) return false;
         if (view === "favorite" && (!item.favorite || item.archived))
           return false;
         if (view === "pinned" && (!item.pinned || item.archived)) return false;
         if (view === "archived" && !item.archived) return false;
-        if (
-          quickFolderId &&
-          (item.archived || item.folder?.id !== quickFolderId)
-        )
-          return false;
+        if (folderFilters.length && (item.archived || !item.folders.some((folder) => folderFilters.includes(folder.id)))) return false;
         const search =
           `${item.title} ${item.description ?? ""} ${item.detail?.url ?? ""}`.toLowerCase();
-        const inCategory =
-          category === "all" || category === "unclassified"
-            ? category === "all" || !item.category
-            : item.category?.id === category;
+        const inCategory = !category.length || (category.includes("unclassified") ? !item.categories.length : item.categories.some((value) => category.includes(value.id)));
         return (
           inCategory &&
-          (bookmarkFolder === "all" || item.folder?.id === bookmarkFolder) &&
           search.includes(query.toLowerCase())
         );
       }),
-    [bookmarkFolder, category, data.bookmarks, query, view],
+    [category, data.bookmarks, folderFilters, query, view],
   );
   const counts = useMemo(
     () =>
@@ -592,7 +535,7 @@ export function BookmarksWorkspace({
           if (item.deletedAt) total.trash += 1;
           else if (item.archived) total.archived += 1;
           else {
-            if (!item.folder) total.all += 1;
+            if (!item.folders.length) total.all += 1;
             if (item.favorite) total.favorite += 1;
             if (item.pinned) total.pinned += 1;
           }
@@ -661,8 +604,8 @@ export function BookmarksWorkspace({
         url: draftUrl,
         title: draftTitle,
         description: draftDescription,
-        categoryId: form.get("categoryId") || null,
-        bookmarkFolderId: form.get("bookmarkFolderId") || null,
+        categoryIds: form.getAll("categoryIds").map(String),
+        folderIds: form.getAll("folderIds").map(String),
         coverTicket: form.get("coverTicket") || null,
         favorite: form.get("favorite") === "on",
         pinned: form.get("pinned") === "on",
@@ -687,24 +630,26 @@ export function BookmarksWorkspace({
     setPending(true);
     setError(null);
     setSuccess(null);
+    const url = String(form.get("url") ?? "");
     const title = String(form.get("title") ?? "");
     const description = String(form.get("description") ?? "");
-    const categoryId = String(form.get("categoryId") ?? "") || null;
-    const bookmarkFolderId = String(form.get("bookmarkFolderId") ?? "") || null;
+    const categoryIds = form.getAll("categoryIds").map(String);
+    const folderIds = form.getAll("folderIds").map(String);
     const coverTicket = String(form.get("coverTicket") ?? "") || null;
     const favorite = form.get("favorite") === "on";
     const archived = form.get("archived") === "on";
     const pinned = form.get("pinned") === "on" && !archived;
+    try {
     const response = await fetch("/api/bookmarks", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         id: editing.id,
-        url: editing.detail?.url ?? "https://example.com",
+        url,
         title,
         description,
-        categoryId,
-        bookmarkFolderId,
+        categoryIds,
+        folderIds,
         coverTicket,
         favorite,
         pinned,
@@ -712,14 +657,15 @@ export function BookmarksWorkspace({
       }),
     });
     if (!response.ok) {
-      setPending(false);
-      setError("無法儲存修改。");
-      return;
+      const body = await response.json().catch(() => null);
+      throw new Error(body?.error ?? "無法儲存修改。");
     }
     await load();
     setEditing(null);
     setSuccess("網站收藏已更新。");
-    setPending(false);
+    } catch (cause) {
+      setError(cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "目前無法連線並儲存修改，請稍後再試。");
+    } finally { setPending(false); }
   }
   async function update(id: string, action: "trash" | "restore") {
     setPending(true);
@@ -819,6 +765,27 @@ export function BookmarksWorkspace({
     }));
     setSuccess(`已永久刪除 ${ids.length} 筆網站收藏。`);
     setConfirmation(null);
+  }
+  async function organizeSelected(change: BulkOrganizeChange) {
+    if (!selected.length) return;
+    const count = selected.length;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/bookmarks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selected.map((item) => item.id), action: "organize", categoryIds: change.categoryIds, folderIds: change.folderIds, relationMode: change.mode }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error ?? "無法整理選取的網站收藏。");
+      setChosen(new Set());
+      setOrganizeOpen(false);
+      await load();
+      setSuccess(`已整理 ${count} 筆網站收藏。`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法整理選取的網站收藏。");
+    } finally { setPending(false); }
   }
   async function addCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -922,17 +889,22 @@ export function BookmarksWorkspace({
             categories: current.categories.map((item) =>
               item.id === renaming.id ? { ...item, name } : item,
             ),
+            bookmarks: current.bookmarks.map((item) => ({
+              ...item,
+              categories: item.categories.map((category) => category.id === renaming.id ? { ...category, name } : category),
+              category: item.category?.id === renaming.id ? { ...item.category, name } : item.category,
+            })),
           }
         : {
             ...current,
             folders: current.folders.map((item) =>
               item.id === renaming.id ? { ...item, name } : item,
             ),
-            bookmarks: current.bookmarks.map((item) =>
-              item.folder?.id === renaming.id
-                ? { ...item, folder: { ...item.folder, name } }
-                : item,
-            ),
+            bookmarks: current.bookmarks.map((item) => ({
+              ...item,
+              folders: item.folders.map((folder) => folder.id === renaming.id ? { ...folder, name } : folder),
+              folder: item.folder?.id === renaming.id ? { ...item.folder, name } : item.folder,
+            })),
           },
     );
     if (kind === "category")
@@ -987,11 +959,16 @@ export function BookmarksWorkspace({
     setData((current) => ({
       ...current,
       folders: current.folders.filter((item) => item.id !== id),
-      bookmarks: current.bookmarks.map((item) =>
-        item.folder?.id === id ? { ...item, folder: null } : item,
-      ),
+      bookmarks: current.bookmarks.map((item) => {
+        const folders = item.folders.filter((folder) => folder.id !== id);
+        return {
+          ...item,
+          folders,
+          folder: item.folder?.id === id ? (folders[0] ?? null) : item.folder,
+        };
+      }),
     }));
-    if (bookmarkFolder === id) setBookmarkFolder("all");
+    setFolderFilters((current) => current.filter((folderId) => folderId !== id));
     setSuccess("網站收藏資料夾已刪除，原有網站收藏已移出資料夾。");
     setConfirmation(null);
   }
@@ -1012,12 +989,16 @@ export function BookmarksWorkspace({
     setData((current) => ({
       ...current,
       categories: current.categories.filter((item) => item.id !== id),
-      bookmarks: current.bookmarks.map((item) =>
-        item.category?.id === id ? { ...item, category: null } : item,
-      ),
+      bookmarks: current.bookmarks.map((item) => {
+        const categories = item.categories.filter((itemCategory) => itemCategory.id !== id);
+        return {
+          ...item,
+          categories,
+          category: item.category?.id === id ? (categories[0] ?? null) : item.category,
+        };
+      }),
     }));
-    if (category === id) setCategory("all");
-    if (view === `folder:${id}`) setView("all");
+    setCategory((current) => current.filter((categoryId) => categoryId !== id));
     setSuccess("資料夾已刪除，原有網站收藏已改為未分類。");
     setConfirmation(null);
     await load();
@@ -1108,7 +1089,9 @@ export function BookmarksWorkspace({
             ...draft.map((item, sort_order) => ({ ...item, sort_order })),
           ],
         }));
-        if (removedCategoryIds.includes(category)) setCategory("all");
+        setCategory((current) =>
+          current.filter((categoryId) => !removedCategoryIds.includes(categoryId)),
+        );
         setCategoryManagerOpen(false);
         setSuccess("整理結果已儲存。 ");
       } catch (cause) {
@@ -1156,11 +1139,10 @@ export function BookmarksWorkspace({
       setData((current) => ({
         ...current,
         folders: draft.map((item, sort_order) => ({ ...item, sort_order })),
-        bookmarks: current.bookmarks.map((item) =>
-          removedFolderIds.includes(item.folder?.id ?? "")
-            ? { ...item, folder: null }
-            : item,
-        ),
+        bookmarks: current.bookmarks.map((item) => {
+          const folders = item.folders.filter((folder) => !removedFolderIds.includes(folder.id));
+          return { ...item, folders, folder: item.folder && removedFolderIds.includes(item.folder.id) ? (folders[0] ?? null) : item.folder };
+        }),
       }));
       setFolderManagerOpen(false);
       setSuccess("整理結果已儲存。 ");
@@ -1630,24 +1612,19 @@ export function BookmarksWorkspace({
       });
       return next;
     });
-  const quickCount = (id: string) =>
-    data.bookmarks.filter(
-      (item) => !item.deletedAt && !item.archived && item.folder?.id === id,
-    ).length;
+  const quickCount = (id: string) => data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.folders.some((folder) => folder.id === id)).length;
   const selectBookmarkFolder = (folderId: string | null) => {
-    const nextView: View = folderId ? `folder:${folderId}` : "all";
-    if (folderId && view === nextView) {
-      setView("all");
-      setCategory("all");
-      return;
-    }
-    setView(nextView);
-    setCategory("all");
+    if (!folderId) { setFolderFilters([]); setView("all"); return; }
+    setFolderFilters((current) => {
+      const next = current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId];
+      setView(next.length ? `folder:${next[0]}` : "all");
+      return next;
+    });
   };
   const selectBookmarkCategory = (next: string) => {
-    setCategory((current) =>
-      current === next && next !== "all" ? "all" : next,
-    );
+    if (next === "all") { setCategory([]); return; }
+    if (next === "unclassified") { setCategory((current) => current.includes(next) ? [] : [next]); return; }
+    setCategory((current) => current.includes(next) ? current.filter((id) => id !== next) : [...current.filter((id) => id !== "unclassified"), next]);
   };
   return (
     <section className="bookmarks-workspace">
@@ -1683,17 +1660,17 @@ export function BookmarksWorkspace({
           </div>
         </header>
         <ResponsiveChipOverflow
-          activeId={activeFolderId}
+          activeIds={folderFilters}
           className="bookmark-view-tabs"
           leadingCount={1}
           items={visibleBookmarkFolders}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
-          leading={<button aria-selected={view === "all"} className={view === "all" ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
-          renderItem={(item) => <button aria-selected={view === `folder:${item.id}`} className={view === `folder:${item.id}` ? "active" : ""} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
+          leading={<button aria-selected={!folderFilters.length} className={!folderFilters.length ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
+          renderItem={(item) => <button aria-selected={folderFilters.includes(item.id)} className={folderFilters.includes(item.id) ? "active" : ""} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
-          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setCategory("all"); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
+          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setFolderFilters([]); setCategory([]); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
           trailingCount={folders.trash.visible ? 1 : 0}
         />
       </section>
@@ -1718,14 +1695,14 @@ export function BookmarksWorkspace({
           </div>
         </header>
         <ResponsiveChipOverflow
-          activeId={category === "all" || category === "unclassified" ? null : category}
+          activeIds={category.filter((categoryId) => categoryId !== "unclassified")}
           className="category-strip collection-category-strip"
           leadingCount={2}
           items={scopedCategories}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => item.name}
-          leading={<><button className={category === "all" ? "active" : ""} onClick={() => selectBookmarkCategory("all")} type="button">所有類別</button><button className={category === "unclassified" ? "active" : ""} onClick={() => selectBookmarkCategory("unclassified")} type="button">未分類</button></>}
-          renderItem={(item) => <button className={category === item.id ? "active" : ""} key={item.id} onClick={() => selectBookmarkCategory(item.id)} type="button">{item.name}</button>}
+          leading={<><button className={!category.length ? "active" : ""} onClick={() => selectBookmarkCategory("all")} type="button">所有類別</button><button className={category.includes("unclassified") ? "active" : ""} onClick={() => selectBookmarkCategory("unclassified")} type="button">未分類</button></>}
+          renderItem={(item) => <button className={category.includes(item.id) ? "active" : ""} key={item.id} onClick={() => selectBookmarkCategory(item.id)} type="button">{item.name}</button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏類別" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
         />
@@ -1763,7 +1740,8 @@ export function BookmarksWorkspace({
             >
               永久刪除 {selected.length} 筆
             </button>
-          ) : (
+          ) : (<>
+            <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">批量整理 {selected.length} 筆</button>
             <button
               className="delete-button"
               disabled={pending}
@@ -1779,7 +1757,7 @@ export function BookmarksWorkspace({
             >
               移至垃圾桶 {selected.length} 筆
             </button>
-          ))}
+          </>))}
       </div>
       <div
         className={`bookmark-list bookmark-list-${bookmarkDisplay}`}
@@ -1874,7 +1852,7 @@ export function BookmarksWorkspace({
           />
           <div className="collection-category-manager-list bookmark-folder-more-list">
             <button
-              className={view === "all" ? "active" : ""}
+              className={!folderFilters.length ? "active" : ""}
               onClick={() => {
                 selectBookmarkFolder(null);
                 setFolderMoreOpen(false);
@@ -1892,12 +1870,10 @@ export function BookmarksWorkspace({
               )
               .map((item) => (
                 <button
-                  className={view === `folder:${item.id}` ? "active" : ""}
+                  className={folderFilters.includes(item.id) ? "active" : ""}
                   key={item.id}
                   onClick={() => {
                     selectBookmarkFolder(item.id);
-                    setFolderMoreOpen(false);
-                    setFolderQuery("");
                   }}
                   type="button"
                 >
@@ -2128,7 +2104,7 @@ export function BookmarksWorkspace({
           />
           <div className="collection-category-manager-list">
             <button
-              className={category === "all" ? "active" : ""}
+              className={!category.length ? "active" : ""}
               onClick={() => {
                 selectBookmarkCategory("all");
                 setCategoryMoreOpen(false);
@@ -2138,7 +2114,7 @@ export function BookmarksWorkspace({
               所有類別
             </button>
             <button
-              className={category === "unclassified" ? "active" : ""}
+              className={category.includes("unclassified") ? "active" : ""}
               onClick={() => {
                 selectBookmarkCategory("unclassified");
                 setCategoryMoreOpen(false);
@@ -2155,11 +2131,10 @@ export function BookmarksWorkspace({
               )
               .map((item) => (
                 <button
-                  className={category === item.id ? "active" : ""}
+                  className={category.includes(item.id) ? "active" : ""}
                   key={item.id}
                   onClick={() => {
                     selectBookmarkCategory(item.id);
-                    setCategoryMoreOpen(false);
                   }}
                   type="button"
                 >
@@ -2205,11 +2180,11 @@ export function BookmarksWorkspace({
               <dl>
                 <div>
                   <dt>類別</dt>
-                  <dd>{detailItem.category?.name ?? "未分類"}</dd>
+                  <dd>{detailItem.categories.map((category) => category.name).join("、") || "未分類"}</dd>
                 </div>
                 <div>
                   <dt>資料夾</dt>
-                  <dd>{detailItem.folder?.name ?? "未放入資料夾"}</dd>
+                  <dd>{detailItem.folders.map((folder) => folder.name).join("、") || "未放入資料夾"}</dd>
                 </div>
                 <div>
                   <dt>網站收藏設定</dt>
@@ -2243,13 +2218,15 @@ export function BookmarksWorkspace({
                     </button>
                     <button
                       className="delete-button"
-                      onClick={() =>
+                      onClick={() => {
+                        const target = detailItem;
+                        setDetailItem(null);
                         setConfirmation({
                           title: "永久刪除網站收藏？",
-                          description: `「${detailItem.title}」將無法還原。`,
-                          action: () => permanentlyRemove(detailItem.id),
-                        })
-                      }
+                          description: `「${target.title}」將無法還原。`,
+                          action: () => permanentlyRemove(target.id),
+                        });
+                      }}
                       type="button"
                     >
                       永久刪除
@@ -2269,17 +2246,18 @@ export function BookmarksWorkspace({
                     </button>
                     <button
                       className="delete-button"
-                      onClick={() =>
+                      onClick={() => {
+                        const target = detailItem;
+                        setDetailItem(null);
                         setConfirmation({
                           title: "移至垃圾桶？",
-                          description: `「${detailItem.title}」會保留 30 天，期間可隨時還原。`,
+                          description: `「${target.title}」會保留 30 天，期間可隨時還原。`,
                           confirmLabel: "移至垃圾桶",
                           action: async () => {
-                            await update(detailItem.id, "trash");
-                            setDetailItem(null);
+                            await update(target.id, "trash");
                           },
-                        })
-                      }
+                        });
+                      }}
                       type="button"
                     >
                       刪除
@@ -2300,7 +2278,7 @@ export function BookmarksWorkspace({
         >
           <form onSubmit={saveEdit}>
             <h2 id="edit-bookmark-title">修改網站收藏</h2>
-            <p className="edit-link">{editing.detail?.url}</p>
+            <label>網址<input aria-label="網址" defaultValue={editing.detail?.url ?? ""} inputMode="url" name="url" required type="url" /></label>
             <label>
               標題
               <input
@@ -2319,23 +2297,11 @@ export function BookmarksWorkspace({
                 rows={3}
               />
             </label>
-            <label>
-              類別
-              <select
-                aria-label="類別"
-                defaultValue={editing.category?.id ?? ""}
-                name="categoryId"
-              >
-                <option value="">未分類</option>
-                {data.categories.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <BookmarkCollectionSettings
               archived={editing.archived}
+              categories={data.categories}
+              categoryId={editing.category?.id ?? ""}
+              compact
               favorite={editing.favorite}
               folderId={editing.folder?.id ?? ""}
               folders={data.folders}
@@ -2356,6 +2322,7 @@ export function BookmarksWorkspace({
           </form>
         </section>
       )}
+      <BulkOrganizeDialog categories={data.categories} count={selected.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelected} open={organizeOpen} pending={pending} />
       {dialog}
     </section>
   );

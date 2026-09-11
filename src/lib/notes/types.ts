@@ -14,8 +14,10 @@ export type Note = {
   archived: boolean;
   deletedAt: string | null;
   folder: Pick<NoteFolder, "id" | "name" | "is_visible"> | null;
+  folders: Pick<NoteFolder, "id" | "name" | "is_visible">[];
   coverImageUrl: string | null;
   category: Pick<NoteCategory, "id" | "name"> | null;
+  categories: Pick<NoteCategory, "id" | "name">[];
   tags: NoteTag[];
   updatedAt: string;
 };

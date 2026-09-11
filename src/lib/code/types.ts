@@ -14,8 +14,10 @@ export type CodeSnippet = {
   archived: boolean;
   deletedAt: string | null;
   folder: Pick<CodeFolder, "id" | "name" | "is_visible"> | null;
+  folders: Pick<CodeFolder, "id" | "name" | "is_visible">[];
   coverImageUrl: string | null;
   category: Pick<CodeCategory, "id" | "name"> | null;
+  categories: Pick<CodeCategory, "id" | "name">[];
   tags: CodeTag[];
   updatedAt: string;
 };

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { appearanceDefaults, applyAppearance, clearAppearanceIdentity, loadAccountAppearance, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { applyAppearance, clearAppearanceIdentity, loadAccountAppearance, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
 import { createClient } from "@/lib/supabase/client";
 
 /** Loads the signed-in account's server preference before showing its background. */
@@ -19,9 +19,10 @@ export function AppearanceProvider() {
     };
     const load = async (rotateForLogin = false) => {
       window.clearInterval(timer);
-      clearAppearanceIdentity();
-      let appearance = appearanceDefaults;
-      try { appearance = (await loadAccountAppearance()).appearance; } catch { applyAppearance(appearanceDefaults); }
+      // Keep the last verified account/device appearance while refreshing.
+      // Resetting here made route/auth refreshes briefly paint the default.
+      let appearance;
+      try { appearance = (await loadAccountAppearance()).appearance; } catch { return; }
       if (cancelled) return;
       if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) {
         appearance = nextBackground(appearance);
@@ -30,7 +31,6 @@ export function AppearanceProvider() {
       resetTimer(appearance);
     };
 
-    applyAppearance(appearanceDefaults);
     void load(true);
     const onAppearanceChange = () => resetTimer();
     window.addEventListener("personal-vault:appearance", onAppearanceChange);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getSecurityContext } from "@/lib/security/activity";
+import { mutateEntryTaxonomy } from "@/lib/content/entry-taxonomy";
 
 const categoryName = z.string().trim().min(1).max(80);
 const createSchema = z.object({ name: categoryName });
@@ -24,7 +25,7 @@ async function listCategories(ownerId: string) {
   const admin = createAdminClient();
   const { data: categories, error } = await admin.from("categories").select("id, name, sort_order").eq("owner_id", ownerId).eq("content_kind", "vault_item").is("folder_id", null).order("sort_order").order("created_at");
   if (error) throw error;
-  const { data: items, error: itemError } = await admin.from("entries").select("category_id").eq("owner_id", ownerId).eq("kind", "vault_item").is("deleted_at", null);
+  const { data: items, error: itemError } = await admin.from("entry_category_links").select("category_id").eq("owner_id", ownerId);
   if (itemError) throw itemError;
   const counts = new Map<string, number>(); for (const item of items ?? []) { if (item.category_id) counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1); }
   return (categories ?? []).map((category) => ({ id: category.id, name: category.name, sortOrder: category.sort_order, itemCount: counts.get(category.id) ?? 0 }));
@@ -72,10 +73,12 @@ export async function DELETE(request: NextRequest) {
     const source = await ownedCategory(context.userId, parsed.data.id); if (!source) return fail("找不到分類。", 404);
     if (parsed.data.reassignToId === source.id) return fail("請選擇另一個分類。", 400);
     if (parsed.data.reassignToId && !(await ownedCategory(context.userId, parsed.data.reassignToId))) return fail("找不到指定的重新指派分類。", 400);
-    const admin = createAdminClient(); const { data: affected, error: affectedError } = await admin.from("entries").select("id").eq("owner_id", context.userId).eq("kind", "vault_item").eq("category_id", source.id).is("deleted_at", null); if (affectedError) throw affectedError;
-    if ((affected?.length ?? 0) > 0) { const { error: reassignError } = await admin.from("entries").update({ category_id: parsed.data.reassignToId }).eq("owner_id", context.userId).eq("kind", "vault_item").eq("category_id", source.id).is("deleted_at", null); if (reassignError) throw reassignError; }
+    const admin = createAdminClient(); const { data: affected, error: affectedError } = await admin.from("entry_category_links").select("entry_id").eq("owner_id", context.userId).eq("category_id", source.id); if (affectedError) throw affectedError;
+    const affectedIds = [...new Set((affected ?? []).map((item) => item.entry_id))];
+    if (affectedIds.length > 0 && parsed.data.reassignToId) await mutateEntryTaxonomy(context.userId, affectedIds, "vault_item", [parsed.data.reassignToId], [], "add", "content");
+    if (affectedIds.length > 0) await mutateEntryTaxonomy(context.userId, affectedIds, "vault_item", [source.id], [], "remove", "content");
     const { error: deleteError } = await admin.from("categories").delete().eq("id", source.id).eq("owner_id", context.userId).eq("content_kind", "vault_item").is("folder_id", null); if (deleteError) throw deleteError;
-    await admin.from("audit_logs").insert({ owner_id: context.userId, action: "vault_category_deleted", metadata: { reassigned_count: affected?.length ?? 0 }, ip_hash: context.ipHash });
-    return NextResponse.json({ ok: true, reassignedCount: affected?.length ?? 0 }, { headers });
+    await admin.from("audit_logs").insert({ owner_id: context.userId, action: "vault_category_deleted", metadata: { reassigned_count: affectedIds.length }, ip_hash: context.ipHash });
+    return NextResponse.json({ ok: true, reassignedCount: affectedIds.length }, { headers });
   } catch { return fail("無法刪除保管庫分類。", 503); }
 }

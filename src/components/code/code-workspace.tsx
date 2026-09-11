@@ -21,7 +21,8 @@ import {
   type CoverSelection,
   uploadCover,
 } from "@/components/content/cover-image-field";
-import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
+import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
@@ -86,7 +87,8 @@ export function CodeWorkspace({
   const [deleting, setDeleting] = useState<CodeSnippet | null>(null);
   const [cover, setCover] = useState<CoverSelection>(null);
   const [view, setView] = useState<CollectionView>("all");
-  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [category, setCategory] = useState<CollectionCategory>([]);
+  const [folderIds, setFolderIds] = useState<string[]>([]);
   const [bulkConfirm, setBulkConfirm] = useState<
     "trash" | "restore" | "permanent" | null
   >(null);
@@ -109,28 +111,28 @@ export function CodeWorkspace({
       data.snippets.filter((item) => {
         if (view === "trash" ? !item.deletedAt : Boolean(item.deletedAt))
           return false;
-        if (view === "all" && (item.archived || item.folder)) return false;
+        if (view === "all" && !folderIds.length && (item.archived || item.folders.length)) return false;
         if (view === "favorite" && (!item.favorite || item.archived))
           return false;
         if (view === "pinned" && (!item.pinned || item.archived)) return false;
         if (view === "archived" && !item.archived) return false;
         if (
-          view.startsWith("folder:") &&
-          (item.archived || item.folder?.id !== view.slice(7))
+          folderIds.length &&
+          (item.archived || !item.folders.some((folder) => folderIds.includes(folder.id)))
         )
           return false;
-        if (category === "unclassified" && item.category) return false;
+        if (category.includes("unclassified") && item.categories.length) return false;
         if (
-          category !== "all" &&
-          category !== "unclassified" &&
-          item.category?.id !== category
+          category.length &&
+          !category.includes("unclassified") &&
+          !item.categories.some((itemCategory) => category.includes(itemCategory.id))
         )
           return false;
         return `${item.title} ${item.language} ${item.description ?? ""} ${item.sourceCode}`
           .toLowerCase()
           .includes(query.toLowerCase());
       }),
-    [category, data.snippets, query, view],
+    [category, data.snippets, folderIds, query, view],
   );
   async function save(
     event: FormEvent<HTMLFormElement>,
@@ -151,8 +153,8 @@ export function CodeWorkspace({
           description: form.get("description"),
           language: form.get("language"),
           sourceCode: form.get("sourceCode"),
-          categoryId: form.get("categoryId") || null,
-          contentFolderId: form.get("contentFolderId") || null,
+          categoryIds: form.getAll("categoryIds").map(String),
+          folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
@@ -223,10 +225,7 @@ export function CodeWorkspace({
         ? new Set()
         : new Set(list.map((item) => item.id)),
     );
-  async function organizeSelection(
-    folderId: string | null,
-    categoryId: string | null,
-  ) {
+  async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenItems.length) return;
     setPending(true);
     setError(null);
@@ -237,8 +236,9 @@ export function CodeWorkspace({
         body: JSON.stringify({
           ids: chosenItems.map((item) => item.id),
           action: "organize",
-          contentFolderId: folderId,
-          categoryId,
+          folderIds: change.folderIds,
+          categoryIds: change.categoryIds,
+          relationMode: change.mode,
         }),
       });
       if (!response.ok)
@@ -313,17 +313,6 @@ export function CodeWorkspace({
             required
           />
         </label>
-        <label>
-          類別
-          <select defaultValue={snippet?.category?.id ?? ""} name="categoryId">
-            <option value="">未分類</option>
-            {data.categories.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <details className="collection-settings">
         <summary>
@@ -355,32 +344,7 @@ export function CodeWorkspace({
             封存
           </label>
           <div className="collection-settings-divider" />
-          <span>資料夾（選擇一個）</span>
-          <label>
-            <input
-              defaultChecked={!snippet?.folder}
-              name="contentFolderId"
-              type="radio"
-              value=""
-            />{" "}
-            不放入資料夾
-          </label>
-          {data.folders
-            .filter(
-              (folder) =>
-                folder.is_visible || folder.id === snippet?.folder?.id,
-            )
-            .map((folder) => (
-              <label key={folder.id}>
-                <input
-                  defaultChecked={folder.id === snippet?.folder?.id}
-                  name="contentFolderId"
-                  type="radio"
-                  value={folder.id}
-                />{" "}
-                {folder.name}
-              </label>
-            ))}
+          <TaxonomyMultiSelect categories={data.categories} defaultCategoryIds={snippet?.categories.map((item) => item.id) ?? []} defaultFolderIds={snippet?.folders.map((item) => item.id) ?? []} folders={data.folders} />
         </div>
       </details>
       <SourceEditor
@@ -436,9 +400,11 @@ export function CodeWorkspace({
       <CollectionNavigation
         categories={data.categories}
         category={category}
+        folderIds={folderIds}
         folders={data.folders}
         items={data.snippets}
         setCategory={setCategory}
+        setFolderIds={setFolderIds}
         setView={setView}
         storageKey="personal-vault:code-system-folders:v1"
         view={view}
@@ -547,8 +513,8 @@ export function CodeWorkspace({
               <div>
                 <div className={mobileStyles.mobileMetaRow}>{item.pinned && <span>置頂</span>}<time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</time></div>
                 <p className="bookmark-meta">
-                  {item.category?.name ?? "未分類"}
-                  {item.folder && ` · ${item.folder.name}`}
+                  {item.categories.map((category) => category.name).join("、") || "未分類"}
+                  {item.folders.length > 0 && ` · ${item.folders.map((folder) => folder.name).join("、")}`}
                 </p>
                 <h3>{item.title}</h3>
                 <p>{item.description || item.sourceCode.slice(0, 90)}</p>

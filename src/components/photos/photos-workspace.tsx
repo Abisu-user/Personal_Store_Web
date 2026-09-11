@@ -10,7 +10,8 @@ import {
   CollectionNavigation,
   CollectionView,
 } from "@/components/content/collection-navigation";
-import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
+import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
@@ -32,9 +33,11 @@ async function sha256(file: File) {
 }
 
 function CollectionSettings({
+  categories,
   folders,
   photo,
 }: {
+  categories: PhotosWorkspaceData["categories"];
   folders: PhotosWorkspaceData["folders"];
   photo?: StoredPhoto;
 }) {
@@ -65,32 +68,7 @@ function CollectionSettings({
           封存
         </label>
         <div className="collection-settings-divider" />
-        <span>資料夾（選擇一個）</span>
-        <label>
-          <input
-            defaultChecked={!photo?.folder}
-            name="contentFolderId"
-            type="radio"
-            value=""
-          />{" "}
-          不放入資料夾
-        </label>
-        {folders
-          .filter(
-            (folder) => folder.is_visible || folder.id === photo?.folder?.id,
-          )
-          .map((folder) => (
-            <label key={folder.id}>
-              <input
-                defaultChecked={folder.id === photo?.folder?.id}
-                name="contentFolderId"
-                type="radio"
-                value={folder.id}
-              />{" "}
-              {folder.name}
-              {folder.is_visible ? "" : "（已隱藏）"}
-            </label>
-          ))}
+        <TaxonomyMultiSelect categories={categories} defaultCategoryIds={photo?.categories.map((item) => item.id) ?? []} defaultFolderIds={photo?.folders.map((item) => item.id) ?? []} folders={folders} />
       </div>
     </details>
   );
@@ -110,7 +88,8 @@ export function PhotosWorkspace({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<CollectionView>("all");
-  const [category, setCategory] = useState<CollectionCategory>("all");
+  const [category, setCategory] = useState<CollectionCategory>([]);
+  const [folderIds, setFolderIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<StoredPhoto | null>(null);
   const [editing, setEditing] = useState<StoredPhoto | null>(null);
   const [deleting, setDeleting] = useState<StoredPhoto | null>(null);
@@ -143,29 +122,29 @@ export function PhotosWorkspace({
       data.photos.filter((photo) => {
         if (view === "trash" ? !photo.deletedAt : Boolean(photo.deletedAt))
           return false;
-        if (view === "all" && (photo.archived || photo.folder)) return false;
+        if (view === "all" && !folderIds.length && (photo.archived || photo.folders.length)) return false;
         if (view === "favorite" && (!photo.favorite || photo.archived))
           return false;
         if (view === "pinned" && (!photo.pinned || photo.archived))
           return false;
         if (view === "archived" && !photo.archived) return false;
         if (
-          view.startsWith("folder:") &&
-          (photo.archived || photo.folder?.id !== view.slice(7))
+          folderIds.length &&
+          (photo.archived || !photo.folders.some((folder) => folderIds.includes(folder.id)))
         )
           return false;
-        if (category === "unclassified" && photo.category) return false;
+        if (category.includes("unclassified") && photo.categories.length) return false;
         if (
-          category !== "all" &&
-          category !== "unclassified" &&
-          photo.category?.id !== category
+          category.length &&
+          !category.includes("unclassified") &&
+          !photo.categories.some((itemCategory) => category.includes(itemCategory.id))
         )
           return false;
         return `${photo.title} ${photo.description ?? ""} ${photo.originalFilename}`
           .toLowerCase()
           .includes(query.toLowerCase());
       }),
-    [category, data.photos, query, view],
+    [category, data.photos, folderIds, query, view],
   );
   function pickPreview(file: File | null) {
     if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
@@ -213,8 +192,8 @@ export function PhotosWorkspace({
           ticket: ticket.ticket,
           title: String(form.get("title") || file.name),
           description: String(form.get("description") || ""),
-          categoryId: String(form.get("categoryId") || "") || null,
-          contentFolderId: String(form.get("contentFolderId") || "") || null,
+          categoryIds: form.getAll("categoryIds").map(String),
+          folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
@@ -251,8 +230,8 @@ export function PhotosWorkspace({
           id: editing.id,
           title: form.get("title"),
           description: form.get("description"),
-          categoryId: form.get("categoryId") || null,
-          contentFolderId: form.get("contentFolderId") || null,
+          categoryIds: form.getAll("categoryIds").map(String),
+          folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
@@ -313,10 +292,7 @@ export function PhotosWorkspace({
         ? new Set()
         : new Set(photos.map((photo) => photo.id)),
     );
-  async function organizeSelection(
-    folderId: string | null,
-    categoryId: string | null,
-  ) {
+  async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenPhotos.length) return;
     setPending(true);
     setError(null);
@@ -327,8 +303,9 @@ export function PhotosWorkspace({
         body: JSON.stringify({
           ids: chosenPhotos.map((photo) => photo.id),
           action: "organize",
-          contentFolderId: folderId,
-          categoryId,
+          folderIds: change.folderIds,
+          categoryIds: change.categoryIds,
+          relationMode: change.mode,
         }),
       });
       if (!response.ok)
@@ -408,17 +385,7 @@ export function PhotosWorkspace({
         placeholder="說明（選填）"
         rows={2}
       />
-      <div className="file-upload-meta">
-        <select aria-label="分類" defaultValue="" name="categoryId">
-          <option value="">未分類</option>
-          {data.categories.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </div>
-      <CollectionSettings folders={data.folders} />
+      <CollectionSettings categories={data.categories} folders={data.folders} />
       <CreateFormActions pending={pending} returnHref="/photos" label="儲存" pendingLabel="上傳中…" />
     </form>
   );
@@ -451,9 +418,11 @@ export function PhotosWorkspace({
       <CollectionNavigation
         categories={data.categories}
         category={category}
+        folderIds={folderIds}
         folders={data.folders}
         items={data.photos}
         setCategory={setCategory}
+        setFolderIds={setFolderIds}
         setView={setView}
         storageKey="personal-vault:photo-system-folders:v1"
         view={view}
@@ -545,8 +514,8 @@ export function PhotosWorkspace({
               <img alt={photo.title} src={photo.imageUrl} />
               <span>
                 <small>
-                  {photo.category?.name ?? "未分類"}
-                  {photo.folder && ` · ${photo.folder.name}`}
+                  {photo.categories.map((category) => category.name).join("、") || "未分類"}
+                  {photo.folders.length > 0 && ` · ${photo.folders.map((folder) => folder.name).join("、")}`}
                 </small>
                 <strong>{photo.title}</strong>
                 {photo.description && <em>{photo.description}</em>}
@@ -639,21 +608,7 @@ export function PhotosWorkspace({
                 rows={3}
               />
             </label>
-            <label>
-              類別
-              <select
-                defaultValue={editing.category?.id ?? ""}
-                name="categoryId"
-              >
-                <option value="">未分類</option>
-                {data.categories.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <CollectionSettings folders={data.folders} photo={editing} />
+            <CollectionSettings categories={data.categories} folders={data.folders} photo={editing} />
             <div className="dialog-actions">
               <button className="button" disabled={pending} type="submit">
                 {pending ? "儲存中…" : "儲存修改"}

@@ -179,7 +179,7 @@ function AnimeFolderNavigation({
   onFoldersChange,
   onTrash,
   scope,
-  selectedId,
+  selectedIds,
   inline = false,
   collectionLayout = false,
   compactOnMobile = false,
@@ -187,11 +187,11 @@ function AnimeFolderNavigation({
   trashSelected = false,
 }: {
   folders: AnimeWorkspaceData["folders"];
-  onChange: (folderId: string | null) => void;
+  onChange: (folderIds: string[]) => void;
   onFoldersChange: (folders: AnimeWorkspaceData["folders"]) => void;
   onTrash?: () => void;
   scope: CategoryScope;
-  selectedId: string | null;
+  selectedIds: string[];
   inline?: boolean;
   /** Use the same labelled left-rail/right-actions layout as 網站收藏. */
   collectionLayout?: boolean;
@@ -237,7 +237,7 @@ function AnimeFolderNavigation({
       onFoldersChange(sortedFolders([...folders, result.folder]));
       // A new folder becomes the current context straight away. This also
       // ensures the one selected chip is the folder, not the prior status.
-      onChange(result.folder.id);
+      onChange([result.folder.id]);
       setName("");
       setAdding(false);
     } catch (cause) {
@@ -287,7 +287,7 @@ function AnimeFolderNavigation({
         }
       }
       for (const id of removedIds) await api("/api/anime/folders", { method: "DELETE", body: JSON.stringify({ id }) });
-      if (selectedId && removedIds.includes(selectedId)) onChange(null);
+      if (removedIds.some((id) => selectedIds.includes(id))) onChange(selectedIds.filter((id) => !removedIds.includes(id)));
       onFoldersChange(draftFolders.map((folder, sortOrder) => ({ ...folder, sortOrder })));
       setManaging(false);
     } catch (cause) {
@@ -326,13 +326,13 @@ function AnimeFolderNavigation({
         </header>
       )}
       <ResponsiveChipOverflow
-        activeId={selectedId}
+        activeIds={selectedIds}
         className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}
         items={visible}
         trailingCount={onTrash ? (collectionLayout ? 1 : 3) : (collectionLayout ? 0 : 2)}
         itemId={(folder) => folder.id}
         itemMeasureKey={(folder) => folder.name}
-        renderItem={(folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => onChange(selectedId === folder.id ? null : folder.id)} type="button">{folder.name}</button>}
+        renderItem={(folder) => <button className={selectedIds.includes(folder.id) ? "active" : ""} key={folder.id} onClick={() => onChange(toggledFolderIds(selectedIds, folder.id))} type="button">{folder.name}</button>}
         renderMore={(hasHiddenActive) => <button aria-label="更多動漫資料夾" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => { setError(null); setMoreOpen(true); }} type="button">更多</button>}
         rowClassName="anime-category-scroll-row"
         trailing={<>{!collectionLayout && <>
@@ -421,7 +421,7 @@ function AnimeFolderNavigation({
           <input aria-label="搜尋動漫資料夾" onChange={(event) => setQuery(event.target.value)} placeholder="搜尋資料夾" value={query} />
           <div className="collection-category-manager-list">
             {onTrash && <button className={trashSelected ? "active" : ""} onClick={() => { onTrash(); setMoreOpen(false); }} type="button">垃圾桶 <span>{trashCount}</span></button>}
-            {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedId === folder.id ? "active" : ""} key={folder.id} onClick={() => { onChange(selectedId === folder.id ? null : folder.id); setMoreOpen(false); }} type="button">{folder.name}</button>)}
+            {visible.filter((folder) => folder.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).map((folder) => <button className={selectedIds.includes(folder.id) ? "active" : ""} key={folder.id} onClick={() => onChange(toggledFolderIds(selectedIds, folder.id))} type="button">{folder.name}</button>)}
             {!folders.length && <p className="manager-empty">尚未建立資料夾。</p>}
           </div>
         </div>
@@ -847,14 +847,10 @@ export function AnimeWorkspace({
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [tab, setTab] = useState<Tab>("library");
   const [filter, setFilter] = useState<Filter>("all");
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
-  const [folderFilter, setFolderFilter] = useState<string | null>(null);
-  const [adultCategoryFilter, setAdultCategoryFilter] = useState<string | null>(
-    null,
-  );
-  const [adultFolderFilter, setAdultFolderFilter] = useState<string | null>(
-    null,
-  );
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
+  const [folderFilters, setFolderFilters] = useState<string[]>([]);
+  const [adultCategoryFilters, setAdultCategoryFilters] = useState<string[]>([]);
+  const [adultFolderFilters, setAdultFolderFilters] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const librarySearch = useRef<HTMLInputElement>(null);
   const [adultQuery, setAdultQuery] = useState("");
@@ -998,8 +994,8 @@ export function AnimeWorkspace({
     // A watch-status view and a folder view are mutually exclusive.  Clear
     // the folder first so the interface never leaves two navigation chips
     // looking active at the same time.
-    setFolderFilter(null);
-    setCategoryFilter(null);
+    setFolderFilters([]);
+    setCategoryFilters([]);
     setLibraryView("library");
     setFilter(value);
   };
@@ -1118,10 +1114,10 @@ export function AnimeWorkspace({
       data.library.filter((anime) => {
         const matchesFilter = filter === "all" || anime.watchStatus === filter;
         const matchesFolder =
-          !folderFilter || anime.folderIds.includes(folderFilter);
+          !folderFilters.length || anime.folderIds.some((folderId) => folderFilters.includes(folderId));
         const matchesCategory =
-          !categoryFilter ||
-          anime.tags.some((category) => category.id === categoryFilter);
+          !categoryFilters.length ||
+          anime.tags.some((category) => categoryFilters.includes(category.id));
         const haystack = [
           anime.title,
           anime.titleChinese,
@@ -1140,7 +1136,7 @@ export function AnimeWorkspace({
           haystack.includes(query.toLocaleLowerCase())
         );
       }),
-    [categoryFilter, data.library, filter, folderFilter, query],
+    [categoryFilters, data.library, filter, folderFilters, query],
   );
   const libraryPageCount = Math.max(
     1,
@@ -1156,13 +1152,13 @@ export function AnimeWorkspace({
   }, [libraryPageCount]);
   useEffect(() => {
     setLibraryPage(1);
-  }, [filter, categoryFilter, folderFilter, query]);
+  }, [filter, categoryFilters, folderFilters, query]);
   const createCategory = async (scope: CategoryScope) => {
     const name = categoryName.trim();
     if (!name) return;
     setPending("category");
     try {
-      const folderId = scope === "adult" ? adultFolderFilter : folderFilter;
+      const folderId = scope === "adult" ? (adultFolderFilters[0] ?? null) : (folderFilters[0] ?? null);
       const answer = await api<{ tag: AnimeTag }>("/api/anime/tags", {
         method: "POST",
         body: JSON.stringify({ name, scope, folderId }),
@@ -1237,10 +1233,10 @@ export function AnimeWorkspace({
     }
   };
   const standardScopedTags = data.tags.filter(
-    (item) => !folderFilter || item.folderId === folderFilter,
+    (item) => !folderFilters.length || item.folderId === null || (item.folderId !== null && folderFilters.includes(item.folderId)),
   );
   const adultScopedTags = (adultData?.tags ?? []).filter(
-    (item) => !adultFolderFilter || item.folderId === adultFolderFilter,
+    (item) => !adultFolderFilters.length || item.folderId === null || (item.folderId !== null && adultFolderFilters.includes(item.folderId)),
   );
   return (
     <section className="anime-workspace">
@@ -1359,16 +1355,16 @@ export function AnimeWorkspace({
                   className={
                     adultView === "library" &&
                     adultLibraryView === "library" &&
-                    !adultFolderFilter &&
-                    !adultCategoryFilter
+                    !adultFolderFilters.length &&
+                    !adultCategoryFilters.length
                       ? "active"
                       : ""
                   }
                   onClick={() => {
                     setAdultView("library");
                     setAdultLibraryView("library");
-                    setAdultFolderFilter(null);
-                    setAdultCategoryFilter(null);
+                    setAdultFolderFilters([]);
+                    setAdultCategoryFilters([]);
                   }}
                   type="button"
                 >
@@ -1379,8 +1375,8 @@ export function AnimeWorkspace({
                   onClick={() => {
                     setAdultView("discover");
                     setAdultLibraryView("library");
-                    setAdultFolderFilter(null);
-                    setAdultCategoryFilter(null);
+                    setAdultFolderFilters([]);
+                    setAdultCategoryFilters([]);
                   }}
                   type="button"
                 >
@@ -1401,11 +1397,10 @@ export function AnimeWorkspace({
             collectionLayout
             folders={adultData.folders}
             inline
-            onChange={(folderId) => {
+            onChange={(folderIds) => {
               setAdultView("library");
               setAdultLibraryView("library");
-              setAdultFolderFilter(folderId);
-              setAdultCategoryFilter(null);
+              setAdultFolderFilters(folderIds);
             }}
             onFoldersChange={(folders) =>
               setAdultData((current) =>
@@ -1414,12 +1409,12 @@ export function AnimeWorkspace({
             }
             onTrash={() => {
               setAdultView("library");
-              setAdultFolderFilter(null);
-              setAdultCategoryFilter(null);
+              setAdultFolderFilters([]);
+              setAdultCategoryFilters([]);
               void openTrash("adult");
             }}
             scope="adult"
-            selectedId={adultFolderFilter}
+            selectedIds={adultFolderFilters}
             trashCount={adultTrashData?.library.length ?? 0}
             trashSelected={adultLibraryView === "trash"}
           />
@@ -1454,14 +1449,14 @@ export function AnimeWorkspace({
                       </div>
                     </header>
                     <ResponsiveChipOverflow
-                      activeId={adultCategoryFilter}
+                      activeIds={adultCategoryFilters}
                       className="anime-category-scroll bookmark-view-tabs collection-category-strip"
                       leadingCount={1}
                       items={adultScopedTags}
                       itemId={(category) => category.id}
                       itemMeasureKey={(category) => `${category.name}|${adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
-                      leading={<button className={!adultCategoryFilter ? "active" : ""} onClick={() => setAdultCategoryFilter(null)} type="button">所有類別</button>}
-                      renderItem={(category) => <button className={adultCategoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setAdultCategoryFilter((current) => current === category.id ? null : category.id)} type="button">{category.name} <small>{adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                      leading={<button className={!adultCategoryFilters.length ? "active" : ""} onClick={() => setAdultCategoryFilters([])} type="button">所有類別</button>}
+                      renderItem={(category) => <button className={adultCategoryFilters.includes(category.id) ? "active" : ""} key={category.id} onClick={() => setAdultCategoryFilters((current) => current.includes(category.id) ? current.filter((id) => id !== category.id) : [...current, category.id])} type="button">{category.name} <small>{adultData.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
                       renderMore={(hasHiddenActive) => <button aria-label="查看更多成人動漫類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
                       rowClassName="anime-category-scroll-row"
                     />
@@ -1473,11 +1468,11 @@ export function AnimeWorkspace({
                     folders={adultData.folders}
                     items={adultData.library.filter(
                       (anime) =>
-                        (!adultFolderFilter ||
-                          anime.folderIds.includes(adultFolderFilter)) &&
-                        (!adultCategoryFilter ||
+                        (!adultFolderFilters.length ||
+                          anime.folderIds.some((folderId) => adultFolderFilters.includes(folderId))) &&
+                        (!adultCategoryFilters.length ||
                           anime.tags.some(
-                            (category) => category.id === adultCategoryFilter,
+                            (category) => adultCategoryFilters.includes(category.id),
                           )) &&
                         `${displayTitle(anime)} ${anime.notes ?? ""} ${anime.tags.map((tag) => tag.name).join(" ")}`
                           .toLocaleLowerCase()
@@ -1591,9 +1586,9 @@ export function AnimeWorkspace({
               />
               <div className="anime-category-manager-list">
                 <button
-                  className={!adultCategoryFilter ? "active" : ""}
+                  className={!adultCategoryFilters.length ? "active" : ""}
                   onClick={() => {
-                    setAdultCategoryFilter(null);
+                    setAdultCategoryFilters([]);
                     setCategoryMoreOpen(false);
                   }}
                   type="button"
@@ -1603,8 +1598,8 @@ export function AnimeWorkspace({
                 {adultData.tags
                   .filter(
                     (item) =>
-                      (!adultFolderFilter ||
-                        item.folderId === adultFolderFilter) &&
+                      (!adultFolderFilters.length ||
+                        item.folderId === null || (item.folderId !== null && adultFolderFilters.includes(item.folderId))) &&
                       item.name
                         .toLocaleLowerCase()
                         .includes(categoryQuery.trim().toLocaleLowerCase()),
@@ -1612,12 +1607,11 @@ export function AnimeWorkspace({
                   .map((item) => (
                     <button
                       className={
-                        adultCategoryFilter === item.id ? "active" : ""
+                        adultCategoryFilters.includes(item.id) ? "active" : ""
                       }
                       key={item.id}
                       onClick={() => {
-                        setAdultCategoryFilter((current) => current === item.id ? null : item.id);
-                        setCategoryMoreOpen(false);
+                        setAdultCategoryFilters((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]);
                       }}
                       type="button"
                     >
@@ -1643,7 +1637,7 @@ export function AnimeWorkspace({
               {visibleFilters.map((value) => (
                 <button
                   className={
-                    `${value !== "all" && value !== "planning" ? "anime-status-filter-extra " : ""}${libraryView === "library" && !folderFilter && filter === value ? "active" : ""}`
+                    `${value !== "all" && value !== "planning" ? "anime-status-filter-extra " : ""}${libraryView === "library" && !folderFilters.length && filter === value ? "active" : ""}`
                   }
                   key={value}
                   onClick={() => selectLibraryStatus(value)}
@@ -1673,23 +1667,22 @@ export function AnimeWorkspace({
             collectionLayout
             folders={data.folders}
             inline
-            onChange={(folderId) => {
+            onChange={(folderIds) => {
               setLibraryView("library");
               setFilter("all");
-              setFolderFilter(folderId);
-              setCategoryFilter(null);
+              setFolderFilters(folderIds);
             }}
             onFoldersChange={(folders) =>
               setData((current) => ({ ...current, folders }))
             }
             onTrash={() => {
               setFilter("all");
-              setFolderFilter(null);
-              setCategoryFilter(null);
+              setFolderFilters([]);
+              setCategoryFilters([]);
               void openTrash("standard");
             }}
             scope="standard"
-            selectedId={folderFilter}
+            selectedIds={folderFilters}
             trashCount={trashData?.library.length ?? 0}
             trashSelected={libraryView === "trash"}
           />
@@ -1718,14 +1711,14 @@ export function AnimeWorkspace({
                   </div>
                 </header>
                 <ResponsiveChipOverflow
-                  activeId={categoryFilter}
+                  activeIds={categoryFilters}
                   className="anime-category-scroll bookmark-view-tabs collection-category-strip"
                   leadingCount={1}
                   items={standardScopedTags}
                   itemId={(category) => category.id}
                   itemMeasureKey={(category) => `${category.name}|${data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
-                  leading={<button className={!categoryFilter ? "active" : ""} onClick={() => setCategoryFilter(null)} type="button">所有類別</button>}
-                  renderItem={(category) => <button className={categoryFilter === category.id ? "active" : ""} key={category.id} onClick={() => setCategoryFilter((current) => current === category.id ? null : category.id)} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
+                  leading={<button className={!categoryFilters.length ? "active" : ""} onClick={() => setCategoryFilters([])} type="button">所有類別</button>}
+                  renderItem={(category) => <button className={categoryFilters.includes(category.id) ? "active" : ""} key={category.id} onClick={() => setCategoryFilters((current) => current.includes(category.id) ? current.filter((id) => id !== category.id) : [...current, category.id])} type="button">{category.name} <small>{data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}</small></button>}
                   renderMore={(hasHiddenActive) => <button aria-label="查看更多類別" className={hasHiddenActive ? "anime-category-utility active" : "anime-category-utility"} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>}
                   rowClassName="anime-category-scroll-row"
                 />
@@ -1861,7 +1854,7 @@ export function AnimeWorkspace({
                   <button
                     className={
                       libraryView === "library" &&
-                      !folderFilter &&
+                      !folderFilters.length &&
                       filter === value
                         ? "active"
                         : ""
@@ -1938,9 +1931,9 @@ export function AnimeWorkspace({
               />
               <div className="anime-category-manager-list">
                 <button
-                  className={!categoryFilter ? "active" : ""}
+                  className={!categoryFilters.length ? "active" : ""}
                   onClick={() => {
-                    setCategoryFilter(null);
+                    setCategoryFilters([]);
                     setCategoryMoreOpen(false);
                   }}
                   type="button"
@@ -1950,18 +1943,17 @@ export function AnimeWorkspace({
                 {data.tags
                   .filter(
                     (item) =>
-                      (!folderFilter || item.folderId === folderFilter) &&
+                      (!folderFilters.length || item.folderId === null || (item.folderId !== null && folderFilters.includes(item.folderId))) &&
                       item.name
                         .toLocaleLowerCase()
                         .includes(categoryQuery.trim().toLocaleLowerCase()),
                   )
                   .map((item) => (
                     <button
-                      className={categoryFilter === item.id ? "active" : ""}
+                      className={categoryFilters.includes(item.id) ? "active" : ""}
                       key={item.id}
                       onClick={() => {
-                        setCategoryFilter((current) => current === item.id ? null : item.id);
-                        setCategoryMoreOpen(false);
+                        setCategoryFilters((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]);
                       }}
                       type="button"
                     >
@@ -1994,7 +1986,7 @@ export function AnimeWorkspace({
         <AnimeEditor
           adult={tab === "adult"}
           categories={tab === "adult" ? (adultData?.tags ?? []) : data.tags}
-          defaultFolderId={tab === "adult" ? adultFolderFilter : folderFilter}
+          defaultFolderId={tab === "adult" ? (adultFolderFilters[0] ?? null) : (folderFilters[0] ?? null)}
           folders={tab === "adult" ? (adultData?.folders ?? []) : data.folders}
           onClose={() => setAdding(false)}
           onSaved={async () => {
@@ -2015,7 +2007,7 @@ export function AnimeWorkspace({
       {prefill && (
         <AnimeEditor
           categories={data.tags}
-          defaultFolderId={folderFilter}
+          defaultFolderId={folderFilters[0] ?? null}
           folders={data.folders}
           prefill={prefill}
           onClose={() => setPrefill(null)}
@@ -2035,7 +2027,7 @@ export function AnimeWorkspace({
         <AnimeEditor
           adult
           categories={adultData?.tags ?? []}
-          defaultFolderId={adultFolderFilter}
+          defaultFolderId={adultFolderFilters[0] ?? null}
           folders={adultData?.folders ?? []}
           prefill={adultPrefill}
           onClose={() => setAdultPrefill(null)}
@@ -2088,15 +2080,15 @@ export function AnimeWorkspace({
         />
       )}
       {categoryManageScope && <AnimeCategoryManager
-        key={`${categoryManageScope}:${categoryManageScope === "adult" ? adultFolderFilter ?? "unorganized" : folderFilter ?? "unorganized"}`}
-        folderId={categoryManageScope === "adult" ? adultFolderFilter : folderFilter}
+        key={`${categoryManageScope}:${categoryManageScope === "adult" ? adultFolderFilters[0] ?? "unorganized" : folderFilters[0] ?? "unorganized"}`}
+        folderId={categoryManageScope === "adult" ? (adultFolderFilters[0] ?? null) : (folderFilters[0] ?? null)}
         onChange={(tags, removedIds) => {
           if (categoryManageScope === "adult") {
             setAdultData((current) => current ? { ...current, tags, library: current.library.map((anime) => ({ ...anime, tags: anime.tags.filter((tag) => !removedIds.includes(tag.id)) })) } : current);
-            if (adultCategoryFilter && removedIds.includes(adultCategoryFilter)) setAdultCategoryFilter(null);
+            setAdultCategoryFilters((current) => current.filter((id) => !removedIds.includes(id)));
           } else {
             setData((current) => ({ ...current, tags, library: current.library.map((anime) => ({ ...anime, tags: anime.tags.filter((tag) => !removedIds.includes(tag.id)) })) }));
-            if (categoryFilter && removedIds.includes(categoryFilter)) setCategoryFilter(null);
+            setCategoryFilters((current) => current.filter((id) => !removedIds.includes(id)));
           }
           setNotice("已儲存類別整理結果。");
         }}

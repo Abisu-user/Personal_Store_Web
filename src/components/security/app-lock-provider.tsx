@@ -101,7 +101,8 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
   const applyPinStatus = useCallback((status: PinStatus) => {
     persistPinStatus(status);
     setPinStatus(status);
-  }, []);
+    if (!status.autoLockEnabled) unlock();
+  }, [unlock]);
 
   const loadPinStatus = useCallback(async () => {
     try {
@@ -144,18 +145,24 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
         else lockTimer.current = window.setTimeout(lock, lockDelayMs[delay]);
         return;
       }
+      // Auto-lock is account scoped. Refresh when this tab becomes visible so
+      // changes made on another device do not remain stale indefinitely.
+      void loadPinStatus();
       if (!pinStatus.autoLockEnabled) return;
       const delay = readDelay();
       if (backgroundAt.current && Date.now() - backgroundAt.current >= lockDelayMs[delay]) lock();
       backgroundAt.current = null;
     };
+    const onFocus = () => void loadPinStatus();
     const onPageHide = () => { if (pinStatus.autoLockEnabled) lock(); };
 
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener(pinStatusEvent, onPinUpdated);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener(pinStatusEvent, onPinUpdated);
       window.clearTimeout(initialStateTimer);
