@@ -14,6 +14,7 @@ import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
+import mobileStyles from "@/components/photos/photos-mobile.module.css";
 
 const maxPhotoBytes = 52_428_800;
 const formatBytes = (value: number) =>
@@ -434,7 +435,7 @@ export function PhotosWorkspace({
       </section>
     );
   return (
-    <section className="library-workspace">
+    <section className={`library-workspace ${mobileStyles.photosWorkspace}`}>
       {pending && <OperationStatus label="正在處理照片…" />}
       {error && (
         <p className="notice error" role="alert">
@@ -513,9 +514,13 @@ export function PhotosWorkspace({
           </>
         )}
       </div>
-      <div className="photo-grid">
+      <div className={mobileStyles.mobileGridHeading}>
+        <strong>{view === "trash" ? "垃圾桶" : query.trim() ? "搜尋結果" : "全部照片"}</strong>
+        <span>{photos.length} 張</span>
+      </div>
+      <div className={`photo-grid ${mobileStyles.photoGrid}`}>
         {photos.map((photo) => (
-          <div className="photo-card-wrap" key={photo.id}>
+          <div className={`photo-card-wrap ${mobileStyles.photoCardWrap}`} key={photo.id}>
             <label className="item-select">
               <input
                 aria-label="選擇照片"

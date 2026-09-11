@@ -1,0 +1,110 @@
+/* Calendar presentation only. Desktop and tablet intentionally keep the existing layout. */
+@media (max-width: 700px) {
+  :global(.app-main) .calendarPage:global(.dashboard) {
+    width: calc(100% - 16px);
+    max-width: none;
+    margin: 8px auto 0;
+    padding: 0 0 16px;
+  }
+
+  :global(.app-main) .calendarPage > :global(.dashboard-card) {
+    padding: 14px 12px;
+    border-radius: 22px;
+  }
+
+  .calendarPage > :global(.dashboard-card) > :global(.eyebrow),
+  .calendarPage > :global(.dashboard-card) > h1 + p { display: none; }
+
+  .calendarPage > :global(.dashboard-card) > h1 {
+    margin: 0 0 14px;
+    font-size: 1.55rem;
+    line-height: 1.2;
+  }
+
+  .calendarWorkspace {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 0;
+  }
+
+  .calendarWorkspace > :global(.notice) { margin: 0; }
+
+  .calendarWorkspace > :global(.calendar-panel),
+  .calendarWorkspace :global(.calendar-day-events) {
+    min-width: 0;
+    padding: 12px;
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    box-shadow: 0 7px 22px rgb(20 42 80 / 7%);
+    backdrop-filter: blur(12px);
+  }
+
+  .calendarWorkspace :global(.calendar-toolbar) { gap: 8px; }
+  .calendarWorkspace :global(.calendar-toolbar .eyebrow) { display: none; }
+  .calendarWorkspace :global(.calendar-toolbar h2) { margin: 0; font-size: 1rem; white-space: nowrap; }
+  .calendarWorkspace :global(.calendar-nav) { gap: 5px; }
+  .calendarWorkspace :global(.calendar-nav .secondary-button) {
+    display: inline-grid;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    padding: 0 8px;
+    border-radius: 12px;
+    font-size: .78rem;
+  }
+
+  .calendarWorkspace :global(.calendar-weekdays) { margin-top: 10px; font-size: .7rem; }
+  .calendarWorkspace :global(.calendar-grid) { margin-top: 4px; border-radius: 12px; }
+  .calendarWorkspace :global(.calendar-day) {
+    min-width: 0;
+    min-height: 46px;
+    padding: 4px;
+    font-size: .75rem;
+  }
+  .calendarWorkspace :global(.calendar-day.today > span) { width: 22px; height: 22px; }
+  .calendarWorkspace :global(.calendar-day > div) { gap: 2px; min-height: 7px; }
+  .calendarWorkspace :global(.calendar-dot) { width: 5px; height: 5px; flex-basis: 5px; }
+  .calendarWorkspace :global(.calendar-day small) { font-size: .55rem; }
+
+  .calendarWorkspace :global(.calendar-side) { display: contents; }
+  .calendarWorkspace :global(.calendar-day-events) { order: 2; }
+  .calendarWorkspace :global(.calendar-day-events .notes-list-header) { align-items: center; gap: 8px; }
+  .calendarWorkspace :global(.calendar-day-events .eyebrow) { margin-bottom: 2px; font-size: .6rem; }
+  .calendarWorkspace :global(.calendar-day-events h2) { margin: 0; font-size: 1rem; }
+  .calendarWorkspace :global(.calendar-day-events .button) {
+    min-width: 86px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 13px;
+    font-size: .78rem;
+  }
+  .calendarWorkspace :global(.calendar-event-list) { gap: 7px; margin-top: 10px; }
+  .calendarWorkspace :global(.calendar-event) {
+    position: relative;
+    min-height: 52px;
+    align-items: center;
+    padding: 8px 10px;
+    border-color: color-mix(in srgb, var(--line) 78%, transparent);
+    border-radius: 13px;
+    background: color-mix(in srgb, var(--surface) 86%, var(--brand-soft));
+  }
+  .calendarWorkspace :global(.calendar-event strong) { font-size: .84rem; }
+  .calendarWorkspace :global(.calendar-event small) { font-size: .7rem; }
+  .calendarWorkspace :global(.calendar-event-list .lead) { margin: 8px 0 2px; font-size: .82rem; }
+
+  :global(html[data-density="compact"]) .calendarPage > :global(.dashboard-card) { padding-block: 10px; }
+  :global(html[data-density="compact"]) .calendarWorkspace :global(.calendar-day) { min-height: 42px; }
+}
+
+@media (max-width: 350px) {
+  .calendarWorkspace > :global(.calendar-panel) { padding-inline: 8px; }
+  .calendarWorkspace :global(.calendar-toolbar) { align-items: flex-start; }
+  .calendarWorkspace :global(.calendar-nav .secondary-button) { min-width: 40px; padding-inline: 5px; }
+}
+
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .calendarWorkspace :global(.calendar-day),
+  .calendarWorkspace :global(.calendar-event) { transition: none; }
+}
