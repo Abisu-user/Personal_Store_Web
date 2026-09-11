@@ -3,12 +3,14 @@
 @media (max-width: 700px) {
   :global(.app-main) :global(.dashboard).dashboardPage { width: 100%; margin: 0; padding: 12px var(--mobile-page-gutter-right) 22px var(--mobile-page-gutter); scrollbar-gutter: auto; }
   :global(.app-main) .dashboardPage > .desktopOnly { display: none; }
-  .mobileDashboard { display: grid; min-width: 0; gap: 16px; padding-bottom: 12px; }
+  .mobileDashboard { display: grid; min-width: 0; gap: 16px; padding-bottom: 6px; }
   :global(html[data-density="compact"]) :global(.app-main) :global(.dashboard).dashboardPage { padding-top: 10px; padding-bottom: 16px; }
   :global(html[data-density="compact"]) .mobileDashboard { gap: 11px; }
   :global(html[data-density="compact"]) .overviewCard { min-height: 78px; }
-  .loadError { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .8rem; }
-  .loadError button { min-width: 44px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--brand); }
+  .loadError { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; min-height: 48px; align-items: center; gap: 8px; padding: 2px 4px 2px 10px; border: 1px solid color-mix(in srgb, var(--brand) 22%, var(--line)); border-radius: 13px; color: var(--muted); background: color-mix(in srgb, var(--surface) 88%, var(--brand-soft)); box-shadow: 0 5px 16px rgb(20 42 80 / 6%); font-size: .76rem; line-height: 1.35; }
+  .loadError::before { content: "i"; display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid color-mix(in srgb, var(--brand) 48%, transparent); border-radius: 50%; color: var(--brand); font-family: ui-sans-serif, system-ui, sans-serif; font-size: .72rem; font-style: normal; font-weight: 850; }
+  .loadError button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 11px; color: var(--brand); background: transparent; font: inherit; font-weight: 850; }
+  .loadError button:active { background: var(--brand-soft); }
   .overviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
   .overviewCard { min-width: 0; min-height: 88px; display: grid; grid-template-columns: 32px minmax(0, 1fr); grid-template-rows: 1fr 1fr; align-items: center; gap: 0 8px; padding: 11px; transition: transform var(--mobile-motion-fast) ease, border-color var(--mobile-motion-fast) ease; }
   .overviewCard:active { transform: scale(.975); }

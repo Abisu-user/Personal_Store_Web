@@ -7,15 +7,10 @@ const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage1-"));
-const baselineFiles = ["src/app/(app)/dashboard/page.tsx", "src/components/layout/create-item-provider.tsx"];
-for (const file of baselineFiles) {
-  const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));
-}
+const readHead = file => execFileSync("git", ["show", "HEAD:" + file], { cwd: root }).toString();
 async function build(baseline) {
   const stub = path.join(__dirname, "mobile-stage1-stubs.tsx");
   const alias = { "@/lib/supabase/client$": stub, "@/lib/security/require-user$": stub, "@/lib/security/require-mfa$": stub, "next/navigation$": stub, "next/link$": stub };
-  if (baseline) for (const file of baselineFiles) alias[file.replace(/^src/, "@").replace(/\.tsx$/, "") + "$"] = path.join(out, file);
   alias["@"] = path.join(root, "src");
   await new Promise((resolve, reject) => webpack({
     mode: "development", devtool: false, entry: path.join(__dirname, "mobile-stage1-fixture.tsx"),
@@ -38,9 +33,12 @@ async function main() {
   const globals = fs.readFileSync(path.join(root, "src/app/globals.css"), "utf8");
   const common = fs.readFileSync(path.join(root, "src/app/mobile-design-system.css"), "utf8");
   const moduleCss = fs.readFileSync(path.join(root, "src/app/(app)/dashboard/dashboard-mobile.module.css"), "utf8").replace(/:global\(([^)]+)\)/g, "$1");
+  const baselineGlobals = readHead("src/app/globals.css");
+  const baselineCommon = readHead("src/app/mobile-design-system.css");
+  const baselineModuleCss = readHead("src/app/(app)/dashboard/dashboard-mobile.module.css").replace(/:global\(([^)]+)\)/g, "$1");
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://localhost");
-    if (url.pathname === "/style.css") { res.setHeader("Content-Type", "text/css"); return res.end(globals + (url.searchParams.has("before") ? "" : "\n" + common + "\n" + moduleCss)); }
+    if (url.pathname === "/style.css") { res.setHeader("Content-Type", "text/css"); return res.end(url.searchParams.has("before") ? baselineGlobals + "\n" + baselineCommon + "\n" + baselineModuleCss : globals + "\n" + common + "\n" + moduleCss); }
     if (url.pathname === "/icon.svg") { res.setHeader("Content-Type", "image/svg+xml"); return res.end(fs.readFileSync(path.join(root, "src/app/icon.svg"))); }
     if (url.pathname.endsWith(".js")) { res.setHeader("Content-Type", "text/javascript"); return res.end(fs.readFileSync(path.join(out, path.basename(url.pathname)))); }
     const before = url.searchParams.has("before");
@@ -61,12 +59,23 @@ async function main() {
       await page.setViewportSize({ width, height: 900 }); const initial = requests;
       await page.goto(base); await page.waitForSelector('.mobileDashboard[aria-busy="false"]');
       assert.equal(requests - initial, 1, "StrictMode single GET at " + width);
+      assert.equal(await page.locator(".loadError").count(), 0, "successful summary reserves no banner space at " + width);
       assert.equal(await page.locator(".overviewCard").count(), 6);
       assert.equal(await page.locator(".desktopOnly").first().isVisible(), false);
       for (const button of await inspect()) {
         assert.ok(button.left >= -0.5 && button.right <= width + 0.5, "overflow " + width + JSON.stringify(button));
         assert.ok(button.width >= 43.5 && button.height >= 43.5, "touch target " + width + JSON.stringify(button));
       }
+      const navMetrics = await page.locator(".mobile-bottom-nav").evaluate(el => {
+        const create = el.querySelector(".mobile-create"), createStyle = getComputedStyle(create), icon = el.querySelector("a .app-icon"), label = el.querySelector("a span");
+        const navRect = el.getBoundingClientRect(), createRect = create.getBoundingClientRect(), iconRect = icon.getBoundingClientRect();
+        return { navHeight: navRect.height, createWidth: createRect.width, createHeight: createRect.height, createOffset: navRect.top - createRect.top, iconWidth: iconRect.width, labelSize: parseFloat(getComputedStyle(label).fontSize), marginTop: parseFloat(createStyle.marginTop), appPaddingBottom: parseFloat(getComputedStyle(document.querySelector(".app-main")).paddingBottom) };
+      });
+      assert.ok(navMetrics.navHeight >= 64 && navMetrics.navHeight <= 70, "compact nav body " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.createWidth >= 58 && navMetrics.createWidth <= 64 && navMetrics.createHeight >= 58 && navMetrics.createHeight <= 64, "compact create " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.createOffset >= 16 && navMetrics.createOffset <= 20 && navMetrics.marginTop >= -23 && navMetrics.marginTop <= -20, "create protrusion " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.iconWidth >= 22 && navMetrics.iconWidth <= 24 && navMetrics.labelSize >= 11 && navMetrics.labelSize <= 12, "icon and label size " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.appPaddingBottom >= navMetrics.navHeight && navMetrics.appPaddingBottom <= navMetrics.navHeight + 8, "content bottom padding tracks nav " + width + JSON.stringify(navMetrics));
       await page.screenshot({ path: path.join(out, "phone-" + width + ".png") });
       await page.evaluate(() => window.setTestNavigation({ itemCount: 7, items: ["bookmarks", "notes", "files", "photos"] }));
       await page.waitForSelector(".has-seven-items");
@@ -91,6 +100,8 @@ async function main() {
     fail = true; await page.reload(); await page.waitForSelector(".loadError");
     assert.equal(await page.locator(".mobileDashboard").getAttribute("aria-busy"), "false");
     assert.equal(await page.locator(".overviewCard strong").first().innerText(), "—");
+    const errorRect = await page.locator(".loadError").boundingBox(); assert.ok(errorRect.height >= 44 && errorRect.height <= 52, "compact retry banner " + JSON.stringify(errorRect));
+    await page.screenshot({ path: path.join(out, "phone-error-banner-390.png") });
     fail = false; await page.getByRole("button", { name: "重試", exact: true }).click();
     await page.waitForSelector('.mobileDashboard[aria-busy="false"]');
     assert.equal(await page.locator(".overviewCard strong").first().innerText(), "28");
