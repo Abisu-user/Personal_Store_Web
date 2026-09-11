@@ -1,0 +1,149 @@
+.mobileAddLabel,
+.mobileMetaRow,
+.mobileCoverIcon { display: none; }
+
+@media (max-width: 700px) {
+  .libraryPage :global(.page-heading > .page-create-button) {
+    width: auto;
+    min-width: 80px;
+    min-height: 44px;
+    flex: 0 0 auto;
+    padding: 0 12px;
+    border-radius: 13px;
+  }
+
+  .mobileAddLabel { display: inline-flex; align-items: center; gap: 6px; }
+  .mobileAddLabel :global(.app-icon) { width: 17px; height: 17px; }
+  .desktopAddLabel { display: none; }
+
+  .libraryWorkspace {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 0;
+  }
+
+  .libraryWorkspace > :global(.library-heading) { display: none; }
+  .libraryWorkspace > :global(.note-search) {
+    order: -1;
+    min-height: 44px;
+    margin: 0;
+    border-radius: 14px;
+    font-size: 16px;
+  }
+
+  .libraryWorkspace > :global(.bulk-toolbar) {
+    min-height: 44px;
+    margin: 0;
+    padding: 0 8px;
+    border: 0;
+    background: transparent;
+    font-size: .75rem;
+  }
+
+  .libraryWorkspace > :global(.content-item-list) {
+    gap: 9px;
+    margin-top: 0;
+  }
+
+  .itemCard {
+    position: relative;
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    min-width: 0;
+    padding: 8px;
+    border-radius: 17px;
+    background: color-mix(in srgb, var(--surface) 90%, var(--brand-soft));
+  }
+
+  .itemCard[data-pinned="true"] {
+    border-color: color-mix(in srgb, var(--brand) 52%, var(--line));
+    background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+  }
+
+  .itemCard > :global(.item-select) {
+    display: grid;
+    width: 44px;
+    min-height: 64px;
+    place-items: center;
+    padding: 0;
+  }
+
+  .itemCard > :global(.content-item-open) {
+    grid-template-columns: 54px minmax(0, 1fr);
+    min-width: 0;
+    min-height: 64px;
+    gap: 9px;
+    padding: 0;
+    align-items: center;
+  }
+
+  .itemCard :global(.content-item-open > img),
+  .itemCard :global(.content-cover-placeholder) {
+    width: 54px;
+    height: 58px;
+    border-radius: 13px;
+  }
+
+  .itemCard :global(.content-cover-placeholder) {
+    align-content: center;
+    gap: 3px;
+    padding: 6px;
+    background: color-mix(in srgb, var(--brand) 12%, var(--surface));
+    font-size: .61rem;
+  }
+
+  .mobileCoverIcon {
+    display: block;
+    width: 23px;
+    height: 23px;
+    margin: 0 auto;
+  }
+
+  .mobileMetaRow {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 2px;
+    color: var(--muted);
+    font-size: .62rem;
+    font-weight: 750;
+  }
+
+  .mobileMetaRow > span {
+    padding: 2px 6px;
+    border-radius: 999px;
+    color: var(--brand);
+    background: color-mix(in srgb, var(--brand) 11%, transparent);
+  }
+
+  .mobileMetaRow > time { margin-left: auto; white-space: nowrap; }
+  .itemCard :global(.bookmark-meta) { margin: 2px 0; font-size: .65rem; }
+  .itemCard :global(.content-item-open h3) { margin: 3px 0; font-size: .88rem; line-height: 1.35; -webkit-line-clamp: 1; }
+  .itemCard :global(.content-item-open p:not(.bookmark-meta)) { font-size: .72rem; line-height: 1.35; -webkit-line-clamp: 1; }
+
+  :global(html[data-bookmark-display="grid"]) .libraryPage .itemCard {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    padding: 7px;
+  }
+
+  :global(html[data-bookmark-display="grid"]) .libraryPage .itemCard > :global(.item-select) {
+    position: absolute;
+    z-index: 2;
+    top: 6px;
+    left: 6px;
+    min-height: 44px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+  }
+
+  :global(html[data-bookmark-display="grid"]) .libraryPage .itemCard > :global(.content-item-open) { grid-column: 1 / -1; }
+  :global(html[data-bookmark-display="grid"]) .libraryPage .itemCard :global(.content-item-open > img),
+  :global(html[data-bookmark-display="grid"]) .libraryPage .itemCard :global(.content-cover-placeholder) { width: 100%; height: 104px; }
+
+  :global(html[data-bookmark-display="text"]) .libraryPage .itemCard > :global(.content-item-open) { grid-template-columns: 1fr; }
+  :global(html[data-density="compact"]) .libraryPage .itemCard { padding-block: 6px; }
+}

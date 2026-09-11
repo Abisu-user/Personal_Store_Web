@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
+import "./mobile-design-system.css";
 import { AppearanceProvider } from "@/components/appearance/appearance-provider";
 import { PwaClient } from "@/components/pwa/pwa-client";
 

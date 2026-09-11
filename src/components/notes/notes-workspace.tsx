@@ -16,7 +16,9 @@ import {
   uploadCover,
 } from "@/components/content/cover-image-field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
 
 function CollectionSettings({
@@ -371,7 +373,7 @@ export function NotesWorkspace({
       </section>
     );
   return (
-    <section className="library-workspace">
+    <section className={`library-workspace ${mobileStyles.libraryWorkspace}`}>
       {pending && <OperationStatus label="正在處理筆記…" />}
       {error && (
         <p className="notice error" role="alert">
@@ -460,7 +462,7 @@ export function NotesWorkspace({
       </div>
       <div className="content-item-list">
         {notes.map((note) => (
-          <article className="content-item-card" key={note.id}>
+          <article className={`content-item-card ${mobileStyles.itemCard}`} data-pinned={note.pinned ? "true" : undefined} key={note.id}>
             <label className="item-select">
               <input
                 aria-label="選擇筆記"
@@ -485,9 +487,10 @@ export function NotesWorkspace({
               {note.coverImageUrl ? (
                 <img alt="" src={note.coverImageUrl} />
               ) : (
-                <span className="content-cover-placeholder">筆記</span>
+                <span className="content-cover-placeholder"><AppIcon className={mobileStyles.mobileCoverIcon} name="note" /><span>筆記</span></span>
               )}
               <div>
+                <div className={mobileStyles.mobileMetaRow}>{note.pinned && <span>置頂</span>}<time dateTime={note.updatedAt}>{new Date(note.updatedAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</time></div>
                 <p className="bookmark-meta">
                   {note.category?.name ?? "未分類"}
                   {note.folder && ` · ${note.folder.name}`}

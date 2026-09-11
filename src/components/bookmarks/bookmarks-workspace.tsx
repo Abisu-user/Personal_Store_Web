@@ -346,6 +346,7 @@ function BookmarkResultCard({
   return (
     <article
       className="bookmark-card"
+      data-pinned={item.pinned ? "true" : undefined}
       onClick={(event) => {
         if (!(event.target as HTMLElement).closest("a, input, button"))
           onOpen();

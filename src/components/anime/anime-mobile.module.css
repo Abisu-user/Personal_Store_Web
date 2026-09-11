@@ -1,0 +1,30 @@
+.episodeProgress { display: none; }
+@media (max-width: 700px) {
+  .animePage :global(.page-heading.anime-page-heading) { display: none; }
+  .animePage :global(.anime-workspace) { margin-top: 0; gap: 8px; }
+  .animePage :global(.anime-mobile-heading) { min-height: 44px; gap: 8px; margin-bottom: 4px; }
+  .animePage :global(.anime-mobile-heading h1) { font-size: 1.55rem; }
+  .headingActions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .animePage :global(.anime-mobile-create-button) { height: 44px; padding-inline: 12px; border-radius: 13px; display: inline-flex; align-items: center; gap: 6px; }
+  .animePage :global(.anime-mobile-create-button .app-icon) { width: 17px; height: 17px; }
+  .animePage :global(.anime-workspace .anime-tabs) { gap: 5px; padding: 0; }
+  .animePage :global(.anime-workspace .anime-tabs button) { flex: 1 1 auto; min-height: 44px; min-width: 44px; padding: 0 8px; border-radius: 13px; font-size: .76rem; }
+  .animePage :global(.anime-workspace > .anime-filter-bar) { gap: 8px; }
+  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-filter-scroll) { gap: 5px; padding: 0; }
+  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-filter-scroll > button) { min-height: 44px; min-width: 44px; padding: 0 10px; border-radius: 999px; font-size: .73rem; }
+  .animePage :global(.anime-grid) { gap: 10px; }
+  .animePage :global(.anime-grid > .anime-card) { border-radius: 18px; box-shadow: var(--shadow-card); }
+  .animePage :global(.anime-card-main) { padding: 7px; gap: 8px; }
+  .animePage :global(.anime-card-main > .anime-cover) { width: 100%; height: auto; aspect-ratio: 2 / 3; border-radius: 12px; }
+  .animePage :global(.anime-card-copy) { padding: 0 3px 4px; }
+  .animePage :global(.anime-card h3) { min-height: 2.7em; margin: 6px 0; font-size: .86rem; }
+  .animePage :global(.anime-card-line) { gap: 4px; }
+  .animePage :global(.anime-status) { padding: 3px 6px; font-size: .63rem; }
+  .animePage :global(.anime-rating-summary) { font-size: .65rem; white-space: nowrap; }
+  .animePage :global(.anime-card-link) { margin-top: 6px; font-size: .63rem; }
+  .episodeProgress { display: grid; gap: 5px; margin-top: 6px; color: var(--muted); font-size: .68rem; }
+  .episodeProgress > span { display: flex; justify-content: space-between; gap: 4px; }
+  .episodeProgress i { display: block; height: 4px; overflow: hidden; border-radius: 9px; background: var(--line); }
+  .episodeProgress b { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+  :global(html[data-density="compact"]) .animePage :global(.anime-grid) { gap: 8px; }
+}

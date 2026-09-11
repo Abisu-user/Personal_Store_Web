@@ -23,7 +23,9 @@ import {
 } from "@/components/content/cover-image-field";
 import { BulkOrganizeDialog } from "@/components/content/bulk-organize-dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 
 function lineNumbers(value: string) {
@@ -418,7 +420,7 @@ export function CodeWorkspace({
       </section>
     );
   return (
-    <section className="library-workspace">
+    <section className={`library-workspace ${mobileStyles.libraryWorkspace}`}>
       {pending && <OperationStatus label="正在處理程式碼…" />}
       {error && (
         <p className="notice error" role="alert">
@@ -513,7 +515,7 @@ export function CodeWorkspace({
       </div>
       <div className="content-item-list">
         {list.map((item) => (
-          <article className="content-item-card" key={item.id}>
+          <article className={`content-item-card ${mobileStyles.itemCard}`} data-language={item.language.toLowerCase()} data-pinned={item.pinned ? "true" : undefined} key={item.id}>
             <label className="item-select">
               <input
                 aria-label="選擇程式碼"
@@ -539,10 +541,11 @@ export function CodeWorkspace({
                 <img alt="" src={item.coverImageUrl} />
               ) : (
                 <span className="content-cover-placeholder">
-                  {item.language}
+                  <AppIcon className={mobileStyles.mobileCoverIcon} name="code" /><span>{item.language}</span>
                 </span>
               )}
               <div>
+                <div className={mobileStyles.mobileMetaRow}>{item.pinned && <span>置頂</span>}<time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })}</time></div>
                 <p className="bookmark-meta">
                   {item.category?.name ?? "未分類"}
                   {item.folder && ` · ${item.folder.name}`}

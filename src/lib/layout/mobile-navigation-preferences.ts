@@ -1,15 +1,15 @@
 export const mobileNavigationDestinations = [
-  { id: "bookmarks", href: "/bookmarks", icon: "◇", label: "網站收藏" },
-  { id: "notes", href: "/notes", icon: "□", label: "筆記" },
-  { id: "code", href: "/code", icon: "⌘", label: "程式碼" },
-  { id: "files", href: "/files", icon: "▣", label: "檔案" },
-  { id: "photos", href: "/photos", icon: "▧", label: "照片" },
-  { id: "vocabulary", href: "/vocabulary", icon: "文", label: "單字" },
-  { id: "anime", href: "/anime", icon: "◉", label: "動漫" },
-  { id: "vault", href: "/vault", icon: "◈", label: "保管庫" },
-  { id: "calendar", href: "/calendar", icon: "◌", label: "日曆" },
-  { id: "organize", href: "/organize", icon: "☷", label: "管理" },
-  { id: "appearance", href: "/appearance", icon: "◐", label: "外觀" },
+  { id: "bookmarks", href: "/bookmarks", icon: "bookmark", label: "網站收藏" },
+  { id: "notes", href: "/notes", icon: "note", label: "筆記" },
+  { id: "code", href: "/code", icon: "code", label: "程式碼" },
+  { id: "files", href: "/files", icon: "file", label: "檔案" },
+  { id: "photos", href: "/photos", icon: "photo", label: "照片" },
+  { id: "vocabulary", href: "/vocabulary", icon: "vocabulary", label: "單字" },
+  { id: "anime", href: "/anime", icon: "anime", label: "動漫" },
+  { id: "vault", href: "/vault", icon: "lock", label: "保管庫" },
+  { id: "calendar", href: "/calendar", icon: "calendar", label: "日曆" },
+  { id: "organize", href: "/organize", icon: "organize", label: "管理" },
+  { id: "appearance", href: "/appearance", icon: "appearance", label: "外觀" },
 ] as const;
 
 export type MobileNavigationDestination = (typeof mobileNavigationDestinations)[number]["id"];

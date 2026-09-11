@@ -1,4 +1,6 @@
 "use client";
+import styles from "./anime-mobile.module.css";
+import { AppIcon } from "@/components/ui/app-icon";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
@@ -732,6 +734,12 @@ function AnimeCollectionList({
                     "未分類"}
                 </p>
                 {!adult && (
+                  <div className={styles.episodeProgress}>
+                    <span><span>已看 {anime.watchedEpisodes} 集</span><span>{anime.episodes && anime.episodes > 0 ? `共 ${anime.episodes} 集` : "集數未定"}</span></span>
+                    {anime.episodes && anime.episodes > 0 ? <i aria-hidden="true"><b style={{ width: `${Math.min(100, Math.max(0, anime.watchedEpisodes / anime.episodes * 100))}%` }} /></i> : null}
+                  </div>
+                )}
+                {!adult && (
                   <div className="anime-card-link">
                     {anime.sourceUrl ? "已設定觀看連結" : "尚未設定觀看連結"}
                   </div>
@@ -848,6 +856,7 @@ export function AnimeWorkspace({
     null,
   );
   const [query, setQuery] = useState("");
+  const librarySearch = useRef<HTMLInputElement>(null);
   const [adultQuery, setAdultQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [selected, setSelected] = useState<AnimeLibraryItem | null>(null);
@@ -1250,15 +1259,18 @@ export function AnimeWorkspace({
       )}
       <div className="anime-mobile-heading">
         <h1>動漫收藏</h1>
+        <div className={styles.headingActions}>
+        {tab === "library" && <button className="mobile-icon-button" aria-label="搜尋自己的動漫" onClick={() => librarySearch.current?.focus()} type="button"><AppIcon name="search" /></button>}
         {tab !== "adult" && (
           <button
             className="button compact page-create-button anime-mobile-create-button"
             onClick={() => setAdding(true)}
             type="button"
           >
-            ＋ 新增動漫
+            <AppIcon name="plus" />新增
           </button>
         )}
+        </div>
       </div>
       <div className="anime-toolbar">
         <div className="anime-tabs bookmark-view-tabs" role="tablist" aria-label="動漫功能">
@@ -1643,6 +1655,7 @@ export function AnimeWorkspace({
             </div>
             <input
               aria-label="搜尋自己的動漫"
+              ref={librarySearch}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜尋名稱、類別或備註"
               value={query}

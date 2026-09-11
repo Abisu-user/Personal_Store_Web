@@ -1,0 +1,25 @@
+.mobileAddLabel { display: none; }
+@media (max-width: 700px) {
+  .bookmarkPage :global(.page-heading > .page-create-button) { width: auto; min-width: 80px; min-height: 44px; padding: 0 12px; border-radius: 13px; flex: 0 0 auto; }
+  .mobileAddLabel { display: inline-flex; align-items: center; gap: 6px; }
+  .mobileAddLabel :global(.app-icon) { width: 17px; height: 17px; }
+  .desktopAddLabel { display: none; }
+  .bookmarkPage :global(.bookmarks-workspace) { display: flex; flex-direction: column; gap: 8px; }
+  .bookmarkPage :global(.bookmark-toolbar) { order: -1; margin: 0; }
+  .bookmarkPage :global(.bulk-toolbar) { padding: 0 8px; border: 0; background: transparent; font-size: .75rem; }
+  .bookmarkPage :global(.bookmark-list) { gap: 9px; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-card) { grid-template-columns: 44px 52px minmax(0, 1fr); gap: 6px; padding: 9px 8px; border-radius: 17px; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-preview) { width: 52px; height: 56px; border-radius: 12px; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-preview > span:last-child:not(.bookmark-preview-fallback)) { display: none; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-card-content) { min-height: 60px; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-card-content p) { margin-block: 3px; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-meta) { font-size: .64rem; line-height: 1.35; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-title) { margin: 4px 0; font-size: .86rem; }
+  .bookmarkPage :global(.bookmark-list-list .bookmark-description) { font-size: .71rem; -webkit-line-clamp: 1; }
+  .bookmarkPage :global(.bookmark-card[data-pinned="true"]) { border-color: color-mix(in srgb, var(--brand) 48%, var(--line)); }
+  .bookmarkPage :global(.bookmark-list-grid .bookmark-card) { border-radius: 17px; }
+  .bookmarkPage :global(.bookmark-list-grid .item-select) { top: 5px; left: 5px; padding: 0; }
+  .bookmarkPage :global(.bookmark-list-text .bookmark-card) { grid-template-columns: 44px minmax(0, 1fr); padding: 9px 8px; gap: 6px; border-radius: 14px; }
+  .bookmarkPage :global(.bookmark-list-text .bookmark-card-content) { min-height: 44px; }
+  :global(html[data-density="compact"]) .bookmarkPage :global(.bookmark-list-list .bookmark-card) { padding-block: 6px; }
+}
