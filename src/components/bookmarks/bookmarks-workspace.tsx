@@ -16,6 +16,7 @@ import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
+import { MobileSectionActions } from "@/components/ui/mobile-section-actions";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
@@ -1642,7 +1643,7 @@ export function BookmarksWorkspace({
       <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>資料夾</strong>
-          <div data-chip-overflow-actions>
+          <div className="collection-navigation-desktop-actions" data-chip-overflow-actions>
             <button
               className="collection-navigation-action"
               onClick={() => openManager("folder")}
@@ -1658,6 +1659,22 @@ export function BookmarksWorkspace({
               ＋ 新增
             </button>
           </div>
+          <MobileSectionActions
+            actions={[
+              {
+                label: "管理資料夾",
+                description: "重新命名、排序或刪除",
+                onSelect: () => openManager("folder"),
+              },
+              {
+                label: "新增資料夾",
+                description: "建立新的整理空間",
+                onSelect: () => setFolderAddOpen(true),
+              },
+            ]}
+            label="資料夾操作"
+            title="資料夾操作"
+          />
         </header>
         <ResponsiveChipOverflow
           activeIds={folderFilters}
@@ -1677,7 +1694,7 @@ export function BookmarksWorkspace({
       <section aria-label="類別" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>類別</strong>
-          <div data-chip-overflow-actions>
+          <div className="collection-navigation-desktop-actions" data-chip-overflow-actions>
             <button
               className="collection-navigation-action"
               onClick={() => openManager("category")}
@@ -1693,6 +1710,22 @@ export function BookmarksWorkspace({
               ＋ 新增
             </button>
           </div>
+          <MobileSectionActions
+            actions={[
+              {
+                label: "管理類別",
+                description: "重新命名、排序或刪除",
+                onSelect: () => openManager("category"),
+              },
+              {
+                label: "新增類別",
+                description: "建立新的分類方式",
+                onSelect: () => setCategoryAddOpen(true),
+              },
+            ]}
+            label="類別操作"
+            title="類別操作"
+          />
         </header>
         <ResponsiveChipOverflow
           activeIds={category.filter((categoryId) => categoryId !== "unclassified")}

@@ -19,7 +19,7 @@
     display: flex;
     min-width: 0;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
     margin-top: 0;
   }
 
@@ -85,7 +85,7 @@
     box-shadow: 0 6px 16px rgb(20 42 80 / 7%);
   }
   .photoCardWrap :global(.photo-card > img) { aspect-ratio: 1 / 1; }
-  .photoCardWrap :global(.photo-card > span) { min-width: 0; gap: 2px; padding: 7px 7px 8px; }
+  .photoCardWrap :global(.photo-card > span) { min-width: 0; gap: 2px; padding: 5px 6px 6px; }
   .photoCardWrap :global(.photo-card small),
   .photoCardWrap :global(.photo-card strong) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .photoCardWrap :global(.photo-card small) { font-size: .58rem; }

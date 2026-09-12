@@ -421,6 +421,7 @@ export function PhotosWorkspace({
         folderIds={folderIds}
         folders={data.folders}
         items={data.photos}
+        mobileAppActions
         setCategory={setCategory}
         setFolderIds={setFolderIds}
         setView={setView}

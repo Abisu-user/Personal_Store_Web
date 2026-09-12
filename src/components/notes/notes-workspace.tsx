@@ -352,6 +352,7 @@ export function NotesWorkspace({
         folderIds={folderIds}
         folders={data.folders}
         items={data.notes}
+        mobileAppActions
         setCategory={setCategory}
         setFolderIds={setFolderIds}
         setView={setView}

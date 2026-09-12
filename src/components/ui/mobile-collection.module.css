@@ -1,16 +1,18 @@
 /* Shared collection presentation only; no tablet/desktop rules. */
 @media (max-width: 700px) {
-  :global(.app-main) .collectionPage:global(.dashboard) { width: calc(100% - 16px); max-width: none; margin: 8px auto 0; padding: 0 0 16px; }
-  :global(.app-main) .collectionPage > :global(.dashboard-card) { padding: 14px 12px; border-radius: 22px; }
-  .collectionPage :global(.page-heading) { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  :global(.app-main) .collectionPage:global(.dashboard) { width: 100%; max-width: none; margin: 0; padding: 0 var(--mobile-page-gutter-right) 16px var(--mobile-page-gutter); }
+  :global(.app-main) .collectionPage > :global(.dashboard-card) { padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+  .collectionPage :global(.page-heading) { display: none; }
+  .collectionPage :global(.mobile-page-header) { margin-bottom: 10px; }
   .collectionPage :global(.page-heading h1) { margin: 0; font-size: 1.55rem; line-height: 1.2; }
   .collectionPage :global(.page-heading p) { display: none; }
   .collectionPage :global(.collection-navigation-section),
   .collectionPage :global(.anime-workspace .anime-folder-navigation),
   .collectionPage :global(.anime-workspace .anime-category-bar.collection-navigation-section) { min-width: 0; margin: 0; padding: 0; gap: 2px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-  .collectionPage :global(.collection-navigation-section > header) { min-height: 44px; gap: 8px; }
+  .collectionPage :global(.collection-navigation-section > header) { min-height: 40px; gap: 8px; }
   .collectionPage :global(.collection-navigation-section > header > strong) { color: var(--muted); font-size: .73rem; }
   .collectionPage :global(.collection-navigation-section > header > div) { gap: 6px; }
+  .collectionPage :global(.collection-navigation-section > header > .collection-navigation-desktop-actions) { display: none; }
   .collectionPage :global(.collection-navigation-section .collection-navigation-action) { min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 11px; font-size: .74rem; }
   .collectionPage :global(.responsive-chip-overflow),
   .collectionPage :global(.anime-workspace .collection-navigation-section .responsive-chip-overflow) { padding: 0; border: 0; }
@@ -31,5 +33,5 @@
   .collectionPage :global(.anime-card-select) { display: grid; place-items: center; min-width: 44px; min-height: 44px; cursor: pointer; }
   .collectionPage :global(.anime-pagination) { flex-wrap: wrap; gap: 6px; }
   .collectionPage :global(.anime-pagination button) { min-height: 44px; min-width: 44px; }
-  :global(html[data-density="compact"]) .collectionPage > :global(.dashboard-card) { padding-block: 10px; }
+  :global(html[data-density="compact"]) .collectionPage > :global(.dashboard-card) { padding-block: 0; }
 }
