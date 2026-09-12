@@ -53,6 +53,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   const [notice, setNotice] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<DuplicateState>(null);
   const [deleteSong, setDeleteSong] = useState<KtvSong | null>(null);
+  const [openSongMenuId, setOpenSongMenuId] = useState<string | null>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<KtvCategory[]>(categories);
   const [newCategory, setNewCategory] = useState("");
@@ -69,6 +70,21 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
     const timer = window.setTimeout(() => setNotice(null), 3200);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-ktv-song-menu]")) return;
+      setOpenSongMenuId(null);
+    };
+    const closeWithEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpenSongMenuId(null); };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeWithEscape);
+    };
+  }, []);
 
   const visibleSongs = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -207,7 +223,10 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
           {visibleSongs.map((song) => <article className={styles.songRow} key={song.id} role="row">
             <button className={styles.songNumber} onClick={() => navigator.clipboard.writeText(song.songNumber).then(() => setNotice("點歌號碼已複製。"))} title="複製點歌號碼" type="button">{song.songNumber}</button>
             <button className={styles.songTitle} onClick={() => openEdit(song)} title={`編輯 ${song.title}`} type="button">{song.title}</button><span title={song.artist}>{song.artist}</span><span className={styles.categoryBadge}>{song.category?.name ?? "未分類"}</span>
-            <details className={styles.songMenu}><summary aria-label={`操作 ${song.title}`}><AppIcon name="more" /></summary><div><button onClick={() => openEdit(song)} type="button">編輯</button><button className={styles.dangerItem} onClick={() => setDeleteSong(song)} type="button">刪除</button></div></details>
+            <details className={styles.songMenu} data-ktv-song-menu onToggle={(event) => {
+              const opened = event.currentTarget.open;
+              setOpenSongMenuId((current) => opened ? song.id : current === song.id ? null : current);
+            }} open={openSongMenuId === song.id}><summary aria-label={`操作 ${song.title}`}><AppIcon name="more" /></summary><div><button onClick={() => { setOpenSongMenuId(null); openEdit(song); }} type="button">編輯</button><button className={styles.dangerItem} onClick={() => { setOpenSongMenuId(null); setDeleteSong(song); }} type="button">刪除</button></div></details>
           </article>)}
           {!visibleSongs.length && <div className={styles.empty}><AppIcon name="music" /><h2>{songs.length ? `找不到符合${query.trim() ? `「${query.trim()}」` : "目前條件"}的歌曲` : "還沒有 KTV 歌曲"}</h2><p>{songs.length ? "請調整搜尋文字或分類。" : "把常唱的 KTV 歌曲與點歌號碼收藏起來，下次就不用再找一次。"}</p>{songs.length && query ? <button className="secondary-button compact" onClick={() => setQuery("")} type="button">清除搜尋</button> : <button className="button compact" onClick={openCreate} type="button">新增第一首歌曲</button>}</div>}
         </div>
