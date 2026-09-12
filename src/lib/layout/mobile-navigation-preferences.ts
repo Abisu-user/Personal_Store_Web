@@ -6,6 +6,7 @@ export const mobileNavigationDestinations = [
   { id: "photos", href: "/photos", icon: "photo", label: "照片" },
   { id: "vocabulary", href: "/vocabulary", icon: "vocabulary", label: "單字" },
   { id: "anime", href: "/anime", icon: "anime", label: "動漫" },
+  { id: "ktv", href: "/ktv", icon: "music", label: "KTV" },
   { id: "vault", href: "/vault", icon: "lock", label: "保管庫" },
   { id: "calendar", href: "/calendar", icon: "calendar", label: "日曆" },
   { id: "organize", href: "/organize", icon: "organize", label: "管理" },

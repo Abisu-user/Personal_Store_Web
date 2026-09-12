@@ -3,7 +3,7 @@ import type { SVGProps } from "react";
 export type AppIconName =
   | "anime" | "appearance" | "bookmark" | "calendar" | "code"
   | "database" | "file" | "home" | "lock" | "logout" | "more"
-  | "note" | "organize" | "photo" | "plus" | "profile" | "search"
+  | "music" | "note" | "organize" | "photo" | "plus" | "profile" | "search"
   | "security" | "settings" | "storage" | "vocabulary";
 
 const paths: Record<AppIconName, React.ReactNode> = {
@@ -15,6 +15,7 @@ const paths: Record<AppIconName, React.ReactNode> = {
   photo: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3.5 2.5-2.5 5 5"/></>,
   vocabulary: <><path d="M4 5h7v14H4zM13 5h7v14h-7z"/><path d="M7.5 8v8M16.5 8v8M5.5 11h4M14.5 12h4"/></>,
   anime: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 9 6 3-6 3Z"/></>,
+  music: <><path d="M9 18V5l10-2v13"/><ellipse cx="6" cy="18" rx="3" ry="2.2"/><ellipse cx="16" cy="16" rx="3" ry="2.2"/></>,
   lock: <><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6M17 2v6M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
   organize: <><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="2" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="11" cy="17" r="2" fill="currentColor" stroke="none"/></>,

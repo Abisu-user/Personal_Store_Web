@@ -1,0 +1,701 @@
+.page {
+  width: 100%;
+}
+
+.pageCard {
+  overflow: visible;
+  background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 100%), transparent);
+  backdrop-filter: blur(12px);
+}
+
+.pageHeader {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pageHeader h1,
+.pageHeader p,
+.editorForm h2 {
+  margin: 0;
+}
+
+.pageHeader h1 {
+  margin: 5px 0 7px;
+}
+
+.pageHeader > div > p:last-child {
+  color: var(--muted);
+}
+
+.workspace,
+.collectionPanel,
+.editorForm,
+.categoryManager {
+  min-width: 0;
+}
+
+.workspaceGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  transition: grid-template-columns 240ms ease;
+}
+
+.toolbar,
+.listToolbar,
+.editorForm header,
+.editorForm footer,
+.newCategoryForm,
+.categoryManager > div,
+.categoryManager > div > div {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar {
+  gap: 10px;
+}
+
+.search {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 46px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+}
+
+.search svg,
+.addButton svg,
+.empty svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}
+
+.addButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.categoryRow {
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.categoryRow :global(.responsive-chip-overflow),
+.categoryRow :global(.responsive-chip-overflow-row) {
+  min-width: 0;
+  width: 100%;
+}
+
+.categoryRow :global(.responsive-chip-overflow-row) {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.categoryRow :global(.responsive-chip-overflow-measure) {
+  position: absolute;
+  left: -100000px;
+  width: max-content;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.categoryRow button,
+.moreMenu summary,
+.listToolbar button,
+.listToolbar select {
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.categoryRow .activeChip,
+.moreMenu summary.activeChip {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: white;
+}
+
+.categoryRow .manageButton {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  color: var(--brand);
+}
+
+.moreMenu,
+.songMenu {
+  position: relative;
+}
+
+.moreMenu summary,
+.songMenu summary {
+  display: grid;
+  place-items: center;
+  list-style: none;
+}
+
+.moreMenu summary::-webkit-details-marker,
+.songMenu summary::-webkit-details-marker {
+  display: none;
+}
+
+.moreMenu > div,
+.songMenu > div {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  min-width: 170px;
+  max-height: min(320px, 55vh);
+  gap: 3px;
+  padding: 7px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.moreMenu > div button,
+.songMenu > div button {
+  width: 100%;
+  min-height: 38px;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.moreMenu > div button:hover,
+.moreMenu > div .activeMenuItem,
+.songMenu > div button:hover {
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.listToolbar {
+  justify-content: space-between;
+  gap: 10px;
+  margin: 18px 0 9px;
+}
+
+.listToolbar p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .86rem;
+  font-weight: 750;
+}
+
+.listToolbar > div {
+  display: flex;
+  gap: 6px;
+}
+
+.listToolbar select {
+  min-width: 128px;
+  appearance: auto;
+}
+
+.listToolbar button {
+  width: 38px;
+  padding: 0;
+}
+
+.songList {
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.tableHead,
+.songRow {
+  display: grid;
+  grid-template-columns: minmax(96px, .7fr) minmax(130px, 1.5fr) minmax(100px, 1fr) minmax(90px, .8fr) 42px;
+  align-items: center;
+  gap: 10px;
+}
+
+.tableHead {
+  min-height: 45px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.songRow {
+  min-height: 66px;
+  padding: 9px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+}
+
+.songRow:last-child {
+  border-bottom: 0;
+}
+
+.songTitle,
+.songRow > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.songTitle {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.songTitle:hover {
+  color: var(--brand);
+}
+
+.songNumber {
+  justify-self: start;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--brand) 48%, var(--line));
+  border-radius: 11px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+
+.categoryBadge {
+  justify-self: start;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 750;
+}
+
+.songMenu summary {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.songMenu summary:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.songMenu svg {
+  width: 21px;
+}
+
+.songMenu .dangerItem,
+.categoryManager .dangerItem {
+  color: var(--danger);
+}
+
+.empty {
+  display: grid;
+  min-height: 260px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  padding: 28px;
+  text-align: center;
+}
+
+.empty svg {
+  width: 34px;
+  height: 34px;
+  color: var(--brand);
+}
+
+.empty h2,
+.empty p {
+  margin: 0;
+}
+
+.empty p {
+  color: var(--muted);
+}
+
+.editorPanel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 18px 50px color-mix(in srgb, var(--ink) 10%, transparent);
+  animation: editorIn 240ms ease both;
+}
+
+.editorPanel.closing {
+  animation: editorOut 240ms ease both;
+}
+
+.editorForm {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+}
+
+.editorForm header {
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--line);
+}
+
+.editorForm header > button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 1.3rem;
+}
+
+.editorForm label,
+.newCategoryForm label {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 7px;
+  color: var(--ink);
+  font-size: .84rem;
+  font-weight: 800;
+}
+
+.editorForm label > span {
+  display: inline;
+  color: var(--danger);
+}
+
+.editorForm label > small {
+  color: var(--danger);
+  font-size: .76rem;
+  font-weight: 650;
+}
+
+.editorForm input,
+.editorForm select,
+.newCategoryForm input,
+.categoryManager input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+
+.editorForm footer {
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 4px;
+}
+
+.editorForm footer button {
+  min-width: 116px;
+}
+
+.newCategoryForm {
+  gap: 9px;
+  margin-bottom: 18px;
+}
+
+.newCategoryForm button {
+  align-self: end;
+}
+
+.categoryManager {
+  display: grid;
+  max-height: min(420px, 48vh);
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.categoryManager > div {
+  gap: 8px;
+}
+
+.categoryManager > div > div {
+  gap: 4px;
+}
+
+.categoryManager button {
+  min-width: 38px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.duplicateDialog {
+  display: grid;
+  gap: 18px;
+}
+
+.duplicateDialog p {
+  margin: 0;
+}
+
+@media (min-width: 1280px) {
+  .workspace.editorOpen .workspaceGrid {
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 36vw, 520px);
+  }
+}
+
+@media (max-width: 1279px) {
+  .mobileEditor .editorForm {
+    padding: 0;
+  }
+
+  .mobileEditor .editorForm > header {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .page {
+    padding-top: 8px;
+  }
+
+  .pageCard {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .pageHeader {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+  }
+
+  .pageHeader h1 {
+    font-size: 1.55rem;
+  }
+
+  .pageHeader > div > p:last-child {
+    font-size: .84rem;
+  }
+
+  .toolbar {
+    align-items: stretch;
+  }
+
+  .search {
+    min-height: 44px;
+    padding: 0 11px;
+  }
+
+  .addButton {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .addButton svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .categoryRow {
+    margin-top: 10px;
+  }
+
+  .categoryRow :global(.responsive-chip-overflow-row) {
+    gap: 6px;
+  }
+
+  .categoryRow button,
+  .moreMenu summary {
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: .78rem;
+  }
+
+  .categoryRow .manageButton {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  .categoryRow .manageButton::after {
+    content: "管理";
+    font-size: .72rem;
+  }
+
+  .listToolbar {
+    margin: 13px 0 8px;
+  }
+
+  .listToolbar select {
+    min-width: 112px;
+  }
+
+  .songList {
+    border-radius: 14px;
+  }
+
+  .tableHead {
+    display: none;
+  }
+
+  .songRow {
+    position: relative;
+    grid-template-columns: 82px minmax(0, 1fr) minmax(54px, auto) 40px;
+    grid-template-areas:
+      "number title category menu"
+      "number artist category menu";
+    min-height: 76px;
+    gap: 2px 10px;
+    padding: 10px;
+  }
+
+  .songNumber {
+    grid-area: number;
+    align-self: center;
+    max-width: 86px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .songTitle {
+    grid-area: title;
+    align-self: end;
+    font-size: .92rem;
+  }
+
+  .songRow > span:not(.categoryBadge) {
+    grid-area: artist;
+    align-self: start;
+    color: var(--muted);
+    font-size: .8rem;
+  }
+
+  .categoryBadge {
+    grid-area: category;
+    align-self: center;
+    max-width: 76px;
+    padding: 3px 6px;
+    font-size: .62rem;
+  }
+
+  .songMenu {
+    grid-area: menu;
+  }
+
+  .songMenu > div {
+    position: fixed;
+    z-index: 70;
+    right: 12px;
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+    top: auto;
+    left: 12px;
+    max-height: 40vh;
+  }
+
+  .editorForm {
+    gap: 13px;
+  }
+
+  .editorForm input,
+  .editorForm select {
+    min-height: 44px;
+  }
+
+  .editorForm footer {
+    position: sticky;
+    bottom: 0;
+    padding: 10px 0 4px;
+    background: var(--surface);
+  }
+
+  .editorForm footer button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .newCategoryForm,
+  .categoryManager > div {
+    align-items: stretch;
+  }
+
+  .categoryManager > div {
+    flex-direction: column;
+  }
+
+  .categoryManager > div > div {
+    justify-content: flex-end;
+  }
+}
+
+@keyframes editorIn {
+  from { opacity: 0; transform: translateX(26px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes editorOut {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(26px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspaceGrid,
+  .editorPanel,
+  .editorPanel.closing {
+    transition: none;
+    animation: none;
+  }
+}

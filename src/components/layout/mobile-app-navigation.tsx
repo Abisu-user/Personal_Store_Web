@@ -15,7 +15,7 @@ import { useOpenCreate, type CreateKind } from "./create-item-provider";
 const moreItems: Array<{ href: string; icon: AppIconName; label: string }> = [
   { href: "/notes", icon: "note", label: "筆記" }, { href: "/code", icon: "code", label: "程式碼" },
   { href: "/photos", icon: "photo", label: "照片" }, { href: "/vocabulary", icon: "vocabulary", label: "單字學習" },
-  { href: "/anime", icon: "anime", label: "動漫收藏" }, { href: "/vault", icon: "lock", label: "保管庫" },
+  { href: "/anime", icon: "anime", label: "動漫收藏" }, { href: "/ktv", icon: "music", label: "KTV 點歌收藏" }, { href: "/vault", icon: "lock", label: "保管庫" },
   { href: "/calendar", icon: "calendar", label: "日曆" }, { href: "/appearance", icon: "appearance", label: "外觀與布局" },
   { href: "/storage-usage", icon: "storage", label: "儲存空間" }, { href: "/security", icon: "security", label: "安全中心" },
   { href: "/security/mfa", icon: "security", label: "雙因素驗證" }, { href: "/profile", icon: "profile", label: "帳號設定" },
@@ -85,7 +85,7 @@ export function MobileAppNavigation() {
   const afterCreate = customItems.slice(beforeCreate.length);
 
   function startCreate() {
-    if (["/anime", "/vault", "/calendar"].includes(pathname)) { window.dispatchEvent(new CustomEvent("personal-vault:new-item")); return; }
+    if (["/anime", "/ktv", "/vault", "/calendar"].includes(pathname)) { window.dispatchEvent(new CustomEvent("personal-vault:new-item")); return; }
     const kind = ({ "/bookmarks": "bookmark", "/notes": "note", "/code": "code", "/files": "file", "/photos": "photo", "/vocabulary": "vocabulary" } as Record<string, CreateKind>)[pathname];
     openCreate(kind);
   }
