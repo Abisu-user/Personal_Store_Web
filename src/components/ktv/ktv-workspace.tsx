@@ -213,7 +213,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
       {inlineDesktop && draft && <aside className={`${styles.editorPanel}${editorClosing ? ` ${styles.closing}` : ""}`}>{editor}</aside>}
     </div>
 
-    {!inlineDesktop && <MobileBottomSheet className={styles.mobileEditor} eyebrow={draft?.id ? "EDIT SONG" : "CREATE SONG"} onClose={closeEditor} open={Boolean(draft)} title={draft?.id ? "編輯歌曲" : "新增歌曲"}>{editor}</MobileBottomSheet>}
+    {!inlineDesktop && <MobileBottomSheet className={`mobile-sheet-dialog ${styles.mobileEditor}`} eyebrow={draft?.id ? "EDIT SONG" : "CREATE SONG"} onClose={closeEditor} open={Boolean(draft)} title={draft?.id ? "編輯歌曲" : "新增歌曲"}>{editor}</MobileBottomSheet>}
 
     <ModalDialog className={styles.categoryDialog} onClose={() => { if (!pending) { setCategoryManagerOpen(false); setError(null); } }} open={categoryManagerOpen} pending={pending} title="管理分類">
       <form className={styles.newCategoryForm} onSubmit={addCategory}><label>新增分類<input maxLength={50} onChange={(event) => setNewCategory(event.target.value)} placeholder="例如：合唱、男歌手" value={newCategory} /></label><button className="button compact" disabled={pending || !newCategory.trim()} type="submit">新增</button></form>

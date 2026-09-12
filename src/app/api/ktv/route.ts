@@ -16,6 +16,17 @@ const createSchema = z.object(songFields);
 const updateSchema = z.object({ id, ...songFields });
 const deleteSchema = z.object({ id });
 const songSelect = "id, song_number, title, artist, created_at, updated_at, ktv_categories:ktv_categories!ktv_songs_category_id_fkey(id, name)";
+const mutationSelect = "id, song_number, title, artist, category_id, created_at, updated_at";
+
+type MutationSongRow = {
+  id: string;
+  song_number: string;
+  title: string;
+  artist: string;
+  category_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
 
 type QueryError = { code?: string | null; message?: string | null; details?: string | null; hint?: string | null };
 function logQueryError(scope: string, error: QueryError | null) {
@@ -33,11 +44,23 @@ function privateJson(data: unknown, status = 200) {
 function jsonError(error: string, status: number, data: Record<string, unknown> = {}) {
   return privateJson({ error, ...data }, status);
 }
-async function categoryBelongsToUser(userId: string, categoryId: string | null | undefined) {
-  if (!categoryId) return true;
-  const { data, error } = await createAdminClient().from("ktv_categories").select("id").eq("id", categoryId).eq("user_id", userId).maybeSingle();
+async function categoryForUser(userId: string, categoryId: string | null | undefined) {
+  if (!categoryId) return null;
+  const { data, error } = await createAdminClient().from("ktv_categories").select("id,name").eq("id", categoryId).eq("user_id", userId).maybeSingle();
   logQueryError("category ownership check", error);
-  return !error && Boolean(data);
+  if (error) throw error;
+  return data;
+}
+function serializeMutationSong(row: MutationSongRow, category: { id: string; name: string } | null) {
+  return {
+    id: row.id,
+    songNumber: row.song_number,
+    title: row.title,
+    artist: row.artist,
+    category: row.category_id ? category : null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
 async function duplicateSong(userId: string, songNumber: string, exceptId?: string) {
   let query = createAdminClient().from("ktv_songs").select(songSelect).eq("user_id", userId).eq("song_number", songNumber);
@@ -65,8 +88,9 @@ export async function POST(request: NextRequest) {
   if (!context) return jsonError("Unauthorized", 401);
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "請檢查歌曲資料。", 400);
-  if (!(await categoryBelongsToUser(context.userId, parsed.data.categoryId))) return jsonError("請選擇自己的分類。", 400);
   try {
+    const category = await categoryForUser(context.userId, parsed.data.categoryId);
+    if (parsed.data.categoryId && !category) return jsonError("請選擇自己的分類。", 400);
     const duplicate = await duplicateSong(context.userId, parsed.data.songNumber);
     if (duplicate) return jsonError("這個點歌號碼已存在。", 409, { duplicate });
     const { data, error } = await createAdminClient().from("ktv_songs").insert({
@@ -75,7 +99,7 @@ export async function POST(request: NextRequest) {
       title: parsed.data.title,
       artist: parsed.data.artist,
       category_id: parsed.data.categoryId ?? null,
-    }).select(songSelect).single();
+    }).select(mutationSelect).single();
     logQueryError("song insert", error);
     if (error) {
       if (error.code === "23505") {
@@ -84,7 +108,7 @@ export async function POST(request: NextRequest) {
       }
       throw error;
     }
-    return privateJson({ song: serializeKtvSong(data) }, 201);
+    return privateJson({ song: serializeMutationSong(data as MutationSongRow, category) }, 201);
   } catch {
     return jsonError("無法新增歌曲，請稍後再試。", 503);
   }
@@ -95,8 +119,9 @@ export async function PATCH(request: NextRequest) {
   if (!context) return jsonError("Unauthorized", 401);
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "請檢查歌曲資料。", 400);
-  if (!(await categoryBelongsToUser(context.userId, parsed.data.categoryId))) return jsonError("請選擇自己的分類。", 400);
   try {
+    const category = await categoryForUser(context.userId, parsed.data.categoryId);
+    if (parsed.data.categoryId && !category) return jsonError("請選擇自己的分類。", 400);
     const duplicate = await duplicateSong(context.userId, parsed.data.songNumber, parsed.data.id);
     if (duplicate) return jsonError("這個點歌號碼已存在。", 409, { duplicate });
     const { data, error } = await createAdminClient().from("ktv_songs").update({
@@ -104,7 +129,7 @@ export async function PATCH(request: NextRequest) {
       title: parsed.data.title,
       artist: parsed.data.artist,
       category_id: parsed.data.categoryId ?? null,
-    }).eq("id", parsed.data.id).eq("user_id", context.userId).select(songSelect).maybeSingle();
+    }).eq("id", parsed.data.id).eq("user_id", context.userId).select(mutationSelect).maybeSingle();
     logQueryError("song update", error);
     if (error) {
       if (error.code === "23505") {
@@ -114,7 +139,7 @@ export async function PATCH(request: NextRequest) {
       throw error;
     }
     if (!data) return jsonError("找不到這首歌曲。", 404);
-    return privateJson({ song: serializeKtvSong(data) });
+    return privateJson({ song: serializeMutationSong(data as MutationSongRow, category) });
   } catch {
     return jsonError("無法儲存歌曲，請稍後再試。", 503);
   }
