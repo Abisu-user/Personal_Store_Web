@@ -54,6 +54,10 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   const [duplicate, setDuplicate] = useState<DuplicateState>(null);
   const [deleteSong, setDeleteSong] = useState<KtvSong | null>(null);
   const [openSongMenuId, setOpenSongMenuId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(() => new Set());
+  const [batchCategoryOpen, setBatchCategoryOpen] = useState(false);
+  const [batchCategoryId, setBatchCategoryId] = useState<string | null>(null);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<KtvCategory[]>(categories);
   const [newCategory, setNewCategory] = useState("");
@@ -148,6 +152,49 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
     finally { setPending(false); }
   }
 
+  function toggleSongSelection(songId: string) {
+    setSelectedSongIds((current) => {
+      const next = new Set(current);
+      if (next.has(songId)) next.delete(songId);
+      else next.add(songId);
+      return next;
+    });
+  }
+
+  function closeSelectionMode() {
+    setSelectionMode(false);
+    setSelectedSongIds(new Set());
+    setBatchCategoryOpen(false);
+  }
+
+  function toggleVisibleSongs() {
+    const visibleIds = visibleSongs.map((song) => song.id);
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedSongIds.has(id));
+    setSelectedSongIds((current) => {
+      const next = new Set(current);
+      visibleIds.forEach((id) => allVisibleSelected ? next.delete(id) : next.add(id));
+      return next;
+    });
+  }
+
+  async function categorizeSelectedSongs() {
+    const ids = [...selectedSongIds];
+    if (!ids.length) return;
+    setPending(true); setError(null);
+    try {
+      const { affectedIds, category } = await request<{ affectedIds: string[]; category: Pick<KtvCategory, "id" | "name"> | null }>("/api/ktv", {
+        method: "PATCH",
+        body: JSON.stringify({ action: "categorize", ids, categoryId: batchCategoryId }),
+      });
+      const affected = new Set(affectedIds);
+      setSongs((current) => current.map((song) => affected.has(song.id) ? { ...song, category } : song));
+      setNotice(`已將 ${affected.size} 首歌曲分類到「${category?.name ?? "未分類"}」。`);
+      closeSelectionMode();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "無法批量分類歌曲。");
+    } finally { setPending(false); }
+  }
+
   async function addCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newCategory.trim();
@@ -216,17 +263,18 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
         </div>
         <div className={styles.listToolbar}>
           <p>{visibleSongs.length} 首歌曲</p>
-          <div><select aria-label="排序方式" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}><option value="songNumber">點歌號碼</option><option value="title">歌曲名稱</option><option value="artist">歌手</option></select><button aria-label={ascending ? "目前升冪，切換降冪" : "目前降冪，切換升冪"} onClick={() => setAscending((current) => !current)} type="button">{ascending ? "↑" : "↓"}</button></div>
+          <div><button className={styles.selectionToggle} data-active={selectionMode} onClick={() => selectionMode ? closeSelectionMode() : setSelectionMode(true)} type="button">{selectionMode ? "結束選取" : "批量分類"}</button><select aria-label="排序方式" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}><option value="songNumber">點歌號碼</option><option value="title">歌曲名稱</option><option value="artist">歌手</option></select><button aria-label={ascending ? "目前升冪，切換降冪" : "目前降冪，切換升冪"} onClick={() => setAscending((current) => !current)} type="button">{ascending ? "↑" : "↓"}</button></div>
         </div>
+        {selectionMode && <section className={styles.batchToolbar}><label><input checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedSongIds.has(song.id))} onChange={toggleVisibleSongs} type="checkbox" />全選目前清單</label><strong>已選 {selectedSongIds.size} 首</strong><button className="button compact" disabled={!selectedSongIds.size || pending} onClick={() => { setBatchCategoryId(null); setBatchCategoryOpen(true); setError(null); }} type="button">分類到…</button></section>}
         <div className={styles.songList} role="table" aria-label="KTV 歌曲收藏">
-          <div className={styles.tableHead} role="row"><span>點歌號碼</span><span>歌曲名稱</span><span>歌手</span><span>分類</span><span>操作</span></div>
-          {visibleSongs.map((song) => <article className={styles.songRow} key={song.id} role="row">
+          <div className={styles.tableHead} role="row"><span>點歌號碼</span><span>歌曲名稱</span><span>歌手</span><span>分類</span><span>{selectionMode ? "選取" : "操作"}</span></div>
+          {visibleSongs.map((song) => <article className={`${styles.songRow}${selectedSongIds.has(song.id) ? ` ${styles.selectedSong}` : ""}`} key={song.id} role="row">
             <button className={styles.songNumber} onClick={() => navigator.clipboard.writeText(song.songNumber).then(() => setNotice("點歌號碼已複製。"))} title="複製點歌號碼" type="button">{song.songNumber}</button>
             <button className={styles.songTitle} onClick={() => openEdit(song)} title={`編輯 ${song.title}`} type="button">{song.title}</button><span title={song.artist}>{song.artist}</span><span className={styles.categoryBadge}>{song.category?.name ?? "未分類"}</span>
-            <details className={styles.songMenu} data-ktv-song-menu onToggle={(event) => {
+            {selectionMode ? <label className={styles.selectionCheck}><input aria-label={`選取 ${song.title}`} checked={selectedSongIds.has(song.id)} onChange={() => toggleSongSelection(song.id)} type="checkbox" /><span className="sr-only">選取 {song.title}</span></label> : <details className={styles.songMenu} data-ktv-song-menu onToggle={(event) => {
               const opened = event.currentTarget.open;
               setOpenSongMenuId((current) => opened ? song.id : current === song.id ? null : current);
-            }} open={openSongMenuId === song.id}><summary aria-label={`操作 ${song.title}`}><AppIcon name="more" /></summary><div><button onClick={() => { setOpenSongMenuId(null); openEdit(song); }} type="button">編輯</button><button className={styles.dangerItem} onClick={() => { setOpenSongMenuId(null); setDeleteSong(song); }} type="button">刪除</button></div></details>
+            }} open={openSongMenuId === song.id}><summary aria-label={`操作 ${song.title}`}><AppIcon name="more" /></summary><div><button onClick={() => { setOpenSongMenuId(null); openEdit(song); }} type="button">編輯</button><button className={styles.dangerItem} onClick={() => { setOpenSongMenuId(null); setDeleteSong(song); }} type="button">刪除</button></div></details>}
           </article>)}
           {!visibleSongs.length && <div className={styles.empty}><AppIcon name="music" /><h2>{songs.length ? `找不到符合${query.trim() ? `「${query.trim()}」` : "目前條件"}的歌曲` : "還沒有 KTV 歌曲"}</h2><p>{songs.length ? "請調整搜尋文字或分類。" : "把常唱的 KTV 歌曲與點歌號碼收藏起來，下次就不用再找一次。"}</p>{songs.length && query ? <button className="secondary-button compact" onClick={() => setQuery("")} type="button">清除搜尋</button> : <button className="button compact" onClick={openCreate} type="button">新增第一首歌曲</button>}</div>}
         </div>
@@ -241,6 +289,13 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
       <div className={styles.categoryManager}>{categoryDrafts.map((category, index) => <div key={category.id}><input aria-label={`分類 ${index + 1}`} maxLength={50} onChange={(event) => setCategoryDrafts((current) => current.map((item) => item.id === category.id ? { ...item, name: event.target.value } : item))} value={category.name} /><div><button aria-label="往上移" disabled={index === 0 || pending} onClick={() => moveCategory(index, -1)} type="button">↑</button><button aria-label="往下移" disabled={index === categoryDrafts.length - 1 || pending} onClick={() => moveCategory(index, 1)} type="button">↓</button><button className={styles.dangerItem} disabled={pending} onClick={() => setDeleteCategory(category)} type="button">刪除</button></div></div>)}{!categoryDrafts.length && <p>目前沒有自訂分類。</p>}</div>
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setCategoryManagerOpen(false)} type="button">取消</button><button className="button" disabled={pending || categoryDrafts.some((item) => !item.name.trim())} onClick={() => void saveCategories()} type="button">{pending ? "儲存中…" : "儲存分類"}</button></div>
+    </ModalDialog>
+
+    <ModalDialog className={styles.batchCategoryDialog} onClose={() => { if (!pending) { setBatchCategoryOpen(false); setError(null); } }} open={batchCategoryOpen} pending={pending} title={`分類 ${selectedSongIds.size} 首歌曲`}>
+      <p className={styles.batchHint}>選取一個目的分類；所有已勾選歌曲會一次移動，不會逐首發送請求。</p>
+      <div className={styles.batchCategoryChoices}><button aria-pressed={batchCategoryId === null} className={batchCategoryId === null ? styles.activeChip : ""} onClick={() => setBatchCategoryId(null)} type="button">未分類</button>{categories.map((category) => <button aria-pressed={batchCategoryId === category.id} className={batchCategoryId === category.id ? styles.activeChip : ""} key={category.id} onClick={() => setBatchCategoryId(category.id)} type="button">{category.name}</button>)}</div>
+      {error && <p className="notice error" role="alert">{error}</p>}
+      <div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setBatchCategoryOpen(false)} type="button">取消</button><button className="button" disabled={pending || !selectedSongIds.size} onClick={() => void categorizeSelectedSongs()} type="button">{pending ? "套用中…" : "套用分類"}</button></div>
     </ModalDialog>
 
     <ModalDialog onClose={() => setDuplicate(null)} open={Boolean(duplicate)} title="點歌號碼已存在"><div className={styles.duplicateDialog}><p>「{duplicate?.song.songNumber}」已收藏為「{duplicate?.song.title}」。不會覆蓋原資料。</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setDuplicate(null)} type="button">保留目前輸入</button><button className="button" onClick={() => { if (duplicate) openEdit(duplicate.song); setDuplicate(null); }} type="button">編輯原歌曲</button></div></div></ModalDialog>

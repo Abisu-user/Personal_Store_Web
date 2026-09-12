@@ -14,6 +14,11 @@ const songFields = {
 };
 const createSchema = z.object(songFields);
 const updateSchema = z.object({ id, ...songFields });
+const batchCategorySchema = z.object({
+  action: z.literal("categorize"),
+  ids: z.array(id).min(1).max(200),
+  categoryId: id.nullable(),
+});
 const deleteSchema = z.object({ id });
 const songSelect = "id, song_number, title, artist, created_at, updated_at, ktv_categories:ktv_categories!ktv_songs_category_id_fkey(id, name)";
 const mutationSelect = "id, song_number, title, artist, category_id, created_at, updated_at";
@@ -117,7 +122,27 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return jsonError("Unauthorized", 401);
-  const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+  const input = await request.json().catch(() => null);
+  const batch = batchCategorySchema.safeParse(input);
+  if (batch.success) {
+    try {
+      const category = await categoryForUser(context.userId, batch.data.categoryId);
+      if (batch.data.categoryId && !category) return jsonError("請選擇自己的分類。", 400);
+      const songIds = [...new Set(batch.data.ids)];
+      const { data, error } = await createAdminClient()
+        .from("ktv_songs")
+        .update({ category_id: batch.data.categoryId })
+        .eq("user_id", context.userId)
+        .in("id", songIds)
+        .select("id");
+      logQueryError("batch song categorize", error);
+      if (error) throw error;
+      return privateJson({ affectedIds: (data ?? []).map((song) => song.id), category });
+    } catch {
+      return jsonError("無法批量分類歌曲，請稍後再試。", 503);
+    }
+  }
+  const parsed = updateSchema.safeParse(input);
   if (!parsed.success) return jsonError(parsed.error.issues[0]?.message ?? "請檢查歌曲資料。", 400);
   try {
     const category = await categoryForUser(context.userId, parsed.data.categoryId);

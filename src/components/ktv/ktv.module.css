@@ -237,6 +237,52 @@
   padding: 0;
 }
 
+.listToolbar .selectionToggle {
+  width: auto;
+  padding-inline: 12px;
+  color: var(--brand);
+}
+
+.batchToolbar {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 9px;
+  padding: 7px 9px 7px 12px;
+  border: 1px solid color-mix(in srgb, var(--brand) 32%, var(--line));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.batchToolbar label,
+.selectionCheck {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  font-size: .82rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.batchToolbar input,
+.selectionCheck input {
+  width: 19px;
+  height: 19px;
+  accent-color: var(--brand);
+}
+
+.batchToolbar strong {
+  color: var(--brand);
+  font-size: .82rem;
+}
+
+.batchToolbar > button {
+  margin-left: auto;
+}
+
 .songList {
   overflow: visible;
   border: 1px solid var(--line);
@@ -269,6 +315,11 @@
 
 .songRow:last-child {
   border-bottom: 0;
+}
+
+.songRow.selectedSong {
+  background: color-mix(in srgb, var(--brand) 9%, transparent);
+  box-shadow: inset 3px 0 var(--brand);
 }
 
 .songTitle,
@@ -336,6 +387,44 @@
 
 .songMenu svg {
   width: 21px;
+}
+
+.selectionCheck {
+  width: 40px;
+  justify-content: center;
+}
+
+.batchHint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+.batchCategoryChoices {
+  display: flex;
+  max-height: min(360px, 45vh);
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+  overflow-y: auto;
+}
+
+.batchCategoryChoices button {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: .84rem;
+  font-weight: 750;
+}
+
+.batchCategoryChoices .activeChip {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: white;
 }
 
 .songMenu .dangerItem,
@@ -624,6 +713,26 @@
     margin: 13px 0 8px;
   }
 
+  .listToolbar > div {
+    min-width: 0;
+  }
+
+  .listToolbar .selectionToggle {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+    font-size: 0;
+  }
+
+  .listToolbar .selectionToggle::after {
+    content: "選取";
+    font-size: .72rem;
+  }
+
+  .listToolbar .selectionToggle[data-active="true"]::after {
+    content: "完成";
+  }
+
   .listToolbar select {
     min-width: 112px;
   }
@@ -686,6 +795,22 @@
   .songMenu summary {
     width: 44px;
     height: 44px;
+  }
+
+  .selectionCheck {
+    grid-area: menu;
+    width: 44px;
+    min-height: 44px;
+  }
+
+  .batchToolbar {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    padding: 6px 8px 6px 10px;
+  }
+
+  .batchToolbar > button {
+    min-height: 40px;
   }
 
   .songMenu > div {
