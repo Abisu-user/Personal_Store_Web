@@ -4,17 +4,37 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 import { getFolderLockState } from "@/lib/folder-locks/server";
 
+type SupabaseQueryError = {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function logQueryError(query: string, error: SupabaseQueryError | null, level: "error" | "warn" = "error") {
+  if (!error) return;
+  const context = {
+    code: error.code ?? null,
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  };
+  if (level === "warn") console.warn("[bookmarks:data] " + query + " failed", context);
+  else console.error("[bookmarks:data] " + query + " failed", context);
+}
+
 /** Server-only collection read shared by the page and its internal API. */
 export async function getBookmarksWorkspaceData(ownerId: string): Promise<BookmarksWorkspaceData> {
   const admin = createAdminClient();
   const lockState = await getFolderLockState(ownerId, "bookmark");
   // A collection read is also the fallback cleanup path when the scheduled job is unavailable.
   // This keeps a trashed entry out of the account on its first visit after 30 days.
-  await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "bookmark").lt("deleted_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  const cleanupResult = await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "bookmark").lt("deleted_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  logQueryError("expired trash cleanup", cleanupResult.error, "warn");
   const [entriesResult, categoriesResult, foldersResult, tagsResult, categoryLinksResult, folderLinksResult] = await Promise.all([
     admin
       .from("entries")
-      .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, cover_storage_object_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories(id, name), bookmark_folders(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
+      .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, cover_storage_object_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories:categories!entries_category_id_fkey(id, name), bookmark_folders:bookmark_folders!entries_bookmark_folder_id_fkey(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
       .eq("owner_id", ownerId)
       .eq("kind", "bookmark")
       .order("updated_at", { ascending: false })
@@ -26,7 +46,16 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders(id, name, is_visible)").eq("owner_id", ownerId),
   ]);
 
-  if (entriesResult.error || categoriesResult.error || foldersResult.error || tagsResult.error) {
+  const queryErrors = [
+    ["entries select", entriesResult.error],
+    ["categories select", categoriesResult.error],
+    ["folders select", foldersResult.error],
+    ["tags select", tagsResult.error],
+    ["category links select", categoryLinksResult.error],
+    ["folder links select", folderLinksResult.error],
+  ] as const;
+  queryErrors.forEach(([query, error]) => logQueryError(query, error));
+  if (queryErrors.some(([, error]) => error)) {
     throw new Error("Unable to load bookmarks.");
   }
 

@@ -5,17 +5,44 @@ import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 import { getFolderLockState } from "@/lib/folder-locks/server";
 import { readEntryTaxonomyLinks } from "@/lib/content/entry-taxonomy";
 
+type SupabaseQueryError = {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function logQueryError(query: string, error: SupabaseQueryError | null, level: "error" | "warn" = "error") {
+  if (!error) return;
+  const context = {
+    code: error.code ?? null,
+    message: error.message ?? null,
+    details: error.details ?? null,
+    hint: error.hint ?? null,
+  };
+  if (level === "warn") console.warn("[code:data] " + query + " failed", context);
+  else console.error("[code:data] " + query + " failed", context);
+}
+
 export async function getCodeWorkspaceData(ownerId: string): Promise<CodeWorkspaceData> {
   const admin = createAdminClient();
   const lockState = await getFolderLockState(ownerId, "code");
-  await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "code").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
+  const cleanupResult = await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "code").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
+  logQueryError("expired trash cleanup", cleanupResult.error, "warn");
   const [entriesResult, categoriesResult, foldersResult, tagsResult] = await Promise.all([
-    admin.from("entries").select("id, title, description, updated_at, is_favorite, is_pinned, is_archived, deleted_at, cover_image_path, cover_storage_object_id, categories(id, name), content_folders(id, name, is_visible), code_details(language, source_code), entry_tags(tags(id, name, color))").eq("owner_id", ownerId).eq("kind", "code").order("updated_at", { ascending: false }).limit(100),
+    admin.from("entries").select("id, title, description, updated_at, is_favorite, is_pinned, is_archived, deleted_at, cover_image_path, cover_storage_object_id, categories:categories!entries_category_id_fkey(id, name), content_folders:content_folders!entries_content_folder_id_fkey(id, name, is_visible), code_details(language, source_code), entry_tags(tags(id, name, color))").eq("owner_id", ownerId).eq("kind", "code").order("updated_at", { ascending: false }).limit(100),
     admin.from("categories").select("id, name, sort_order, folder_id").eq("owner_id", ownerId).eq("content_kind", "code").order("sort_order").order("name").limit(100),
     admin.from("content_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).eq("content_kind", "code").order("sort_order").order("name").limit(100),
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
   ]);
-  if (entriesResult.error || categoriesResult.error || foldersResult.error || tagsResult.error) throw new Error("Unable to load code snippets.");
+  const queryErrors = [
+    ["entries select", entriesResult.error],
+    ["categories select", categoriesResult.error],
+    ["folders select", foldersResult.error],
+    ["tags select", tagsResult.error],
+  ] as const;
+  queryErrors.forEach(([query, error]) => logQueryError(query, error));
+  if (queryErrors.some(([, error]) => error)) throw new Error("Unable to load code snippets.");
   const taxonomyLinks = await readEntryTaxonomyLinks(ownerId, "content");
   const entries = entriesResult.data ?? [];
   const snippets: CodeSnippet[] = entries.flatMap((entry) => {
