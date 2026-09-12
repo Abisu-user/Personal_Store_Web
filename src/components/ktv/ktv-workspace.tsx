@@ -58,6 +58,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   const [selectedSongIds, setSelectedSongIds] = useState<Set<string>>(() => new Set());
   const [batchCategoryOpen, setBatchCategoryOpen] = useState(false);
   const [batchCategoryId, setBatchCategoryId] = useState<string | null>(null);
+  const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [categoryDrafts, setCategoryDrafts] = useState<KtvCategory[]>(categories);
   const [newCategory, setNewCategory] = useState("");
@@ -259,7 +260,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
           <button className={`button compact ${styles.addButton}`} onClick={openCreate} type="button"><AppIcon name="plus" />新增歌曲</button>
         </div>
         <div className={styles.categoryRow} data-chip-overflow-container>
-          <ResponsiveChipOverflow activeId={categoryId} leading={<><button aria-pressed={categoryId === "all"} className={categoryId === "all" ? styles.activeChip : ""} onClick={() => setCategoryId("all")} type="button">全部</button><button aria-pressed={categoryId === "uncategorized"} className={categoryId === "uncategorized" ? styles.activeChip : ""} onClick={() => setCategoryId("uncategorized")} type="button">未分類</button></>} leadingCount={2} items={categories} itemId={(item) => item.id} itemMeasureKey={(item) => item.name} renderItem={(item) => <button aria-pressed={categoryId === item.id} className={categoryId === item.id ? styles.activeChip : ""} key={item.id} onClick={() => setCategoryId((current) => current === item.id ? "all" : item.id)} type="button">{item.name}</button>} renderMore={(hiddenActive) => <details className={styles.moreMenu}><summary className={hiddenActive ? styles.activeChip : ""}>更多</summary><div>{categories.map((item) => <button className={categoryId === item.id ? styles.activeMenuItem : ""} key={item.id} onClick={() => setCategoryId((current) => current === item.id ? "all" : item.id)} type="button">{item.name}</button>)}</div></details>} trailing={<button className={styles.manageButton} onClick={() => { setCategoryDrafts(categories); setCategoryManagerOpen(true); setError(null); }} type="button">管理分類</button>} trailingCount={1} />
+          <ResponsiveChipOverflow activeId={categoryId} leading={<><button aria-pressed={categoryId === "all"} className={categoryId === "all" ? styles.activeChip : ""} onClick={() => setCategoryId("all")} type="button">全部</button><button aria-pressed={categoryId === "uncategorized"} className={categoryId === "uncategorized" ? styles.activeChip : ""} onClick={() => setCategoryId("uncategorized")} type="button">未分類</button></>} leadingCount={2} items={categories} itemId={(item) => item.id} itemMeasureKey={(item) => item.name} renderItem={(item) => <button aria-pressed={categoryId === item.id} className={categoryId === item.id ? styles.activeChip : ""} key={item.id} onClick={() => setCategoryId((current) => current === item.id ? "all" : item.id)} type="button">{item.name}</button>} renderMore={(hiddenActive) => <button aria-expanded={categoryMoreOpen} aria-haspopup="dialog" className={hiddenActive ? styles.activeChip : ""} onClick={() => setCategoryMoreOpen(true)} type="button">更多</button>} trailing={<button className={styles.manageButton} onClick={() => { setCategoryDrafts(categories); setCategoryManagerOpen(true); setError(null); }} type="button">管理分類</button>} trailingCount={1} />
         </div>
         <div className={styles.listToolbar}>
           <p>{visibleSongs.length} 首歌曲</p>
@@ -296,6 +297,11 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
       <div className={styles.batchCategoryChoices}><button aria-pressed={batchCategoryId === null} className={batchCategoryId === null ? styles.activeChip : ""} onClick={() => setBatchCategoryId(null)} type="button">未分類</button>{categories.map((category) => <button aria-pressed={batchCategoryId === category.id} className={batchCategoryId === category.id ? styles.activeChip : ""} key={category.id} onClick={() => setBatchCategoryId(category.id)} type="button">{category.name}</button>)}</div>
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setBatchCategoryOpen(false)} type="button">取消</button><button className="button" disabled={pending || !selectedSongIds.size} onClick={() => void categorizeSelectedSongs()} type="button">{pending ? "套用中…" : "套用分類"}</button></div>
+    </ModalDialog>
+
+    <ModalDialog className={styles.categoryDialog} onClose={() => setCategoryMoreOpen(false)} open={categoryMoreOpen} title="更多分類">
+      <p className={styles.batchHint}>選擇分類後會立即套用目前歌曲篩選。</p>
+      <div className={styles.batchCategoryChoices}>{categories.map((category) => <button aria-pressed={categoryId === category.id} className={categoryId === category.id ? styles.activeChip : ""} key={category.id} onClick={() => { setCategoryId((current) => current === category.id ? "all" : category.id); setCategoryMoreOpen(false); }} type="button">{category.name}</button>)}</div>
     </ModalDialog>
 
     <ModalDialog onClose={() => setDuplicate(null)} open={Boolean(duplicate)} title="點歌號碼已存在"><div className={styles.duplicateDialog}><p>「{duplicate?.song.songNumber}」已收藏為「{duplicate?.song.title}」。不會覆蓋原資料。</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setDuplicate(null)} type="button">保留目前輸入</button><button className="button" onClick={() => { if (duplicate) openEdit(duplicate.song); setDuplicate(null); }} type="button">編輯原歌曲</button></div></div></ModalDialog>
