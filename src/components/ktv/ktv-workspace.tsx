@@ -102,7 +102,8 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
     event.preventDefault();
     if (!draft) return;
     const normalized = { ...draft, songNumber: draft.songNumber.trim(), title: draft.title.trim(), artist: draft.artist.trim() };
-    if (!normalized.songNumber || !normalized.title || !normalized.artist) { setError("請填寫點歌號碼、歌曲名稱與歌手。"); return; }
+    if (!/^[0-9]{5}$/.test(normalized.songNumber)) { setError("點歌號碼必須是剛好 5 位數字。"); return; }
+    if (!normalized.title || !normalized.artist) { setError("請填寫歌曲名稱與歌手。"); return; }
     setPending(true); setError(null);
     try {
       const response = await request<{ song: KtvSong; duplicate?: KtvSong }>("/api/ktv", {
@@ -187,10 +188,11 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
 
   return <div className={`${styles.workspace}${draft ? ` ${styles.editorOpen}` : ""}`}>
     {notice && <div className="create-success-toast" role="status">{notice}<button aria-label="關閉通知" onClick={() => setNotice(null)} type="button">×</button></div>}
+    <button className={styles.mobileHeaderAdd} onClick={openCreate} type="button"><AppIcon name="plus" />新增</button>
     <div className={styles.workspaceGrid}>
       <section className={styles.collectionPanel}>
         <div className={styles.toolbar}>
-          <label className={styles.search}><AppIcon name="search" /><span className="sr-only">搜尋歌曲</span><input onChange={(event) => setQuery(event.target.value)} placeholder="搜尋點歌號碼、歌曲名稱或歌手…" value={query} /></label>
+          <label className={styles.search}><AppIcon name="search" /><span className="sr-only">搜尋歌曲</span><input onChange={(event) => setQuery(event.target.value)} placeholder="搜尋號碼、歌名或歌手" value={query} /></label>
           <button className={`button compact ${styles.addButton}`} onClick={openCreate} type="button"><AppIcon name="plus" />新增歌曲</button>
         </div>
         <div className={styles.categoryRow} data-chip-overflow-container>
@@ -231,7 +233,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
 function SongEditor({ categories, draft, error, pending, onClose, onSave, update }: { categories: KtvCategory[]; draft: Draft; error: string | null; pending: boolean; onClose: () => void; onSave: (event: FormEvent<HTMLFormElement>) => void; update: <K extends keyof Draft>(key: K, value: Draft[K]) => void }) {
   return <form className={styles.editorForm} noValidate onSubmit={onSave}>
     <header><div><p className="eyebrow">{draft.id ? "EDIT SONG" : "CREATE SONG"}</p><h2>{draft.id ? "編輯歌曲" : "新增歌曲"}</h2></div><button aria-label="關閉編輯器" disabled={pending} onClick={onClose} type="button">×</button></header>
-    <label>點歌號碼<span>*</span><input autoFocus inputMode="numeric" maxLength={40} onChange={(event) => update("songNumber", event.target.value)} placeholder="例如：079551" required value={draft.songNumber} />{error && !draft.songNumber.trim() && <small role="alert">請輸入點歌號碼。</small>}</label>
+    <label>點歌號碼<span>*</span><input autoFocus inputMode="numeric" maxLength={5} onChange={(event) => update("songNumber", event.target.value.replace(/\D/g, "").slice(0, 5))} pattern="[0-9]{5}" placeholder="例如：01234" required value={draft.songNumber} />{error && !/^[0-9]{5}$/.test(draft.songNumber.trim()) && <small role="alert">點歌號碼必須是剛好 5 位數字。</small>}</label>
     <label>歌曲名稱<span>*</span><input maxLength={300} onChange={(event) => update("title", event.target.value)} required value={draft.title} />{error && !draft.title.trim() && <small role="alert">請輸入歌曲名稱。</small>}</label>
     <label>歌手<span>*</span><input maxLength={200} onChange={(event) => update("artist", event.target.value)} required value={draft.artist} />{error && !draft.artist.trim() && <small role="alert">請輸入歌手。</small>}</label>
     <label>分類<select onChange={(event) => update("categoryId", event.target.value || null)} value={draft.categoryId ?? ""}><option value="">未分類</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>

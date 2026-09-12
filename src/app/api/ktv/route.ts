@@ -7,7 +7,7 @@ import { getKtvWorkspaceData, serializeKtvSong } from "@/lib/ktv/data";
 
 const id = z.string().uuid();
 const songFields = {
-  songNumber: z.string().trim().min(1, "請輸入點歌號碼。").max(40, "點歌號碼過長。"),
+  songNumber: z.string().trim().regex(/^[0-9]{5}$/, "點歌號碼必須是剛好 5 位數字。"),
   title: z.string().trim().min(1, "請輸入歌曲名稱。").max(300, "歌曲名稱過長。"),
   artist: z.string().trim().min(1, "請輸入歌手。").max(200, "歌手名稱過長。"),
   categoryId: id.nullable().optional(),
