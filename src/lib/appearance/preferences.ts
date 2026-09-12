@@ -1,4 +1,4 @@
-import { BACKGROUND_IMAGE_MAX_BYTES, normalizeBackgroundImageMimeType } from "@/lib/appearance/background-image-format";
+import { BACKGROUND_IMAGE_MAX_BYTES, BackgroundImageError, normalizeBackgroundImageMimeType } from "@/lib/appearance/background-image-format";
 
 const accountAppearanceStoragePrefix = "personal-vault:appearance:account:v1";
 
@@ -112,24 +112,44 @@ function persistAppearanceBackup(appearance: Appearance) {
 /** Stores image binaries outside localStorage so four high-quality backgrounds remain reliable. */
 export async function storeBackgroundImage(blob: Blob) {
   const mimeType = normalizeBackgroundImageMimeType(blob.type);
-  if (!mimeType) throw new Error("不支援此圖片格式。請使用 JPG、JPEG、PNG、WebP 或 AVIF。");
-  if (blob.size > BACKGROUND_IMAGE_MAX_BYTES) throw new Error("圖片大小超過上限。單張背景圖片不可超過 8 MB。");
+  if (!mimeType) throw new BackgroundImageError("validation", "BACKGROUND_IMAGE_FORMAT_NOT_ALLOWED");
+  if (blob.size > BACKGROUND_IMAGE_MAX_BYTES) throw new BackgroundImageError("validation", "BACKGROUND_IMAGE_TOO_LARGE");
   if (appearanceUserId) {
     const device = getAppearanceDevice();
-    const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    let digest: ArrayBuffer;
+    try {
+      digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+    } catch (cause) {
+      throw new BackgroundImageError("checksum", "BACKGROUND_IMAGE_CHECKSUM_FAILED", cause);
+    }
     const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-    const response = await fetch("/api/appearance/backgrounds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ device, byteSize: blob.size, mimeType, sha256 }),
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/appearance/backgrounds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device, byteSize: blob.size, mimeType, sha256 }),
+      });
+    } catch (cause) {
+      throw new BackgroundImageError("upload-prepare", "BACKGROUND_UPLOAD_PREPARE_FAILED", cause);
+    }
     const ticket = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(ticket.error ?? "BACKGROUND_UPLOAD_PREPARE_FAILED");
-    const upload = await fetch(ticket.uploadUrl, { method: ticket.method ?? "PUT", headers: { "Content-Type": mimeType, ...(ticket.headers ?? {}) }, body: blob });
-    if (!upload.ok) throw new Error("BACKGROUND_UPLOAD_FAILED");
-    const finalized = await fetch("/api/storage/b2/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket }) });
+    if (!response.ok) throw new BackgroundImageError("upload-prepare", "BACKGROUND_UPLOAD_PREPARE_FAILED", { status: response.status, serverMessage: ticket.error });
+    let upload: Response;
+    try {
+      upload = await fetch(ticket.uploadUrl, { method: ticket.method ?? "PUT", headers: { "Content-Type": mimeType, ...(ticket.headers ?? {}) }, body: blob });
+    } catch (cause) {
+      throw new BackgroundImageError("upload-transfer", "BACKGROUND_UPLOAD_FAILED", cause);
+    }
+    if (!upload.ok) throw new BackgroundImageError("upload-transfer", "BACKGROUND_UPLOAD_FAILED", { status: upload.status });
+    let finalized: Response;
+    try {
+      finalized = await fetch("/api/storage/b2/finalize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticket: ticket.ticket }) });
+    } catch (cause) {
+      throw new BackgroundImageError("upload-finalize", "BACKGROUND_UPLOAD_FINALIZE_FAILED", cause);
+    }
     const result = await finalized.json().catch(() => ({}));
-    if (!finalized.ok || typeof result.storageObjectId !== "string") throw new Error(result.error ?? "BACKGROUND_UPLOAD_FINALIZE_FAILED");
+    if (!finalized.ok || typeof result.storageObjectId !== "string") throw new BackgroundImageError("upload-finalize", "BACKGROUND_UPLOAD_FINALIZE_FAILED", { status: finalized.status, serverMessage: result.error });
     const reference = `${objectImageReferencePrefix}${result.storageObjectId}`;
     imageCache.set(reference, URL.createObjectURL(blob));
     return reference;

@@ -18,6 +18,7 @@
     "test:vocabulary:examples": "node --test scripts/vocabulary/system-examples-regression.test.mjs",
     "test:auth:otp": "node --experimental-strip-types --test scripts/auth/otp-policy.test.mjs",
     "test:appearance:backgrounds": "node --experimental-strip-types --test scripts/appearance/background-image-format.test.mjs",
+    "test:appearance:backgrounds:browser": "node scripts/appearance/background-image-processing.browser.cjs",
     "test:account-isolation": "node --experimental-strip-types --test scripts/system/account-isolation-quota.test.mjs",
     "test:storage": "node --conditions=react-server --experimental-strip-types --test scripts/storage/*.test.mjs",
     "test:storage:live": "node --experimental-strip-types scripts/storage/live-validation.mjs",

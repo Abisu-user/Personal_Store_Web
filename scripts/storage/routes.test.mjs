@@ -118,7 +118,7 @@ for (const device of ["desktop", "mobile"]) {
     const { load, calls } = fixture();
     const sha256 = "c".repeat(64);
     const route = load("src/app/api/appearance/backgrounds/route.ts");
-    const response = await route.POST(request("/api/appearance/backgrounds", "POST", { device, mimeType: "image/webp", byteSize: 4, sha256 }));
+    const response = await route.POST(request("/api/appearance/backgrounds", "POST", { device, mimeType: "image/jpeg", byteSize: 4, sha256 }));
     assert.equal(response.status, 200);
     const data = await response.json();
     assert.equal(data.method, "PUT");
@@ -129,7 +129,9 @@ for (const device of ["desktop", "mobile"]) {
     assert.equal(reserved[1].provider, "b2");
     assert.equal(reserved[1].category, "workspace-backgrounds");
     assert.match(reserved[1].objectKey, new RegExp(`^${userId}/workspace-background-${device}/`));
-    assert.ok(calls.some(([op]) => op === "b2-sign-upload"));
+    assert.match(reserved[1].objectKey, /\.jpg$/);
+    const signedUpload = calls.find(([op]) => op === "b2-sign-upload");
+    assert.equal(signedUpload[3].contentType, "image/jpeg");
     const ticket = load("src/lib/security/b2-upload-ticket.ts").verifyB2UploadTicket(data.ticket);
     assert.equal(ticket.ownerId, userId);
     assert.equal(ticket.purpose, `workspace-background-${device}`);
@@ -277,13 +279,13 @@ test("account deletion still removes Storage before verification flows and Auth,
 for (const device of ["desktop", "mobile"]) {
   test(`${device} background client uploads to B2, finalizes, and persists the metadata reference`, async () => {
     const requests = [];
-    const blob = new Blob(["background"], { type: "image/webp" });
+    const blob = new Blob(["background"], { type: "image/jpeg" });
     const { load, calls } = fixture({ globals: {
       window: { matchMedia: () => ({ matches: device === "mobile" }) },
       URL: { createObjectURL: () => "blob:test" },
       fetch: async (url, options) => {
         requests.push([url, options]);
-        if (url === "/api/appearance/backgrounds") return Response.json({ method: "PUT", uploadUrl: "https://b2.invalid/upload", headers: { "Content-Type": "image/webp", "x-amz-meta-sha256": "signed" }, ticket: "finalize-ticket" });
+        if (url === "/api/appearance/backgrounds") return Response.json({ method: "PUT", uploadUrl: "https://b2.invalid/upload", headers: { "Content-Type": "image/jpeg", "x-amz-meta-sha256": "signed" }, ticket: "finalize-ticket" });
         if (url === "https://b2.invalid/upload") return new Response(null, { status: 200 });
         if (url === "/api/storage/b2/finalize") return Response.json({ storageObjectId: entryId, status: "active" });
         return new Response(null, { status: 404 });
@@ -295,10 +297,11 @@ for (const device of ["desktop", "mobile"]) {
     const preparation = JSON.parse(requests[0][1].body);
     assert.equal(preparation.device, device);
     assert.equal(preparation.byteSize, blob.size);
-    assert.equal(preparation.mimeType, "image/webp");
+    assert.equal(preparation.mimeType, "image/jpeg");
     assert.match(preparation.sha256, /^[a-f0-9]{64}$/);
     assert.equal(requests[1][0], "https://b2.invalid/upload");
     assert.equal(requests[1][1].body, blob);
+    assert.equal(requests[1][1].headers["Content-Type"], "image/jpeg");
     assert.deepEqual(JSON.parse(requests[2][1].body), { ticket: "finalize-ticket" });
     assert.equal(calls.some(([op]) => op === "upload"), false);
   });

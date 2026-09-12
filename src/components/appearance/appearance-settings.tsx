@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BACKGROUND_IMAGE_ACCEPT, BACKGROUND_IMAGE_MAX_BYTES, backgroundImageMimeTypeForFile } from "@/lib/appearance/background-image-format";
+import { BACKGROUND_IMAGE_ACCEPT, BACKGROUND_IMAGE_MAX_BYTES, BackgroundImageError, backgroundImageErrorMessage, backgroundImageMimeTypeForFile } from "@/lib/appearance/background-image-format";
+import { prepareBackgroundImage } from "@/lib/appearance/background-image-processing";
 import { Accent, Appearance, Background, BackgroundRotation, BookmarkDisplay, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, getBackgroundImageUrl, loadAccountAppearance, normalizeHexColor, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, readMobileNavigationPreferences, saveMobileNavigationPreferences, type MobileNavigationDestination, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
 
@@ -17,19 +18,6 @@ const focusPositions = [["left", "偏左", 18, 50], ["center", "置中", 50, 50]
 
 function hexToRgb(hex: string) { return [Number.parseInt(hex.slice(1, 3), 16), Number.parseInt(hex.slice(3, 5), 16), Number.parseInt(hex.slice(5, 7), 16)] as const; }
 function rgbToHex(rgb: number[]) { return `#${rgb.map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0")).join("")}`.toUpperCase(); }
-async function prepareImage(file: File) {
-  const source = URL.createObjectURL(file);
-  try {
-    const image = new Image(); image.src = source;
-    await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("image")); });
-    const scale = Math.min(1, 2048 / image.naturalWidth, 1152 / image.naturalHeight);
-    const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
-    canvas.getContext("2d")?.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("IMAGE_ENCODE_FAILED")), "image/webp", 0.9));
-    return { blob, lowQuality: image.naturalWidth < 2048 || image.naturalHeight < 1152 };
-  } finally { URL.revokeObjectURL(source); }
-}
-
 export function AppearanceSettings() {
   const [appearance, setAppearance] = useState<Appearance>(appearanceDefaults);
   const [ready, setReady] = useState(false);
@@ -65,17 +53,22 @@ export function AppearanceSettings() {
   async function chooseBackgrounds(files: FileList | null) {
     if (!files?.length) return;
     const selected = [...files];
-    if (selected.some((file) => !backgroundImageMimeTypeForFile(file))) { setImageNotice("不支援此圖片格式。請使用 JPG、JPEG、PNG、WebP 或 AVIF。"); return; }
-    if (selected.some((file) => file.size > BACKGROUND_IMAGE_MAX_BYTES)) { setImageNotice("圖片大小超過上限。單張背景圖片不可超過 8 MB。"); return; }
+    if (selected.some((file) => !backgroundImageMimeTypeForFile(file))) { setImageNotice(backgroundImageErrorMessage(new BackgroundImageError("validation", "BACKGROUND_IMAGE_FORMAT_NOT_ALLOWED"))); return; }
+    if (selected.some((file) => file.size > BACKGROUND_IMAGE_MAX_BYTES)) { setImageNotice(backgroundImageErrorMessage(new BackgroundImageError("validation", "BACKGROUND_IMAGE_TOO_LARGE"))); return; }
     try {
-      const available = Math.max(0, 10 - appearance.backgroundImages.length); const images = await Promise.all(selected.slice(0, available).map(prepareImage)); if (!images.length) { setImageNotice("背景圖片最多可保留 10 張，請先移除不需要的圖片。"); return; } const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-10); const activeIndex = Math.max(0, merged.length - references.length);
+      const available = Math.max(0, 10 - appearance.backgroundImages.length); const images = await Promise.all(selected.slice(0, available).map(prepareBackgroundImage)); if (!images.length) { setImageNotice("背景圖片最多可保留 10 張，請先移除不需要的圖片。"); return; } const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-10); const activeIndex = Math.max(0, merged.length - references.length);
       void Promise.all(appearance.backgroundImages.filter((reference) => !merged.includes(reference)).map(removeBackgroundImage));
-      commit({ ...appearance, background: "image", backgroundImages: merged, backgroundActiveIndex: activeIndex, backgroundImage: merged[activeIndex] });
+      try {
+        commit({ ...appearance, background: "image", backgroundImages: merged, backgroundActiveIndex: activeIndex, backgroundImage: merged[activeIndex] });
+      } catch (cause) {
+        throw new BackgroundImageError("appearance-save", "BACKGROUND_APPEARANCE_SAVE_FAILED", cause);
+      }
       setImageNotice(images.some((item) => item.lowQuality) ? "已加入背景清單。原圖低於建議 2048 × 1152；過度放大或裁切後可能略為失真。" : `已加入 ${images.length} 張高畫質背景圖片。`);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "QuotaExceededError") setImageNotice("背景儲存空間不足，請先移除不需要的背景圖片。");
-      else if (error instanceof Error && (error.message.startsWith("不支援此圖片格式") || error.message.startsWith("圖片大小超過上限"))) setImageNotice(error.message);
-      else setImageNotice("無法讀取或儲存這張圖片；檔案可能已損壞，請改用 JPG、JPEG、PNG、WebP 或 AVIF。");
+      if (process.env.NODE_ENV !== "production") {
+        console.error("[workspace-background]", error instanceof BackgroundImageError ? { stage: error.stage, code: error.code, cause: error.originalCause } : error);
+      }
+      setImageNotice(backgroundImageErrorMessage(error));
     }
   }
   function selectImage(index: number) { if (!getBackgroundImageUrl(appearance.backgroundImages[index])) setImageNotice("背景圖片正在載入，請稍候。 "); commit({ ...appearance, background: "image", backgroundActiveIndex: index, backgroundImage: appearance.backgroundImages[index], backgroundRotation: "manual" }); }
