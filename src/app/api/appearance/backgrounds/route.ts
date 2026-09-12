@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { createB2UploadTicket } from "@/lib/security/b2-upload-ticket";
+import { BACKGROUND_IMAGE_MAX_BYTES, backgroundImageExtensionForMimeType, backgroundImageMimeTypes, normalizeBackgroundImageMimeType } from "@/lib/appearance/background-image-format";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createB2StorageManager } from "@/lib/storage/b2-server";
@@ -12,8 +13,8 @@ import { quotaExceededResponse } from "@/lib/system/quota";
 
 const uploadSchema = z.object({
   device: z.enum(["desktop", "mobile"]),
-  byteSize: z.number().int().positive().max(8_388_608),
-  mimeType: z.enum(["image/jpeg", "image/png", "image/webp"]),
+  byteSize: z.number().int().positive(),
+  mimeType: z.string().trim().min(1).max(150),
   sha256: z.string().trim().toLowerCase().regex(/^[a-f0-9]{64}$/).nullable().optional(),
 });
 const deleteSchema = z.object({ device: z.enum(["desktop", "mobile"]), reference: z.string().max(600) });
@@ -26,21 +27,24 @@ export async function POST(request: NextRequest) {
   const context = await getSecurityContext();
   if (!context) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = uploadSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "背景圖片必須是 8 MB 以下的 JPG、PNG 或 WebP。" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "背景圖片上傳資料無效。" }, { status: 400 });
+  if (parsed.data.byteSize > BACKGROUND_IMAGE_MAX_BYTES) return NextResponse.json({ error: "圖片大小超過上限。單張背景圖片不可超過 8 MB。" }, { status: 413 });
+  const mimeType = normalizeBackgroundImageMimeType(parsed.data.mimeType);
+  if (!mimeType || !backgroundImageMimeTypes.includes(mimeType)) return NextResponse.json({ error: "不支援此圖片格式。請使用 JPG、JPEG、PNG、WebP 或 AVIF。" }, { status: 400 });
   const purpose = purposeFor(parsed.data.device);
   const bucket = process.env.B2_BUCKET_NAME?.trim();
   if (!bucket) return NextResponse.json({ error: "B2 儲存服務尚未設定。" }, { status: 503 });
   const metadata = createStorageMetadataRepository();
   let pendingId: string | null = null;
   try {
-    validateB2UploadPolicy(purpose, parsed.data.byteSize, parsed.data.mimeType);
-    const objectKey = b2ObjectKey(context.userId, purpose, crypto.randomUUID());
-    const pending = await metadata.reservePending({ userId: context.userId, provider: "b2", bucket, objectKey, category: b2MetadataCategory(purpose), byteSize: parsed.data.byteSize, mimeType: parsed.data.mimeType, checksum: parsed.data.sha256 ?? null }, 3600);
+    validateB2UploadPolicy(purpose, parsed.data.byteSize, mimeType);
+    const objectKey = `${b2ObjectKey(context.userId, purpose, crypto.randomUUID())}${backgroundImageExtensionForMimeType(mimeType) ?? ""}`;
+    const pending = await metadata.reservePending({ userId: context.userId, provider: "b2", bucket, objectKey, category: b2MetadataCategory(purpose), byteSize: parsed.data.byteSize, mimeType, checksum: parsed.data.sha256 ?? null }, 3600);
     pendingId = pending.id;
-    const { data: signed, error } = await createB2StorageManager().createSignedUploadUrl(bucket, objectKey, { contentType: parsed.data.mimeType, checksumSha256: parsed.data.sha256 ?? undefined });
+    const { data: signed, error } = await createB2StorageManager().createSignedUploadUrl(bucket, objectKey, { contentType: mimeType, checksumSha256: parsed.data.sha256 ?? undefined });
     if (error || !signed) throw error ?? new Error("B2 signed upload URL was not created.");
     const expiresAt = Date.now() + 10 * 60 * 1000;
-    return NextResponse.json({ storageObjectId: pending.id, method: "PUT", uploadUrl: signed.signedUrl, headers: signed.headers ?? {}, ticket: createB2UploadTicket({ ownerId: context.userId, storageObjectId: pending.id, bucket, objectKey, purpose, byteSize: parsed.data.byteSize, mimeType: parsed.data.mimeType, sha256: parsed.data.sha256 ?? null, expiresAt }), expiresAt }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ storageObjectId: pending.id, method: "PUT", uploadUrl: signed.signedUrl, headers: signed.headers ?? {}, ticket: createB2UploadTicket({ ownerId: context.userId, storageObjectId: pending.id, bucket, objectKey, purpose, byteSize: parsed.data.byteSize, mimeType, sha256: parsed.data.sha256 ?? null, expiresAt }), expiresAt }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (cause) {
     if (pendingId) await metadata.markFailed(pendingId, context.userId).catch(() => undefined);
     const quotaError = quotaExceededResponse(cause);

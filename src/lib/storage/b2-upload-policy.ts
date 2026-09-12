@@ -1,9 +1,12 @@
 import "server-only";
 
+import { backgroundImageMimeTypes } from "@/lib/appearance/background-image-format";
+
 export const b2UploadPurposes = ["workspace-background", "workspace-background-desktop", "workspace-background-mobile", "content-cover", "photo", "file", "vault-attachment"] as const;
 export type B2UploadPurpose = (typeof b2UploadPurposes)[number];
 
 const imageMimeTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const workspaceBackgroundMimeTypes = new Set<string>(backgroundImageMimeTypes);
 
 const limits: Record<B2UploadPurpose, number> = {
   "workspace-background": 8_388_608,
@@ -22,7 +25,10 @@ export function validateB2UploadPolicy(purpose: B2UploadPurpose, byteSize: numbe
   if (!mimeType || mimeType.length > 150 || /[\r\n]/.test(mimeType)) {
     throw new Error("B2_UPLOAD_MIME_NOT_ALLOWED");
   }
-  if ((purpose.startsWith("workspace-background") || purpose === "content-cover" || purpose === "photo") && !imageMimeTypes.has(mimeType)) {
+  if (purpose.startsWith("workspace-background") && !workspaceBackgroundMimeTypes.has(mimeType)) {
+    throw new Error("B2_UPLOAD_MIME_NOT_ALLOWED");
+  }
+  if ((purpose === "content-cover" || purpose === "photo") && !imageMimeTypes.has(mimeType)) {
     throw new Error("B2_UPLOAD_MIME_NOT_ALLOWED");
   }
 }
