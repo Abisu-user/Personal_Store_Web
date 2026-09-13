@@ -19,6 +19,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
 
@@ -429,6 +430,15 @@ export function NotesWorkspace({
           </>
         )}
       </div>
+      <MobileBatchActionBar count={chosenNotes.length} onCancel={() => setChosen(new Set())}>
+        {view === "trash" ? (<>
+          <button className="button" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">還原</button>
+          <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button>
+        </>) : (<>
+          <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
+          <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">刪除</button>
+        </>)}
+      </MobileBatchActionBar>
       <div className="content-item-list">
         {notes.map((note) => (
           <article className={`content-item-card ${mobileStyles.itemCard}`} data-pinned={note.pinned ? "true" : undefined} key={note.id}>

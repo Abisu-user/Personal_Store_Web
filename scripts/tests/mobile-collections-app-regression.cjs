@@ -116,6 +116,27 @@ async function main() {
       await page.evaluate(() => window.setTestAppearance({ theme: "dark", accent: "custom", customColor: "#C35490", density: "compact", fontScale: 120, surfaceOpacity: 0, background: "image", backgroundImages: [] }));
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     }
+    for (const kind of ["bookmarks", "notes", "photos"]) for (const width of [375, 390, 430]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(base + "?page=" + kind); await page.locator(readySelector[kind]).first().waitFor();
+      const list = page.locator(kind === "bookmarks" ? ".bookmark-list" : kind === "photos" ? ".photo-grid" : ".content-item-list");
+      const beforeTop = await list.evaluate(el => el.getBoundingClientRect().top);
+      await page.locator(".item-select input").first().check();
+      const bar = page.locator(".mobile-batch-action-bar"); await bar.waitFor();
+      await bar.evaluate((element) => Promise.all(element.getAnimations().map((animation) => animation.finished)));
+      assert.equal(await bar.getByText(/已選 1 筆/).count(), 1);
+      const barRect = await bar.boundingBox(), navRect = await page.locator(".mobile-bottom-nav").boundingBox();
+      assert.ok(barRect.x >= 0 && barRect.x + barRect.width <= width + .5, `${kind} batch overflow ${width}`);
+      assert.ok(barRect.y + barRect.height <= navRect.y - 4, `${kind} batch/nav overlap ${width} ${JSON.stringify({ barRect, navRect })}`);
+      assert.ok(Math.abs(await list.evaluate(el => el.getBoundingClientRect().top) - beforeTop) < 1, `${kind} list was pushed down`);
+      for (const button of await bar.locator("button").all()) assert.ok((await button.boundingBox()).height >= 43.5, `${kind} batch touch target`);
+      await page.screenshot({ path: path.join(out, `${kind}-batch-${width}.png`), animations: "disabled" });
+      await bar.getByRole("button", { name: "整理", exact: true }).click(); await page.getByRole("dialog").waitFor();
+      assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", `${kind} batch remains interactive over modal`);
+      await page.keyboard.press("Escape");
+      await bar.getByRole("button", { name: "取消", exact: true }).click();
+      assert.equal(await page.locator(".mobile-batch-action-bar").count(), 0);
+    }
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(out, "report.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ output: out, report }, null, 2));

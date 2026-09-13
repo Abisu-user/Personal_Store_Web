@@ -7,6 +7,7 @@ import { MobileBottomSheet } from "@/components/ui/mobile-bottom-sheet";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { AppIcon } from "@/components/ui/app-icon";
+import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
 import type { KtvCategory, KtvSong, KtvWorkspaceData } from "@/lib/ktv/types";
 import styles from "./ktv.module.css";
 
@@ -267,6 +268,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
           <div><button className={styles.selectionToggle} data-active={selectionMode} onClick={() => selectionMode ? closeSelectionMode() : setSelectionMode(true)} type="button">{selectionMode ? "結束選取" : "批量分類"}</button><select aria-label="排序方式" onChange={(event) => setSortKey(event.target.value as SortKey)} value={sortKey}><option value="songNumber">點歌號碼</option><option value="title">歌曲名稱</option><option value="artist">歌手</option></select><button aria-label={ascending ? "目前升冪，切換降冪" : "目前降冪，切換升冪"} onClick={() => setAscending((current) => !current)} type="button">{ascending ? "↑" : "↓"}</button></div>
         </div>
         {selectionMode && <section className={styles.batchToolbar}><label><input checked={visibleSongs.length > 0 && visibleSongs.every((song) => selectedSongIds.has(song.id))} onChange={toggleVisibleSongs} type="checkbox" />全選目前清單</label><strong>已選 {selectedSongIds.size} 首</strong><button className="button compact" disabled={!selectedSongIds.size || pending} onClick={() => { setBatchCategoryId(null); setBatchCategoryOpen(true); setError(null); }} type="button">分類到…</button></section>}
+        <MobileBatchActionBar count={selectedSongIds.size} onCancel={closeSelectionMode} unit="首"><button className="button" disabled={pending} onClick={() => { setBatchCategoryId(null); setBatchCategoryOpen(true); setError(null); }} type="button">分類</button></MobileBatchActionBar>
         <div className={styles.songList} role="table" aria-label="KTV 歌曲收藏">
           <div className={styles.tableHead} role="row"><span>點歌號碼</span><span>歌曲名稱</span><span>歌手</span><span>分類</span><span>{selectionMode ? "選取" : "操作"}</span></div>
           {visibleSongs.map((song) => <article className={`${styles.songRow}${selectedSongIds.has(song.id) ? ` ${styles.selectedSong}` : ""}`} key={song.id} role="row">

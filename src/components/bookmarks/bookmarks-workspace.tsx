@@ -17,6 +17,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { MobileSectionActions } from "@/components/ui/mobile-section-actions";
+import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
@@ -1792,6 +1793,14 @@ export function BookmarksWorkspace({
             </button>
           </>))}
       </div>
+      <MobileBatchActionBar count={selected.length} onCancel={() => setChosen(new Set())}>
+        {view === "trash" ? (
+          <button className="delete-button" disabled={pending} onClick={() => setConfirmation({ title: `永久刪除 ${selected.length} 筆網站收藏？`, description: "這些網站收藏將無法還原。", action: permanentlyRemoveSelected })} type="button">永久刪除</button>
+        ) : (<>
+          <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
+          <button className="delete-button" disabled={pending} onClick={() => setConfirmation({ title: `移除 ${selected.length} 筆網站收藏？`, description: "這些網站收藏將移至垃圾桶，30 天內仍可還原。", confirmLabel: "移至垃圾桶", action: trashSelected })} type="button">刪除</button>
+        </>)}
+      </MobileBatchActionBar>
       <div
         className={`bookmark-list bookmark-list-${bookmarkDisplay}`}
         style={

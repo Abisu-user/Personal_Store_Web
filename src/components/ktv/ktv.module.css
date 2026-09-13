@@ -809,6 +809,11 @@
     padding: 6px 8px 6px 10px;
   }
 
+  .batchToolbar > strong,
+  .batchToolbar > button {
+    display: none;
+  }
+
   .batchToolbar > button {
     min-height: 40px;
   }

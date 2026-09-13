@@ -5,6 +5,7 @@ import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { MobilePageHeader, MobileSection } from "@/components/ui/mobile-layout";
 import type { DashboardData, DashboardKind } from "@/lib/dashboard/types";
+import { getDashboardGreeting, millisecondsUntilNextGreetingBoundary } from "@/lib/dashboard/greeting";
 import { formatBytes, usagePercentage } from "@/lib/format-bytes";
 import styles from "./dashboard-mobile.module.css";
 
@@ -35,11 +36,6 @@ const overview: Array<{ kind: DashboardKind; label: string; href: string; icon: 
 const kindLabels: Record<DashboardKind, string> = { bookmark: "網站收藏", anime: "動漫", note: "筆記", code: "程式碼", photo: "照片", file: "檔案" };
 const kindIcons: Record<DashboardKind, AppIconName> = { bookmark: "bookmark", anime: "anime", note: "note", code: "code", photo: "photo", file: "file" };
 
-function greeting() {
-  const hour = Number(new Intl.DateTimeFormat("zh-TW", { hour: "numeric", hour12: false, timeZone: "Asia/Taipei" }).format(new Date()));
-  return hour < 6 ? "夜深了" : hour < 12 ? "早安" : hour < 18 ? "下午好" : "晚安";
-}
-
 function relativeDate(value: string) {
   const elapsed = Math.max(0, Date.now() - Date.parse(value));
   const minutes = Math.floor(elapsed / 60000);
@@ -53,10 +49,24 @@ function relativeDate(value: string) {
 
 
 function DashboardContent({ email }: { email: string }) {
+  const [greeting, setGreeting] = useState(() => getDashboardGreeting());
   const [data, setData] = useState<DashboardData | null>(null);
   const [pending, setPending] = useState(true);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);
+  useEffect(() => {
+    let timer = 0;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      const now = new Date();
+      setGreeting(getDashboardGreeting(now));
+      timer = window.setTimeout(schedule, millisecondsUntilNextGreetingBoundary(now));
+    };
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") schedule(); };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); };
+  }, []);
   const load = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
@@ -70,7 +80,7 @@ function DashboardContent({ email }: { email: string }) {
       const summary: DashboardData = await response.json();
       if (request.current !== controller) return;
       setData(summary);
-      if (Object.values(summary.counts).some(value => value === null) || !summary.capacity || !summary.recentAvailable) setError("部分摘要暫時無法取得。");
+      if (Object.values(summary.counts).some(value => value === null) || !summary.capacity || !summary.recentAvailable) setError("部分資料暫時無法更新");
     } catch {
       if (request.current === controller && (!controller.signal.aborted || controller.signal.reason === "timeout")) setError("首頁摘要載入失敗，請重試。");
     } finally {
@@ -93,7 +103,7 @@ function DashboardContent({ email }: { email: string }) {
   const databasePercent = data?.capacity?.databaseUnlimited ? 0 : usagePercentage(data?.capacity?.databaseUsedBytes ?? 0, data?.capacity?.databaseQuotaBytes ?? 0);
   const storagePercent = data?.capacity?.storageUnlimited ? 0 : usagePercentage(data?.capacity?.storageUsedBytes ?? 0, data?.capacity?.storageQuotaBytes ?? 0);
   return <div className={styles.mobileDashboard} aria-busy={pending}>
-      <MobilePageHeader eyebrow="PERSONAL DASHBOARD" title={greeting()} subtitle={email} actions={<><Link aria-label="搜尋" prefetch={false} href="/bookmarks"><AppIcon name="search" /></Link><Link aria-label="設定" prefetch={false} href="/appearance"><AppIcon name="settings" /></Link></>} />
+      <MobilePageHeader eyebrow="PERSONAL DASHBOARD" title={greeting} subtitle={email} actions={<><Link aria-label="搜尋" prefetch={false} href="/bookmarks"><AppIcon name="search" /></Link><Link aria-label="設定" prefetch={false} href="/appearance"><AppIcon name="settings" /></Link></>} />
 
       {error && <div className={styles.loadError} role="status">{error}<button type="button" onClick={() => void load()}>重試</button></div>}
       <MobileSection title="資料概覽">
@@ -109,7 +119,7 @@ function DashboardContent({ email }: { email: string }) {
       </MobileSection>
 
       <MobileSection title="最近新增／更新">
-        <div className={`${styles.recentList} mobile-surface`}>{data?.recent.length ? data.recent.map(item => <Link href={item.href} key={`${item.kind}-${item.id}`} prefetch={false}><span className={styles.recentIcon}><AppIcon name={kindIcons[item.kind]} /></span><span><strong>{item.title}</strong><small>{kindLabels[item.kind]} · {relativeDate(item.updatedAt)}</small></span><b aria-hidden="true">›</b></Link>) : <p className={styles.empty}>{pending ? "正在載入摘要…" : data?.recentAvailable ? "新增第一筆資料後，最近更新會顯示在這裡。" : "目前無法取得完整更新紀錄。"}</p>}</div>
+        <div className={`${styles.recentList} mobile-surface`}>{data?.recent.length ? data.recent.map(item => <Link href={item.href} key={`${item.kind}-${item.id}`} prefetch={false}><span className={styles.recentIcon}><AppIcon name={kindIcons[item.kind]} /></span><span><strong>{item.title}</strong><small>{kindLabels[item.kind]} · {relativeDate(item.updatedAt)}</small></span><b aria-hidden="true">›</b></Link>) : <p className={styles.empty}>{pending ? "正在載入摘要…" : data?.recentUnavailableKinds?.length === overview.length ? "目前無法取得更新紀錄。" : "新增第一筆資料後，最近更新會顯示在這裡。"}</p>}</div>
       </MobileSection>
     </div>;
 }

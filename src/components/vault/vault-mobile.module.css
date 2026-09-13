@@ -53,27 +53,33 @@
   .vaultWorkspace :global(.vault-filter-chips-row) { gap: 6px; overflow: hidden; flex-wrap: nowrap; }
   .vaultWorkspace :global(.vault-filter-chips-row > button) { min-width: 44px; min-height: 44px; padding-inline: 10px; border-radius: 13px; font-size: .75rem; }
 
-  .vaultWorkspace :global(.vault-batch-toolbar) { gap: 7px; padding: 8px; border-radius: 13px; }
+  .vaultWorkspace :global(.vault-batch-toolbar) { gap: 7px; padding: 0 8px; border: 0; border-radius: 13px; background: transparent; }
   .vaultWorkspace :global(.vault-batch-toolbar label) { min-height: 44px; }
-  .vaultWorkspace :global(.vault-batch-toolbar > div button) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-batch-toolbar > strong),
+  .vaultWorkspace :global(.vault-batch-toolbar > div) { display: none; }
 
   .vaultWorkspace :global(.vault-grid) { gap: 8px; }
   .vaultWorkspace :global(.vault-item) {
+    height: auto;
     min-height: 0;
-    gap: 9px;
-    padding: 11px;
+    grid-template-rows: auto auto auto;
+    align-content: start;
+    gap: 6px;
+    padding: 9px 10px;
     border-radius: 16px;
     background: color-mix(in srgb, var(--surface) 90%, var(--brand-soft));
   }
-  .vaultWorkspace :global(.vault-item > header) { min-height: 44px; }
+  .vaultWorkspace :global(.vault-item > header) { min-height: 40px; }
+  .vaultWorkspace :global(.vault-item > header:not(:has(.vault-item-select))) { min-height: 28px; padding-right: 42px; }
+  .vaultWorkspace :global(.vault-item > header:not(:has(.vault-item-select)) .vault-item-menu) { position: absolute; top: 5px; right: 6px; }
   .vaultWorkspace :global(.vault-kind-badge) { padding: 5px 8px; font-size: .68rem; }
   .vaultWorkspace :global(.vault-menu-trigger) { width: 44px; height: 44px; border-radius: 12px; }
-  .vaultWorkspace :global(.vault-item-content) { gap: 5px; }
+  .vaultWorkspace :global(.vault-item-content) { gap: 3px; }
   .vaultWorkspace :global(.vault-item h3) { font-size: .98rem; }
   .vaultWorkspace :global(.vault-username),
   .vaultWorkspace :global(.vault-notes) { font-size: .75rem; }
-  .vaultWorkspace :global(.vault-item code) { padding: 8px 9px; font-size: .77rem; }
-  .vaultWorkspace :global(.vault-item > footer) { gap: 7px; margin-top: 0; }
+  .vaultWorkspace :global(.vault-item code) { padding: 6px 8px; font-size: .77rem; }
+  .vaultWorkspace :global(.vault-item > footer) { gap: 6px; margin-top: 1px; }
   .vaultWorkspace :global(.vault-item > footer .secondary-button) { min-height: 44px; border-radius: 11px; }
   .vaultWorkspace :global(.vault-item-select) { min-height: 44px; }
   .vaultWorkspace :global(.vault-empty) { padding: 24px 14px; border-radius: 15px; }

@@ -20,19 +20,20 @@ function fixture(fail = "") {
   const entry = (id, extra = {}) => ({ id, kind: "note", owner_id: "alice", title: id, updated_at: stamp, deleted_at: null, security_level: "standard", ...extra });
   const anime = (id, extra = {}) => ({ id, user_id: "alice", title: id, updated_at: stamp, deleted_at: null, is_adult: false, ...extra });
   const tables = {
-    entries: [entry("visible"), entry("locked", { content_folder_id: "secret" }), entry("hidden", { content_folders: { is_visible: false } }),
+    entries: [entry("visible"), entry("locked", { content_folder_id: "secret", folderLinks: ["secret"] }), entry("hidden", { content_folder_id: "hidden", hiddenFolders: ["hidden"], folderLinks: ["hidden"] }),
+      entry("mixed", { content_folder_id: "public", folderLinks: ["public", "secret"] }),
       entry("secure", { security_level: "sensitive" }), entry("bookmark", { kind: "bookmark" }),
       entry("other-user", { owner_id: "bob" }), entry("trash", { deleted_at: stamp })],
     anime_library: [anime("normal"), anime("adult", { is_adult: true }), anime("other-anime", { user_id: "bob" }),
-      anime("hidden-anime", { anime_library_folders: [{ folder_id: "private", anime_folders: { is_visible: false } }] })],
-    folder_locks: [{ id: "l1", owner_id: "alice", folder_id: "secret" }, { id: "l2", owner_id: "bob", folder_id: "other" }],
+      anime("hidden-anime", { folderLinks: ["private"], hiddenFolders: ["private"] })],
+    folder_locks: [{ id: "l1", owner_id: "alice", folder_kind: "note", folder_id: "secret" }, { id: "l2", owner_id: "bob", folder_kind: "note", folder_id: "other" }],
   };
   const calls = [];
   function from(table) {
     let rows = tables[table], start = 0, end = Infinity;
-    const filters = [];
+    const filters = []; let selection = ""; let head = false;
     const builder = {
-      select() { return builder; },
+      select(columns, options = {}) { selection = columns; head = Boolean(options.head); return builder; },
       eq(key, value) { filters.push([key, value]); rows = rows.filter(row => row[key] === value); return builder; },
       in(key, values) { rows = rows.filter(row => values.includes(row[key])); return builder; },
       is(key, value) { rows = rows.filter(row => row[key] === value); return builder; },
@@ -42,10 +43,19 @@ function fixture(fail = "") {
       limit(n) { end = n; return builder; },
       abortSignal() { return builder; },
       then(resolve, reject) {
-        calls.push({ table, filters, start });
+        calls.push({ table, filters, start, selection });
         assert.ok(filters.some(([key, value]) => ["owner_id", "user_id"].includes(key) && value === "alice"), "All reads owner-scoped");
-        return Promise.resolve(fail === table ? { error: new Error("offline"), data: null, count: null } :
-          { error: null, data: rows.slice(start, Math.min(end, start + (table === "entries" ? 2 : 1000))), count: rows.length }).then(resolve, reject);
+        const privacyKind = filters.find(([key]) => key === "kind")?.[1];
+        const failed = fail === table || fail === `${privacyKind}-privacy` && selection.includes("all_folder_links:");
+        if (failed) return Promise.resolve({ error: new Error("offline"), data: null, count: null }).then(resolve, reject);
+        let data = rows;
+        if (selection.includes("primary_folder:")) data = rows.map(row => ({
+          ...row,
+          primary_folder: row.content_folder_id || row.folder_id ? { id: row.content_folder_id ?? row.folder_id, is_visible: !(row.hiddenFolders ?? []).includes(row.content_folder_id ?? row.folder_id) } : null,
+          all_folder_links: (row.folderLinks ?? []).map(folder_id => ({ folder_id, folder: { id: folder_id, is_visible: !(row.hiddenFolders ?? []).includes(folder_id) } })),
+        }));
+        const cap = table === "entries" && selection.includes("security_level") && !head ? 2 : 1000;
+        return Promise.resolve({ error: null, data: head ? null : data.slice(start, Math.min(end, start + cap)), count: rows.length }).then(resolve, reject);
       },
     };
     return builder;
@@ -64,21 +74,31 @@ function fixture(fail = "") {
 test("Real metadata aggregation: capped pagination, ownership, trash/adult exclusion and protected previews", async () => {
   const { getDashboardData, calls } = fixture();
   const data = await getDashboardData("alice");
-  assert.equal(data.counts.note, 4); assert.equal(data.counts.bookmark, 1); assert.equal(data.counts.anime, 2);
+  assert.equal(data.counts.note, 5); assert.equal(data.counts.bookmark, 1); assert.equal(data.counts.anime, 2);
   assert.equal(data.counts.file, 0);
   assert.deepEqual(Array.from(data.recent, row => row.id).sort(), ["bookmark", "normal", "visible"]);
-  assert.deepEqual(calls.filter(call => call.table === "entries").map(call => call.start), [0, 2, 4]);
+  assert.deepEqual(calls.filter(call => call.table === "entries" && call.selection.includes("security_level")).map(call => call.start), [0, 2, 4]);
   assert.equal(calls.filter(call => call.table === "capacity").length, 1);
 });
 test("Protection lookup fails closed without converting unknown counts into fake zero", async () => {
   const locked = await fixture("folder_locks").getDashboardData("alice");
-  assert.equal(locked.recent.length, 0); assert.equal(locked.recentAvailable, false); assert.equal(locked.counts.note, 4);
+  assert.deepEqual(Array.from(locked.recent, row => row.id), ["normal"]); assert.equal(locked.recentAvailable, false); assert.equal(locked.counts.note, 5);
+  assert.deepEqual(Array.from(locked.recentUnavailableKinds).sort(), ["bookmark", "code", "file", "note", "photo"]);
   const missing = await fixture("entries").getDashboardData("alice");
   assert.equal(missing.counts.note, null); assert.equal(missing.counts.anime, 2);
 });
+test("Mixed locked and unlocked membership is hidden, while one privacy failure stays type-local", async () => {
+  const normal = await fixture().getDashboardData("alice");
+  assert.equal(normal.recent.some(row => row.id === "mixed"), false);
+  const partial = await fixture("note-privacy").getDashboardData("alice");
+  assert.equal(partial.recent.some(row => row.kind === "note"), false);
+  assert.equal(partial.recent.some(row => row.kind === "bookmark"), true);
+  assert.equal(partial.recent.some(row => row.kind === "anime"), true);
+  assert.deepEqual(Array.from(partial.recentUnavailableKinds), ["note"]);
+});
 test("Nonessential capacity failure preserves available data", async () => {
   const data = await fixture("capacity").getDashboardData("alice");
-  assert.equal(data.capacity, null); assert.equal(data.counts.note, 4); assert.equal(data.recentAvailable, true);
+  assert.equal(data.capacity, null); assert.equal(data.counts.note, 5); assert.equal(data.recentAvailable, true);
 });
 test("Summary API rejects invalid sessions and uncompleted MFA before reading data", async () => {
   for (const scenario of ["signed-out", "mismatch", "mfa", "valid"]) {

@@ -4,6 +4,7 @@ export type DashboardData = {
   counts: Record<DashboardKind, number | null>;
   recent: RecentDashboardItem[];
   recentAvailable: boolean;
+  recentUnavailableKinds: DashboardKind[];
   capacity: {
     databaseUsedBytes: number; databaseQuotaBytes: number; databaseUnlimited: boolean;
     storageUsedBytes: number; storageQuotaBytes: number; storageUnlimited: boolean;

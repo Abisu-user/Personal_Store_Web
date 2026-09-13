@@ -19,6 +19,7 @@ import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/conten
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
 import type { FilesWorkspaceData } from "@/lib/files/types";
 
 const maxFileBytes = 52_428_800;
@@ -423,6 +424,15 @@ export function FilesWorkspace({
           </>
         )}
       </div>
+      <MobileBatchActionBar count={chosenFiles.length} onCancel={() => setChosen(new Set())}>
+        {view === "trash" ? (<>
+          <button className="button" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">還原</button>
+          <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button>
+        </>) : (<>
+          <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
+          <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">刪除</button>
+        </>)}
+      </MobileBatchActionBar>
       <div className="content-item-list">
         {files.map((file) => (
           <article className="content-item-card" key={file.id}>
