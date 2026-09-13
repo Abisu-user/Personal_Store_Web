@@ -79,7 +79,16 @@ export function MobileAppNavigation() {
     router.refresh();
   }
 
-  const linkProps = (href: string) => ({ onMouseEnter: () => prefetch(href), onFocus: () => prefetch(href), onClick: () => setPendingPath(href) });
+  const linkProps = (href: string) => ({
+    onMouseEnter: () => prefetch(href),
+    onFocus: () => prefetch(href),
+    onClick: () => {
+      if (href === "/bookmarks" && pathname === "/bookmarks") {
+        window.dispatchEvent(new CustomEvent("personal-vault:bookmarks-overview"));
+      }
+      setPendingPath(href);
+    },
+  });
   const customItems = navigation.items.map(id => mobileNavigationDestinations.find(item => item.id === id)).filter((item): item is typeof mobileNavigationDestinations[number] => Boolean(item));
   const beforeCreate = customItems.slice(0, navigation.itemCount === 7 ? 2 : 1);
   const afterCreate = customItems.slice(beforeCreate.length);

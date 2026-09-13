@@ -24,7 +24,7 @@ const bookmarkSchema = z.object({
 const bookmarkUpdateSchema = bookmarkSchema.extend({ id: z.string().uuid() });
 const entryActionSchema = z.object({
   id: z.string().uuid(),
-  action: z.enum(["toggle_favorite", "toggle_pinned", "archive", "unarchive", "trash", "restore"]),
+  action: z.enum(["toggle_favorite", "toggle_pinned", "archive", "unarchive", "trash", "restore", "open"]),
 });
 const bulkActionSchema = z.object({
   ids: z.array(z.string().uuid()).min(1).max(100),
@@ -163,7 +163,7 @@ export async function PATCH(request: NextRequest) {
     if (!parsed.success) return jsonError("Invalid request", 400);
     const { data: current, error: currentError } = await admin
       .from("entries")
-      .select("id, is_favorite, is_pinned, deleted_at")
+      .select("id, is_favorite, is_pinned, deleted_at, opened_count")
       .eq("id", parsed.data.id)
       .eq("owner_id", context.userId)
       .eq("kind", "bookmark")
@@ -179,6 +179,7 @@ export async function PATCH(request: NextRequest) {
         case "unarchive": return current.deleted_at ? null : { is_archived: false };
         case "trash": return current.deleted_at ? null : { deleted_at: new Date().toISOString(), is_pinned: false };
         case "restore": return current.deleted_at ? { deleted_at: null, is_archived: false } : null;
+        case "open": return current.deleted_at ? null : { last_opened_at: new Date().toISOString(), opened_count: current.opened_count + 1 };
       }
     })();
     if (!updates) return jsonError("此書籤目前無法執行這項操作。", 409);

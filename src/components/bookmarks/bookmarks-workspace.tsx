@@ -16,7 +16,10 @@ import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
+import { MobilePageHeader } from "@/components/ui/mobile-layout";
+import { AppIcon } from "@/components/ui/app-icon";
 import { MobileSectionActions } from "@/components/ui/mobile-section-actions";
+import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
@@ -32,6 +35,7 @@ import {
   readClientResource,
   writeClientResource,
 } from "@/lib/pwa/client-resource-cache";
+import styles from "./bookmarks-mobile.module.css";
 
 type SystemView = "all" | "favorite" | "pinned" | "archived" | "trash";
 type View = SystemView | `folder:${string}`;
@@ -117,7 +121,40 @@ function readQuickFolderIds() {
   }
 }
 
-function WebsitePreview({ item }: { item: Bookmark }) {
+function bookmarkHostname(item: Bookmark) {
+  try {
+    return item.detail?.url
+      ? new URL(item.detail.url).hostname.replace(/^www\./, "")
+      : "網站連結";
+  } catch {
+    return "網站連結";
+  }
+}
+
+function WebsiteMark({ item }: { item: Bookmark }) {
+  const hostname = bookmarkHostname(item);
+  const cover = item.coverImageUrl ?? item.detail?.favicon_url;
+  return (
+    <span className={styles.websiteMark}>
+      <span aria-hidden="true">{hostname.slice(0, 1).toUpperCase()}</span>
+      {cover && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={cover} />}
+    </span>
+  );
+}
+
+function formatOpenedAt(value: string) {
+  const elapsed = Math.max(0, Date.now() - new Date(value).getTime());
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return "剛剛";
+  if (minutes < 60) return `${minutes} 分鐘前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小時前`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} 天前`;
+  return new Intl.DateTimeFormat("zh-TW", { month: "numeric", day: "numeric" }).format(new Date(value));
+}
+
+function WebsitePreview({ item, onOpen }: { item: Bookmark; onOpen: (item: Bookmark) => void }) {
   const url = item.detail?.url;
   let hostname = "網站連結";
   try {
@@ -132,6 +169,7 @@ function WebsitePreview({ item }: { item: Bookmark }) {
       href={url}
       rel="noreferrer noopener"
       target="_blank"
+      onClick={() => onOpen(item)}
     >
       <span className="bookmark-preview-fallback">
         {hostname.slice(0, 1).toUpperCase()}
@@ -257,11 +295,10 @@ function BookmarkFolderLockGate({
     const intercept = (event: MouseEvent) => {
       const button = (
         event.target as HTMLElement | null
-      )?.closest<HTMLButtonElement>(".bookmark-view-tabs-scroll button");
+      )?.closest<HTMLButtonElement>("[data-bookmark-folder-id]");
       if (!button) return;
       const folder = folders.find(
-        (candidate) =>
-          candidate.is_locked && button.textContent?.includes(candidate.name),
+        (candidate) => candidate.is_locked && button.dataset.bookmarkFolderId === candidate.id,
       );
       if (!folder) return;
       event.preventDefault();
@@ -290,11 +327,13 @@ function BookmarkResultCard({
   selected,
   onSelect,
   onOpen,
+  onWebsiteOpen,
 }: {
   item: Bookmark;
   selected: boolean;
   onSelect: () => void;
   onOpen: () => void;
+  onWebsiteOpen: (item: Bookmark) => void;
 }) {
   return (
     <article
@@ -313,7 +352,7 @@ function BookmarkResultCard({
           type="checkbox"
         />
       </label>
-      <WebsitePreview item={item} />
+      <WebsitePreview item={item} onOpen={onWebsiteOpen} />
       <button
         aria-label={`查看 ${item.title} 的詳細資訊`}
         className="bookmark-card-content library-open"
@@ -383,6 +422,9 @@ export function BookmarksWorkspace({
   const previewRequest = useRef<AbortController | null>(null);
   const [data, setData] = useState(initialData ?? emptyBookmarks);
   const [loaded, setLoaded] = useState(Boolean(initialData));
+  const [freshData, setFreshData] = useState(Boolean(initialData));
+  const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
+  const [showAllBookmarks, setShowAllBookmarks] = useState(false);
   const [view, setView] = useState<View>("all");
   const [category, setCategory] = useState<string[]>([]);
   const [folderFilters, setFolderFilters] = useState<string[]>([]);
@@ -416,6 +458,7 @@ export function BookmarksWorkspace({
   const [organizeOpen, setOrganizeOpen] = useState(false);
   const [categoryQuery, setCategoryQuery] = useState("");
   const [folderQuery, setFolderQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState<{
     kind: "category" | "folder";
     id: string;
@@ -460,6 +503,7 @@ export function BookmarksWorkspace({
     const next = (await response.json()) as BookmarksWorkspaceData;
     setData(next);
     setLoaded(true);
+    setFreshData(true);
     if (!createMode) writeClientResource("bookmarks:standard", next);
   }, [createMode]);
   useCreatedItemRefresh("bookmark", load);
@@ -481,6 +525,7 @@ export function BookmarksWorkspace({
         if (!active) return;
         setData(next);
         setLoaded(true);
+        setFreshData(true);
         writeClientResource("bookmarks:standard", next);
       } catch (cause) {
         if (active && !cached)
@@ -502,6 +547,14 @@ export function BookmarksWorkspace({
     const timer = window.setTimeout(() => setSuccess(null), 3000);
     return () => window.clearTimeout(timer);
   }, [success]);
+  useEffect(() => {
+    const showOverview = () => {
+      setMobileView("overview");
+      setChosen(new Set());
+    };
+    window.addEventListener("personal-vault:bookmarks-overview", showOverview);
+    return () => window.removeEventListener("personal-vault:bookmarks-overview", showOverview);
+  }, []);
   const activeFolderId = folderFilters[0] ?? null;
   const scopedCategories = useMemo(
     () =>
@@ -514,7 +567,8 @@ export function BookmarksWorkspace({
     () =>
       data.bookmarks.filter((item) => {
         if (view === "trash" ? !item.deletedAt : item.deletedAt) return false;
-        if (view === "all" && !folderFilters.length && (item.archived || item.folders.length)) return false;
+        if (view === "all" && !showAllBookmarks && !folderFilters.length && (item.archived || item.folders.length)) return false;
+        if (showAllBookmarks && (item.archived || item.deletedAt)) return false;
         if (view === "favorite" && (!item.favorite || item.archived))
           return false;
         if (view === "pinned" && (!item.pinned || item.archived)) return false;
@@ -528,7 +582,7 @@ export function BookmarksWorkspace({
           search.includes(query.toLowerCase())
         );
       }),
-    [category, data.bookmarks, folderFilters, query, view],
+    [category, data.bookmarks, folderFilters, query, showAllBookmarks, view],
   );
   const counts = useMemo(
     () =>
@@ -1210,7 +1264,13 @@ export function BookmarksWorkspace({
     <>
       <BookmarkFolderLockGate
         folders={data.folders}
-        onOpen={(folderId) => setView(`folder:${folderId}`)}
+        onOpen={(folderId) => {
+          setFolderFilters([folderId]);
+          setShowAllBookmarks(false);
+          setView(`folder:${folderId}`);
+          setMobileView("library");
+          setFolderMoreOpen(false);
+        }}
         onRefresh={load}
       />
       <ConfirmDialog
@@ -1614,8 +1674,55 @@ export function BookmarksWorkspace({
       });
       return next;
     });
-  const quickCount = (id: string) => data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.folders.some((folder) => folder.id === id)).length;
+  const quickCount = (id: string) => data.folders.find((folder) => folder.id === id)?.item_count
+    ?? data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.folders.some((folder) => folder.id === id)).length;
+  const frequentBookmarks = (freshData ? data.bookmarks : [])
+    .filter((item) => !item.deletedAt && !item.archived && (item.openedCount ?? 0) > 0 && item.detail?.url)
+    .sort((left, right) => (right.openedCount ?? 0) - (left.openedCount ?? 0) || new Date(right.lastOpenedAt ?? 0).getTime() - new Date(left.lastOpenedAt ?? 0).getTime())
+    .slice(0, 8);
+  const recentBookmarks = (freshData ? data.bookmarks : [])
+    .filter((item) => !item.deletedAt && !item.archived && item.lastOpenedAt && item.detail?.url)
+    .sort((left, right) => new Date(right.lastOpenedAt ?? 0).getTime() - new Date(left.lastOpenedAt ?? 0).getTime())
+    .slice(0, 5);
+  const activeBookmarkCount = data.bookmarks.filter((item) => !item.deletedAt && !item.archived).length;
+  const hasAnyBookmark = activeBookmarkCount > 0 || counts.all > 0 || data.folders.some((folder) => (folder.item_count ?? 0) > 0);
+  const openLibrary = ({ all = false, focusSearch = false }: { all?: boolean; focusSearch?: boolean } = {}) => {
+    setMobileView("library");
+    setShowAllBookmarks(all);
+    setFolderFilters([]);
+    setCategory([]);
+    setView("all");
+    if (focusSearch) window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  };
+  const openFolder = (folderId: string | null) => {
+    setShowAllBookmarks(false);
+    setCategory([]);
+    setFolderFilters(folderId ? [folderId] : []);
+    setView(folderId ? `folder:${folderId}` : "all");
+    setMobileView("library");
+  };
+  const recordOpen = async (id: string) => {
+    const openedAt = new Date().toISOString();
+    try {
+      const response = await fetch("/api/bookmarks", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action: "open" }),
+        keepalive: true,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setData((current) => ({
+        ...current,
+        bookmarks: current.bookmarks.map((item) => item.id === id
+          ? { ...item, lastOpenedAt: openedAt, openedCount: (item.openedCount ?? 0) + 1 }
+          : item),
+      }));
+    } catch (cause) {
+      console.warn("[bookmarks] opening activity could not be recorded", cause);
+    }
+  };
   const selectBookmarkFolder = (folderId: string | null) => {
+    setShowAllBookmarks(false);
     if (!folderId) { setFolderFilters([]); setView("all"); return; }
     setFolderFilters((current) => {
       const next = current.includes(folderId) ? current.filter((id) => id !== folderId) : [...current, folderId];
@@ -1641,6 +1748,121 @@ export function BookmarksWorkspace({
           {success}
         </p>
       )}
+      <section className={styles.mobileOverview} data-active={mobileView === "overview"}>
+        <MobilePageHeader
+          eyebrow="BOOKMARKS"
+          title="網站收藏"
+          actions={<>
+            <button aria-label="搜尋網站收藏" className="mobile-icon-button" onClick={() => openLibrary({ all: true, focusSearch: true })} type="button">
+              <AppIcon name="search" />
+            </button>
+            <CreateItemButton className={styles.overviewAddButton} kind="bookmark">
+              <AppIcon name="plus" />
+              <span>新增</span>
+            </CreateItemButton>
+          </>}
+        />
+        <div className={styles.overviewChips} data-chip-overflow-container>
+          <ResponsiveChipOverflow
+            activeIds={[]}
+            className="bookmark-view-tabs"
+            leadingCount={2}
+            items={visibleBookmarkFolders}
+            itemId={(item) => item.id}
+            itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
+            leading={<>
+              <button onClick={() => openLibrary({ all: true })} type="button">全部</button>
+              <button onClick={() => openFolder(null)} type="button">未整理</button>
+            </>}
+            renderItem={(item) => (
+              <button data-bookmark-folder-id={item.id} key={`overview-folder-${item.id}`} onClick={() => openFolder(item.id)} type="button">
+                {item.is_locked ? <AppIcon name="lock" /> : null}
+                {item.name}
+              </button>
+            )}
+            renderMore={(hasHiddenActive) => (
+              <button className={hasHiddenActive ? "active" : ""} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>
+            )}
+            rowClassName="bookmark-view-tabs-scroll"
+          />
+        </div>
+
+        <section className={styles.overviewSection}>
+          <header><h2>常用網站</h2></header>
+          {!freshData ? (
+            <p className={styles.compactEmpty}>正在載入常用網站…</p>
+          ) : frequentBookmarks.length ? (
+            <div className={styles.shortcutRail}>
+              {frequentBookmarks.map((item) => (
+                <a href={item.detail?.url ?? "#"} key={item.id} onClick={() => void recordOpen(item.id)} rel="noreferrer noopener" target="_blank">
+                  <WebsiteMark item={item} />
+                  <span>{item.title}</span>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.compactEmpty}>{freshData ? "開啟過的網站會顯示在這裡。" : "正在載入常用網站…"}</p>
+          )}
+        </section>
+
+        <section className={styles.overviewSection}>
+          <header><h2>最近開啟</h2></header>
+          {!freshData ? (
+            <p className={styles.compactEmpty}>正在載入最近開啟紀錄…</p>
+          ) : recentBookmarks.length ? (
+            <div className={styles.recentList}>
+              {recentBookmarks.map((item) => (
+                <a href={item.detail?.url ?? "#"} key={item.id} onClick={() => void recordOpen(item.id)} rel="noreferrer noopener" target="_blank">
+                  <WebsiteMark item={item} />
+                  <span className={styles.recentCopy}><strong>{item.title}</strong><small>{bookmarkHostname(item)}</small></span>
+                  <time dateTime={item.lastOpenedAt ?? undefined}>{item.lastOpenedAt ? formatOpenedAt(item.lastOpenedAt) : ""}</time>
+                  <span aria-hidden="true" className={styles.chevron}>›</span>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.compactEmpty}>{freshData ? "尚無最近開啟紀錄" : "正在載入最近開啟…"}</p>
+          )}
+        </section>
+
+        <section className={styles.overviewSection}>
+          <header>
+            <h2>資料夾</h2>
+            <button className={styles.sectionLink} onClick={() => openLibrary({ all: true })} type="button">查看全部 <span aria-hidden="true">›</span></button>
+          </header>
+          <div className={styles.folderGrid}>
+            <button onClick={() => openFolder(null)} type="button">
+              <span className={styles.folderIcon}><AppIcon name="folder" /></span>
+              <strong>未整理</strong>
+              <small>{counts.all} 個項目</small>
+            </button>
+            {visibleBookmarkFolders.map((item) => (
+              <button data-bookmark-folder-id={item.id} key={`overview-card-${item.id}`} onClick={() => openFolder(item.id)} type="button">
+                <span className={styles.folderIcon}><AppIcon name={item.is_locked ? "lock" : "folder"} /></span>
+                <strong>{item.name}</strong>
+                <small>{quickCount(item.id)} 個項目</small>
+              </button>
+            ))}
+          </div>
+          {!visibleBookmarkFolders.length && <p className={styles.compactEmpty}>還沒有自訂資料夾</p>}
+        </section>
+
+        {freshData && loaded && !hasAnyBookmark && (
+          <section className={styles.overviewEmpty}>
+            <AppIcon name="bookmark" />
+            <strong>還沒有網站收藏</strong>
+            <p>收藏第一個常用網站，下次就能快速找到。</p>
+            <CreateItemButton className="button" kind="bookmark">＋ 新增網站</CreateItemButton>
+          </section>
+        )}
+      </section>
+      <div className={styles.managementView} data-active={mobileView === "library"}>
+        <MobilePageHeader
+          eyebrow="BOOKMARK LIBRARY"
+          title="全部網站"
+          leading={<button aria-label="返回網站收藏首頁" className="mobile-icon-button" onClick={() => setMobileView("overview")} type="button"><span aria-hidden="true">‹</span></button>}
+          actions={<CreateItemButton className="mobile-header-create-button" kind="bookmark"><AppIcon name="plus" /><span className="sr-only">新增網站收藏</span></CreateItemButton>}
+        />
       <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>資料夾</strong>
@@ -1684,11 +1906,11 @@ export function BookmarksWorkspace({
           items={visibleBookmarkFolders}
           itemId={(item) => item.id}
           itemMeasureKey={(item) => `${item.name}|${item.is_locked}|${quickCount(item.id)}`}
-          leading={<button aria-selected={!folderFilters.length} className={!folderFilters.length ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
-          renderItem={(item) => <button aria-selected={folderFilters.includes(item.id)} className={folderFilters.includes(item.id) ? "active" : ""} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
+          leading={<button aria-selected={!showAllBookmarks && !folderFilters.length} className={!showAllBookmarks && !folderFilters.length ? "active" : ""} onClick={() => selectBookmarkFolder(null)} role="tab" type="button">未整理 <span>{counts.all}</span></button>}
+          renderItem={(item) => <button aria-selected={folderFilters.includes(item.id)} className={folderFilters.includes(item.id) ? "active" : ""} data-bookmark-folder-id={item.id} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
-          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setView("trash"); setFolderFilters([]); setCategory([]); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
+          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setShowAllBookmarks(false); setView("trash"); setFolderFilters([]); setCategory([]); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
           trailingCount={folders.trash.visible ? 1 : 0}
         />
       </section>
@@ -1746,6 +1968,7 @@ export function BookmarksWorkspace({
           aria-label="搜尋網站收藏"
           onChange={(event) => setQuery(event.target.value)}
           placeholder="搜尋標題或網址"
+          ref={searchInputRef}
           value={query}
         />
       </div>
@@ -1786,6 +2009,7 @@ export function BookmarksWorkspace({
                 item={item}
                 key={item.id}
                 onOpen={() => setDetailItem(item)}
+                onWebsiteOpen={(bookmark) => void recordOpen(bookmark.id)}
                 onSelect={() =>
                   setChosen((current) => {
                     const next = new Set(current);
@@ -1800,6 +2024,7 @@ export function BookmarksWorkspace({
             {list.length === 0 && <p className="lead">尚無符合條件的網站收藏。</p>}
           </>
         )}
+      </div>
       </div>
       <ModalDialog
         className="mobile-sheet-dialog"
@@ -1862,7 +2087,8 @@ export function BookmarksWorkspace({
             <button
               className={!folderFilters.length ? "active" : ""}
               onClick={() => {
-                selectBookmarkFolder(null);
+                if (mobileView === "overview") openFolder(null);
+                else selectBookmarkFolder(null);
                 setFolderMoreOpen(false);
                 setFolderQuery("");
               }}
@@ -1879,9 +2105,14 @@ export function BookmarksWorkspace({
               .map((item) => (
                 <button
                   className={folderFilters.includes(item.id) ? "active" : ""}
+                  data-bookmark-folder-id={item.id}
                   key={item.id}
                   onClick={() => {
-                    selectBookmarkFolder(item.id);
+                    if (mobileView === "overview") {
+                      openFolder(item.id);
+                      setFolderMoreOpen(false);
+                      setFolderQuery("");
+                    } else selectBookmarkFolder(item.id);
                   }}
                   type="button"
                 >
@@ -2180,6 +2411,7 @@ export function BookmarksWorkspace({
               <a
                 className="detail-url"
                 href={detailItem.detail?.url}
+                onClick={() => void recordOpen(detailItem.id)}
                 rel="noreferrer noopener"
                 target="_blank"
               >

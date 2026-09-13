@@ -34,7 +34,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   const [entriesResult, categoriesResult, foldersResult, tagsResult, categoryLinksResult, folderLinksResult] = await Promise.all([
     admin
       .from("entries")
-      .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, cover_storage_object_id, is_favorite, is_pinned, is_archived, deleted_at, created_at, updated_at, categories:categories!entries_category_id_fkey(id, name), bookmark_folders:bookmark_folders!entries_bookmark_folder_id_fkey(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
+      .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, cover_storage_object_id, is_favorite, is_pinned, is_archived, deleted_at, last_opened_at, opened_count, created_at, updated_at, categories:categories!entries_category_id_fkey(id, name), bookmark_folders:bookmark_folders!entries_bookmark_folder_id_fkey(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
       .eq("owner_id", ownerId)
       .eq("kind", "bookmark")
       .order("updated_at", { ascending: false })
@@ -43,7 +43,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     admin.from("bookmark_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).order("sort_order").order("name").limit(100),
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
     admin.from("entry_category_links").select("entry_id, categories(id, name)").eq("owner_id", ownerId),
-    admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders(id, name, is_visible)").eq("owner_id", ownerId),
+    admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders:bookmark_folders!bookmark_entry_folders_folder_id_fkey(id, name, is_visible), entry:entries!bookmark_entry_folders_entry_id_fkey(id, kind, is_archived, deleted_at)").eq("owner_id", ownerId),
   ]);
 
   const queryErrors = [
@@ -63,6 +63,17 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   for (const link of categoryLinksResult.data ?? []) { const values = Array.isArray(link.categories) ? link.categories : link.categories ? [link.categories] : []; categoriesByEntry.set(link.entry_id, [...(categoriesByEntry.get(link.entry_id) ?? []), ...values]); }
   const foldersByEntry = new Map<string, Pick<Bookmark, "folders">["folders"]>();
   for (const link of folderLinksResult.data ?? []) { const values = Array.isArray(link.bookmark_folders) ? link.bookmark_folders : link.bookmark_folders ? [link.bookmark_folders] : []; foldersByEntry.set(link.entry_id, [...(foldersByEntry.get(link.entry_id) ?? []), ...values]); }
+  const folderEntryIds = new Map<string, Set<string>>();
+  for (const link of folderLinksResult.data ?? []) {
+    const entry = Array.isArray(link.entry) ? link.entry[0] : link.entry;
+    if (!entry || entry.kind !== "bookmark" || entry.deleted_at || entry.is_archived) continue;
+    const linkedFolders = Array.isArray(link.bookmark_folders) ? link.bookmark_folders : link.bookmark_folders ? [link.bookmark_folders] : [];
+    for (const folder of linkedFolders) {
+      const ids = folderEntryIds.get(folder.id) ?? new Set<string>();
+      ids.add(link.entry_id);
+      folderEntryIds.set(folder.id, ids);
+    }
+  }
 
   const bookmarks: Bookmark[] = (entriesResult.data ?? []).flatMap((entry) => {
     const folder = Array.isArray(entry.bookmark_folders) ? entry.bookmark_folders[0] ?? null : entry.bookmark_folders;
@@ -80,6 +91,8 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     deletedAt: entry.deleted_at,
     createdAt: entry.created_at,
     updatedAt: entry.updated_at,
+    lastOpenedAt: entry.last_opened_at,
+    openedCount: entry.opened_count,
     coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null,
     category: linkedCategories[0] ?? fallbackCategory,
     folder,
@@ -95,7 +108,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   return {
     bookmarks,
     categories: categoriesResult.data ?? [],
-    folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })),
+    folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, item_count: folderEntryIds.get(folder.id)?.size ?? 0, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })),
     tags: tagsResult.data ?? [],
   };
 }
