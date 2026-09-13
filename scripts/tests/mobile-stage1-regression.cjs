@@ -61,6 +61,9 @@ async function main() {
       assert.equal(requests - initial, 1, "StrictMode single GET at " + width);
       assert.equal(await page.locator(".loadError").count(), 0, "successful summary reserves no banner space at " + width);
       assert.equal(await page.locator(".overviewCard").count(), 6);
+      assert.equal(await page.locator(".quickActions").count(), 0, "legacy quick actions removed at " + width);
+      assert.equal(await page.locator(".todaySummary").count(), 1, "today summary present at " + width);
+      assert.equal(await page.locator(".avatarButton").innerText(), "✦", "profile avatar is reused at " + width);
       assert.equal(await page.locator(".desktopOnly").first().isVisible(), false);
       for (const button of await inspect()) {
         assert.ok(button.left >= -0.5 && button.right <= width + 0.5, "overflow " + width + JSON.stringify(button));
@@ -71,9 +74,9 @@ async function main() {
         const navRect = el.getBoundingClientRect(), createRect = create.getBoundingClientRect(), iconRect = icon.getBoundingClientRect();
         return { navHeight: navRect.height, createWidth: createRect.width, createHeight: createRect.height, createOffset: navRect.top - createRect.top, iconWidth: iconRect.width, labelSize: parseFloat(getComputedStyle(label).fontSize), marginTop: parseFloat(createStyle.marginTop), appPaddingBottom: parseFloat(getComputedStyle(document.querySelector(".app-main")).paddingBottom) };
       });
-      assert.ok(navMetrics.navHeight >= 64 && navMetrics.navHeight <= 70, "compact nav body " + width + JSON.stringify(navMetrics));
-      assert.ok(navMetrics.createWidth >= 58 && navMetrics.createWidth <= 64 && navMetrics.createHeight >= 58 && navMetrics.createHeight <= 64, "compact create " + width + JSON.stringify(navMetrics));
-      assert.ok(navMetrics.createOffset >= 16 && navMetrics.createOffset <= 20 && navMetrics.marginTop >= -23 && navMetrics.marginTop <= -20, "create protrusion " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.navHeight >= 50 && navMetrics.navHeight <= 54, "compact nav body " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.createWidth >= 50 && navMetrics.createWidth <= 52 && navMetrics.createHeight >= 50 && navMetrics.createHeight <= 52, "compact create " + width + JSON.stringify(navMetrics));
+      assert.ok(navMetrics.createOffset >= 1 && navMetrics.createOffset <= 3 && navMetrics.marginTop >= -5 && navMetrics.marginTop <= -3, "create protrusion " + width + JSON.stringify(navMetrics));
       assert.ok(navMetrics.iconWidth >= 22 && navMetrics.iconWidth <= 24 && navMetrics.labelSize >= 11 && navMetrics.labelSize <= 12, "icon and label size " + width + JSON.stringify(navMetrics));
       assert.ok(navMetrics.appPaddingBottom >= navMetrics.navHeight && navMetrics.appPaddingBottom <= navMetrics.navHeight + 8, "content bottom padding tracks nav " + width + JSON.stringify(navMetrics));
       await page.screenshot({ path: path.join(out, "phone-" + width + ".png") });
@@ -109,7 +112,8 @@ async function main() {
     await page.evaluate(() => window.setTestAppearance({ theme: "dark", accent: "custom", customColor: "#C35490", density: "compact", fontScale: 120, surfaceOpacity: 0, background: "image", backgroundImages: ["data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cpath fill='%23354764' d='M0 0h100v100H0z'/%3E%3C/svg%3E"] }));
     const theme = await page.locator(".overviewCard").first().evaluate(el => ({ background: getComputedStyle(el).backgroundColor, border: getComputedStyle(el).borderTopWidth, opacity: getComputedStyle(el).opacity, brand: getComputedStyle(document.documentElement).getPropertyValue("--brand").trim() }));
     assert.match(theme.background, /(?:rgba\(.*,\s*0\)|\/\s*0\))/); assert.equal(theme.opacity, "1"); assert.equal(theme.border, "1px"); assert.ok(theme.brand.toLowerCase().includes("c35490"));
-    assert.equal(await page.locator(".quickAction span").first().evaluate(el => getComputedStyle(el).color), await page.locator(".overviewCard strong").first().evaluate(el => getComputedStyle(el).color), "dark quick action text uses theme ink");
+    assert.ok(await page.locator(".headerBackdrop").evaluate(el => getComputedStyle(el).backgroundImage !== "none" && parseFloat(getComputedStyle(el).opacity) > 0), "workspace background is reused by the mobile header");
+    assert.equal(await page.locator(".todaySummary strong").first().evaluate(el => getComputedStyle(el).color), await page.locator(".overviewCard strong").first().evaluate(el => getComputedStyle(el).color), "dark today summary text uses theme ink");
     await page.screenshot({ path: path.join(out, "phone-dark-custom-transparent.png") });
     await page.evaluate(() => window.setTestAppearance({ theme: "dark", surfaceOpacity: 100, density: "compact" }));
     assert.doesNotMatch(await page.locator(".overviewCard").first().evaluate(el => getComputedStyle(el).backgroundColor), /\/\s*0\)/);

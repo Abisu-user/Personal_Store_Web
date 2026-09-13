@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { CreateItemButton } from "@/components/layout/create-item-provider";
+import { useAppProfile } from "@/components/layout/app-profile-provider";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
-import { MobilePageHeader, MobileSection } from "@/components/ui/mobile-layout";
+import { MobileSection } from "@/components/ui/mobile-layout";
 import type { DashboardData, DashboardKind } from "@/lib/dashboard/types";
 import { getDashboardGreeting, millisecondsUntilNextGreetingBoundary } from "@/lib/dashboard/greeting";
 import { formatBytes, usagePercentage } from "@/lib/format-bytes";
@@ -49,6 +49,7 @@ function relativeDate(value: string) {
 
 
 function DashboardContent({ email }: { email: string }) {
+  const profile = useAppProfile();
   const [greeting, setGreeting] = useState(() => getDashboardGreeting());
   const [data, setData] = useState<DashboardData | null>(null);
   const [pending, setPending] = useState(true);
@@ -102,24 +103,45 @@ function DashboardContent({ email }: { email: string }) {
   }, [load]);
   const databasePercent = data?.capacity?.databaseUnlimited ? 0 : usagePercentage(data?.capacity?.databaseUsedBytes ?? 0, data?.capacity?.databaseQuotaBytes ?? 0);
   const storagePercent = data?.capacity?.storageUnlimited ? 0 : usagePercentage(data?.capacity?.storageUsedBytes ?? 0, data?.capacity?.storageQuotaBytes ?? 0);
+  const today = new Date();
+  const todayRecentCount = data?.recent.filter(item => {
+    const updated = new Date(item.updatedAt);
+    return !Number.isNaN(updated.getTime()) && updated.getFullYear() === today.getFullYear() && updated.getMonth() === today.getMonth() && updated.getDate() === today.getDate();
+  }).length ?? 0;
+  const todaySummary = pending && !data
+    ? "正在整理今天的更新…"
+    : todayRecentCount > 0
+      ? data?.recentAvailable ? `今天新增／更新了 ${todayRecentCount} 筆資料` : `今天有 ${todayRecentCount} 筆可顯示的更新`
+      : data?.recentAvailable ? "今天還沒有新的整理紀錄" : "目前沒有可顯示的新整理紀錄";
   return <div className={styles.mobileDashboard} aria-busy={pending}>
-      <MobilePageHeader eyebrow="PERSONAL DASHBOARD" title={greeting} subtitle={email} actions={<><Link aria-label="搜尋" prefetch={false} href="/bookmarks"><AppIcon name="search" /></Link><Link aria-label="設定" prefetch={false} href="/appearance"><AppIcon name="settings" /></Link></>} />
+      <header className={styles.personalHeader}>
+        <div className={styles.headerBackdrop} aria-hidden="true" />
+        <div className={styles.headerMain}>
+          <div className={styles.headerCopy}><p>PERSONAL DASHBOARD</p><h1>{greeting} <span aria-hidden="true">👋</span></h1><small>{email}</small></div>
+          <nav className={styles.headerActions} aria-label="首頁快速導覽">
+            <Link aria-label="搜尋" prefetch={false} href="/bookmarks"><AppIcon name="search" /></Link>
+            <Link aria-label="外觀與設定" prefetch={false} href="/appearance"><AppIcon name="settings" /></Link>
+            <Link aria-label="個人檔案" className={styles.avatarButton} prefetch={false} href="/profile"><span aria-hidden="true">{profile.avatar}</span></Link>
+          </nav>
+        </div>
+        <p className={styles.personalMessage}>把重要的事，一個個收進自己的宇宙 <span aria-hidden="true">✦</span></p>
+      </header>
 
       {error && <div className={styles.loadError} role="status">{error}<button type="button" onClick={() => void load()}>重試</button></div>}
       <MobileSection title="資料概覽">
-        <div className={styles.overviewGrid}>{overview.map(item => <Link className={`${styles.overviewCard} mobile-surface`} href={item.href} key={item.kind} prefetch={false}><span className={styles.iconBox}><AppIcon name={item.icon} /></span><strong>{data?.counts[item.kind] ?? "—"}</strong><small>{item.label}</small></Link>)}</div>
+        <div className={styles.overviewGrid}>{overview.map(item => <Link className={`${styles.overviewCard} mobile-surface`} data-kind={item.kind} href={item.href} key={item.kind} prefetch={false}><span className={styles.iconBox}><AppIcon name={item.icon} /></span><strong>{data?.counts[item.kind] ?? "—"}</strong><small>{item.label}</small></Link>)}</div>
       </MobileSection>
 
-      <MobileSection title="快速操作">
-        <div className={`${styles.quickActions} mobile-surface`}><CreateItemButton kind="bookmark" className={styles.quickAction}><AppIcon name="bookmark" /><span>網站</span></CreateItemButton><Link className={styles.quickAction} prefetch={false} href="/anime"><AppIcon name="anime" /><span>動漫</span></Link><CreateItemButton kind="note" className={styles.quickAction}><AppIcon name="note" /><span>筆記</span></CreateItemButton><Link className={styles.quickAction} prefetch={false} href="/vault"><AppIcon name="lock" /><span>保管庫</span></Link></div>
+      <MobileSection title="今日小結">
+        <a className={`${styles.todaySummary} mobile-surface`} href="#dashboard-recent"><span className={styles.todayIcon}><AppIcon name="calendar" /></span><span><strong>{todaySummary}</strong><small>依可安全顯示的最近新增／更新整理</small></span><b aria-hidden="true">›</b></a>
       </MobileSection>
 
       <MobileSection title="儲存空間" action={<Link prefetch={false} href="/storage-usage">詳細</Link>}>
         <Link className={`${styles.storageCard} mobile-surface`} href="/storage-usage" prefetch={false}>{data?.capacity ? <><div className={styles.storageRow}><span><AppIcon name="database" />Database</span><strong>{formatBytes(data?.capacity.databaseUsedBytes)} / {data?.capacity.databaseUnlimited ? "無上限" : formatBytes(data?.capacity.databaseQuotaBytes)}</strong></div><i className={styles.progress}><b style={{ width: `${Math.min(100, databasePercent)}%` }} /></i><div className={styles.storageRow}><span><AppIcon name="storage" />Storage</span><strong>{formatBytes(data?.capacity.storageUsedBytes)} / {data?.capacity.storageUnlimited ? "無上限" : formatBytes(data?.capacity.storageQuotaBytes)}</strong></div><i className={styles.progress}><b style={{ width: `${Math.min(100, storagePercent)}%` }} /></i></> : <p className={styles.unavailable}>目前無法取得容量，點此重新查看。</p>}</Link>
       </MobileSection>
 
-      <MobileSection title="最近新增／更新">
-        <div className={`${styles.recentList} mobile-surface`}>{data?.recent.length ? data.recent.map(item => <Link href={item.href} key={`${item.kind}-${item.id}`} prefetch={false}><span className={styles.recentIcon}><AppIcon name={kindIcons[item.kind]} /></span><span><strong>{item.title}</strong><small>{kindLabels[item.kind]} · {relativeDate(item.updatedAt)}</small></span><b aria-hidden="true">›</b></Link>) : <p className={styles.empty}>{pending ? "正在載入摘要…" : data?.recentUnavailableKinds?.length === overview.length ? "目前無法取得更新紀錄。" : "新增第一筆資料後，最近更新會顯示在這裡。"}</p>}</div>
+      <MobileSection title="最近新增／更新" action={data?.recent.length ? <span className={styles.sectionMeta}>最新 {data.recent.length} 筆</span> : undefined}>
+        <div className={styles.recentList} id="dashboard-recent">{data?.recent.length ? data.recent.map(item => <Link href={item.href} key={`${item.kind}-${item.id}`} prefetch={false}><span className={styles.recentIcon} data-kind={item.kind}><AppIcon name={kindIcons[item.kind]} /></span><span><strong>{item.title}</strong><small>{kindLabels[item.kind]} · {relativeDate(item.updatedAt)}</small></span><b aria-hidden="true">›</b></Link>) : <p className={styles.empty}>{pending ? "正在載入摘要…" : data?.recentUnavailableKinds?.length === overview.length ? "目前無法取得更新紀錄。" : "新增第一筆資料後，最近更新會顯示在這裡。"}</p>}</div>
       </MobileSection>
     </div>;
 }

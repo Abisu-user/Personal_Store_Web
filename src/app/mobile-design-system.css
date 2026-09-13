@@ -112,11 +112,11 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
   .mobile-bottom-nav { height: var(--mobile-nav-height); min-height: var(--mobile-nav-height); box-sizing: border-box; align-items: start; padding: 1px max(6px, env(safe-area-inset-right)) calc(var(--mobile-nav-safe-bottom) + 2px) max(6px, env(safe-area-inset-left)); border-color: var(--line); background: color-mix(in srgb, var(--surface) 96%, transparent); }
   .mobile-bottom-nav > a, .mobile-bottom-nav > button { min-width: 44px; height: 48px; min-height: 48px; align-content: center; gap: 2px; color: var(--muted); font-size: 11px; line-height: 1; transition: color var(--mobile-motion-fast) ease, transform var(--mobile-motion-fast) ease; }
   .mobile-bottom-nav.has-seven-items > a, .mobile-bottom-nav.has-seven-items > button { font-size: 11px; }
-  .mobile-bottom-nav .mobile-create, .mobile-bottom-nav.has-seven-items .mobile-create { width: 56px; min-width: 56px; height: 56px; min-height: 56px; justify-self: center; margin-top: -8px; border-radius: 18px; border-width: 3px; }
-  .mobile-bottom-nav.has-seven-items .mobile-create { width: 54px; min-width: 54px; height: 54px; min-height: 54px; }
+  .mobile-bottom-nav .mobile-create, .mobile-bottom-nav.has-seven-items .mobile-create { width: 52px; min-width: 52px; height: 52px; min-height: 52px; justify-self: center; margin-top: -4px; border-radius: 17px; border-width: 2px; box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 28%, transparent); }
+  .mobile-bottom-nav.has-seven-items .mobile-create { width: 50px; min-width: 50px; height: 50px; min-height: 50px; }
   .mobile-bottom-nav i { display: grid; min-width: 24px; min-height: 23px; place-items: center; }
   .mobile-bottom-nav i .app-icon { width: 23px; height: 23px; }
-  .mobile-bottom-nav .mobile-create i .app-icon { width: 22px; height: 22px; }
+  .mobile-bottom-nav .mobile-create i .app-icon { width: 21px; height: 21px; }
   .mobile-bottom-nav .mobile-create span, .mobile-bottom-nav.has-seven-items .mobile-create span { font-size: 11px; }
   .mobile-sheet-logout { min-height: 48px; }
   .mobile-sheet-logout i { display: grid; width: 22px; place-items: center; }

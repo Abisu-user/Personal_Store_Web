@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import Page from "@/app/(app)/dashboard/page";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { MobileAppNavigation } from "@/components/layout/mobile-app-navigation";
+import { AppProfileProvider } from "@/components/layout/app-profile-provider";
 import { CreateItemProvider } from "@/components/layout/create-item-provider";
 import { applyAppearance, appearanceDefaults } from "@/lib/appearance/preferences";
 import { saveMobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
@@ -13,8 +14,8 @@ window.newItemCalls = 0;
 window.addEventListener("personal-vault:new-item", () => { window.newItemCalls += 1; });
 applyAppearance({ ...appearanceDefaults, theme: "light" });
 void Page().then(page => createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><CreateItemProvider><div className="app-shell">
+  <React.StrictMode><AppProfileProvider profile={{ username: "layout-test", displayName: "Layout Test", avatar: "✦" }}><CreateItemProvider><div className="app-shell">
     <AppSidebar email="layout-test@example.com" displayName="Layout Test" avatar="✦" />
     <div className="app-main">{page}</div><MobileAppNavigation />
-  </div></CreateItemProvider></React.StrictMode>
+  </div></CreateItemProvider></AppProfileProvider></React.StrictMode>
 ));
