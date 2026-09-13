@@ -19,7 +19,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
-import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
 
@@ -368,7 +368,6 @@ export function NotesWorkspace({
         value={query}
       />
       <div className="bulk-toolbar">
-        <strong className="bulk-mode-label">批量選取</strong>
         <label>
           <input
             checked={notes.length > 0 && chosenNotes.length === notes.length}
@@ -377,60 +376,8 @@ export function NotesWorkspace({
           />{" "}
           全選目前清單
         </label>
-        {chosenNotes.length > 0 && (
-          <>
-            <span>已選取 {chosenNotes.length} 筆</span>
-            <button
-              className="secondary-button compact"
-              disabled={pending}
-              onClick={() => setChosen(new Set())}
-              type="button"
-            >
-              取消選取
-            </button>
-            {view === "trash" ? (
-              <>
-                <button
-                  className="button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("restore")}
-                  type="button"
-                >
-                  批量還原
-                </button>
-                <button
-                  className="delete-button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("permanent")}
-                  type="button"
-                >
-                  永久刪除
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="secondary-button compact"
-                  disabled={pending}
-                  onClick={() => setOrganizeOpen(true)}
-                  type="button"
-                >
-                  整理
-                </button>
-                <button
-                  className="delete-button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("trash")}
-                  type="button"
-                >
-                  移至垃圾桶
-                </button>
-              </>
-            )}
-          </>
-        )}
       </div>
-      <MobileBatchActionBar count={chosenNotes.length} onCancel={() => setChosen(new Set())}>
+      <BatchActionBar count={chosenNotes.length} onCancel={() => setChosen(new Set())}>
         {view === "trash" ? (<>
           <button className="button" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">還原</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button>
@@ -438,7 +385,7 @@ export function NotesWorkspace({
           <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">刪除</button>
         </>)}
-      </MobileBatchActionBar>
+      </BatchActionBar>
       <div className="content-item-list">
         {notes.map((note) => (
           <article className={`content-item-card ${mobileStyles.itemCard}`} data-pinned={note.pinned ? "true" : undefined} key={note.id}>

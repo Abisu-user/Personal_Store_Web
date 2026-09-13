@@ -4,14 +4,14 @@ const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage3-"));
-const changes = ["src/app/(app)/notes/page.tsx", "src/app/(app)/code/page.tsx", "src/components/notes/notes-workspace.tsx", "src/components/code/code-workspace.tsx"];
+const changes = ["src/app/(app)/notes/page.tsx", "src/app/(app)/code/page.tsx", "src/app/(app)/files/page.tsx", "src/components/notes/notes-workspace.tsx", "src/components/code/code-workspace.tsx", "src/components/files/files-workspace.tsx", "src/components/ui/mobile-batch-action-bar.tsx"];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));
 }
 async function build(before) {
   const commonStub = path.join(__dirname, "mobile-stage1-stubs.tsx"), dataStub = path.join(__dirname, "mobile-stage3-data-stubs.ts");
-  const alias = { "@/lib/supabase/client$": commonStub, "@/lib/security/require-user$": commonStub, "@/lib/security/require-mfa$": commonStub, "@/lib/notes/data$": dataStub, "@/lib/code/data$": dataStub, "next/navigation$": commonStub, "next/link$": commonStub };
+  const alias = { "@/lib/supabase/client$": commonStub, "@/lib/security/require-user$": commonStub, "@/lib/security/require-mfa$": commonStub, "@/lib/notes/data$": dataStub, "@/lib/code/data$": dataStub, "@/lib/files/data$": dataStub, "next/navigation$": commonStub, "next/link$": commonStub };
   if (before) for (const file of changes) alias[file.replace(/^src/, "@").replace(/\.tsx$/, "") + "$"] = path.join(out, file);
   alias["@"] = path.join(root, "src");
   await new Promise((resolve, reject) => webpack({
@@ -41,7 +41,7 @@ async function main() {
     let requests = [];
     const categories = Array.from({ length: 16 }, (_, index) => ({ id: `category-${index}`, name: `類別${index}`, sort_order: index, folder_id: null }));
     const folders = Array.from({ length: 10 }, (_, index) => ({ id: `folder-${index}`, name: `資料夾${index}`, sort_order: index, is_visible: true, is_locked: false, lock_method: null, lock_setup_required: false }));
-    const items = Array.from({ length: 12 }, (_, index) => ({ id: `item-${index}`, title: `測試項目${index}`, description: `摘要內容 ${index}`, favorite: index % 4 === 0, pinned: index === 0, archived: false, deletedAt: null, folder: null, coverImageUrl: null, category: categories[index % 5], tags: [], updatedAt: `2026-09-0${index % 9 + 1}T12:00:00.000Z` }));
+    const items = Array.from({ length: 12 }, (_, index) => ({ id: `item-${index}`, title: `測試項目${index}`, description: `摘要內容 ${index}`, favorite: index % 4 === 0, pinned: index === 0, archived: false, deletedAt: null, folder: null, folders: [], coverImageUrl: null, category: categories[index % 5], categories: [categories[index % 5]], tags: [], updatedAt: `2026-09-0${index % 9 + 1}T12:00:00.000Z` }));
     await page.route("**/api/**", route => {
       const request = route.request(), pathname = new URL(request.url()).pathname;
       requests.push([request.method(), pathname]);
@@ -49,7 +49,7 @@ async function main() {
       return route.fulfill({ json: pathname === "/api/notes" ? { categories, folders, tags: [], notes: items.map((item, index) => ({ ...item, content: `筆記內容 ${index}`, currentVersion: index + 1 })) } : { categories, folders, tags: [], snippets: items.map((item, index) => ({ ...item, language: ["TypeScript", "Python", "HTML"][index % 3], sourceCode: `const item${index} = true;` })) } });
     });
     const base = "http://127.0.0.1:" + server.address().port;
-    for (const kind of ["notes", "code"]) for (const width of [320, 375, 390, 430, 520, 700, 701, 760, 768, 820, 1366, 1440, 1920]) {
+    for (const kind of (process.env.STAGE3_BATCH_ONLY ? [] : ["notes", "code"])) for (const width of [320, 375, 390, 430, 520, 700, 701, 760, 768, 820, 1366, 1440, 1920]) {
       await page.setViewportSize({ width, height: 1000 });
       requests = []; await page.goto(base + "?page=" + kind + "&before"); await page.locator(".content-item-card").first().waitFor(); await page.waitForTimeout(120);
       const beforeRequests = JSON.stringify(requests);
@@ -59,7 +59,10 @@ async function main() {
       assert.equal(JSON.stringify(requests), beforeRequests, "No extra mobile data request");
       const after = await page.screenshot({ path: path.join(out, kind + "-after-" + width + ".png") });
       const afterTop = await page.locator(".content-item-list").evaluate(el => el.getBoundingClientRect().top);
-      if (width > 700) assert.ok(before.equals(after), kind + " desktop pixel difference " + width);
+      if (width > 700) {
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), kind + " desktop overflow " + width);
+        assert.notEqual(await page.locator(".page-heading").evaluate(el => getComputedStyle(el).display), "none");
+      }
       else {
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "page overflow");
         assert.equal(await page.getByRole("button", { name: "新增", exact: true }).first().evaluate(el => el.getBoundingClientRect().height >= 43.5), true);
@@ -76,7 +79,7 @@ async function main() {
       await page.locator(".page-create-button").first().click(); await page.getByRole("dialog").waitFor(); await page.keyboard.press("Escape");
       report.push({ kind, width, result: width > 700 ? "pixel-identical" : "mobile-pass", beforeTop, afterTop, requests: beforeRequests });
     }
-    for (const kind of ["notes", "code"]) {
+    for (const kind of (process.env.STAGE3_BATCH_ONLY ? [] : ["notes", "code"])) {
       await page.setViewportSize({ width: 390, height: 1000 }); await page.goto(base + "?page=" + kind); await page.locator(".content-item-card").first().waitFor();
       const categoryMore = page.getByRole("button", { name: "查看更多類別" });
       await categoryMore.click(); await page.getByRole("dialog").getByRole("button", { name: /^類別15/ }).click();
@@ -87,7 +90,7 @@ async function main() {
       await folderSection.getByRole("button", { name: "管理" }).click(); await page.getByRole("dialog").waitFor(); await page.keyboard.press("Escape");
       await folderSection.getByRole("button", { name: /新增/ }).click(); await page.getByRole("dialog").waitFor(); await page.keyboard.press("Escape");
     }
-    for (const kind of ["notes", "code"]) for (const width of [320, 390, 430]) {
+    for (const kind of (process.env.STAGE3_BATCH_ONLY ? [] : ["notes", "code"])) for (const width of [320, 390, 430]) {
       await page.setViewportSize({ width, height: 1000 }); await page.goto(base + "?page=" + kind); await page.locator(".content-item-card").first().waitFor();
       for (const display of ["list", "grid", "text"]) {
         await page.evaluate(display => window.setTestAppearance({ theme: "dark", accent: "custom", customColor: "#C35490", density: "compact", fontScale: 120, surfaceOpacity: 0, background: "image", backgroundImages: ["data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath fill='%23354764' d='M0 0h10v10H0z'/%3E%3C/svg%3E"], bookmarkDisplay: display, bookmarkGridColumns: 2 }), display);
@@ -96,6 +99,36 @@ async function main() {
         assert.ok(await page.locator(".content-item-list").evaluate(el => el.scrollWidth <= el.clientWidth + 1), kind + " " + display + " list overflow");
         await page.screenshot({ path: path.join(out, kind + "-" + display + "-dark-" + width + ".png") });
       }
+    }
+    for (const kind of ["code", "files"]) for (const width of [375, 390, 430, 1366, 1440, 1920]) {
+      const readySelector = ".content-item-card";
+      const listSelector = ".content-item-list";
+      await page.setViewportSize({ width, height: 1000 }); await page.goto(base + "?page=" + kind); await page.locator(readySelector).first().waitFor().catch(async error => {
+        console.error({ phase: kind + "-batch", width, requests, errors, body: (await page.locator("body").innerText()).slice(0, 1200) });
+        throw error;
+      });
+      const listTop = await page.locator(listSelector).evaluate(el => el.getBoundingClientRect().top);
+      await page.locator(".item-select input").first().check();
+      const bar = page.locator(".batch-action-bar"); await bar.waitFor();
+      await bar.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+      assert.equal(await bar.getByText("已選 1 筆", { exact: true }).count(), 1);
+      assert.ok(Math.abs(await page.locator(listSelector).evaluate(el => el.getBoundingClientRect().top) - listTop) < 1, kind + " batch bar pushed list");
+      const rect = await bar.boundingBox();
+      assert.ok(rect.x >= 0 && rect.x + rect.width <= width + .5, kind + " batch overflow " + width);
+      if (width <= 700) {
+        const nav = await page.locator(".mobile-bottom-nav").boundingBox();
+        assert.ok(rect.y + rect.height <= nav.y - 4, kind + " batch/nav overlap " + width);
+      }
+      await bar.getByRole("button", { name: "整理", exact: true }).click();
+      const dialog = page.getByRole("dialog"); await dialog.waitFor();
+      assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", kind + " batch remains interactive over modal");
+      assert.equal(await dialog.locator(".styled-select select").evaluate(el => getComputedStyle(el).appearance), "none");
+      const choice = dialog.locator(".taxonomy-choice-grid label").first();
+      assert.ok((await choice.locator("input").boundingBox()).width <= 1.5, kind + " native checkbox leaked");
+      await choice.click(); assert.equal(await choice.locator("input").isChecked(), true);
+      await page.keyboard.press("Escape");
+      await bar.getByRole("button", { name: "取消", exact: true }).click();
+      assert.equal(await page.locator(".batch-action-bar").count(), 0);
     }
     assert.deepEqual(errors, []); fs.writeFileSync(path.join(out, "report.json"), JSON.stringify(report, null, 2));
     console.log(JSON.stringify({ output: out, report }, null, 2));

@@ -14,7 +14,7 @@ import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/conten
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
-import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
 import mobileStyles from "@/components/photos/photos-mobile.module.css";
 
@@ -437,7 +437,6 @@ export function PhotosWorkspace({
         value={query}
       />
       <div className="bulk-toolbar">
-        <strong className="bulk-mode-label">批量選取</strong>
         <label>
           <input
             checked={photos.length > 0 && chosenPhotos.length === photos.length}
@@ -446,46 +445,8 @@ export function PhotosWorkspace({
           />{" "}
           全選目前清單
         </label>
-        {chosenPhotos.length > 0 && (
-          <>
-            <span>已選取 {chosenPhotos.length} 筆</span>
-            <button
-              className="secondary-button compact"
-              disabled={pending}
-              onClick={() => setChosen(new Set())}
-              type="button"
-            >
-              取消選取
-            </button>
-            {view === "trash" ? (
-              <>
-                <button
-                  className="button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("restore")}
-                  type="button"
-                >
-                  批量還原
-                </button>
-                <button
-                  className="delete-button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("permanent")}
-                  type="button"
-                >
-                  永久刪除
-                </button>
-              </>
-            ) : (
-              <>
-                <button className="secondary-button compact" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
-                <button className="delete-button compact" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">移至垃圾桶</button>
-              </>
-            )}
-          </>
-        )}
       </div>
-      <MobileBatchActionBar count={chosenPhotos.length} onCancel={() => setChosen(new Set())}>
+      <BatchActionBar count={chosenPhotos.length} onCancel={() => setChosen(new Set())}>
         {view === "trash" ? (<>
           <button className="button" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">還原</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button>
@@ -493,7 +454,7 @@ export function PhotosWorkspace({
           <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">刪除</button>
         </>)}
-      </MobileBatchActionBar>
+      </BatchActionBar>
       <div className={mobileStyles.mobileGridHeading}>
         <strong>{view === "trash" ? "垃圾桶" : query.trim() ? "搜尋結果" : "全部照片"}</strong>
         <span>{photos.length} 張</span>

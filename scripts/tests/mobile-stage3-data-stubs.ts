@@ -9,8 +9,10 @@ const common = (index: number) => ({
   archived: false,
   deletedAt: null,
   folder: null,
+  folders: [],
   coverImageUrl: null,
   category: categories[index % 5],
+  categories: [categories[index % 5]],
   tags: [],
   updatedAt: `2026-09-${String((index % 9) + 1).padStart(2, "0")}T12:00:00.000Z`,
 });
@@ -22,4 +24,18 @@ export async function getNotesWorkspaceData() {
 export async function getCodeWorkspaceData() {
   const languages = ["TypeScript", "Python", "HTML", "CSS", "SQL", "Shell"];
   return { categories, folders, tags: [], snippets: Array.from({ length: 12 }, (_, index) => ({ ...common(index), language: languages[index % languages.length], sourceCode: `const item${index} = true;\nconsole.log(item${index});` })) };
+}
+
+export async function getFilesWorkspaceData() {
+  return {
+    categories,
+    folders,
+    tags: [],
+    files: Array.from({ length: 12 }, (_, index) => ({
+      ...common(index),
+      originalFilename: `document-${index}.pdf`,
+      mimeType: "application/pdf",
+      byteSize: 1024 * (index + 1),
+    })),
+  };
 }

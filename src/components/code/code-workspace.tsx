@@ -26,7 +26,7 @@ import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
-import { MobileBatchActionBar } from "@/components/ui/mobile-batch-action-bar";
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 
@@ -418,7 +418,6 @@ export function CodeWorkspace({
         value={query}
       />
       <div className="bulk-toolbar">
-        <strong className="bulk-mode-label">批量選取</strong>
         <label>
           <input
             checked={list.length > 0 && chosenItems.length === list.length}
@@ -427,60 +426,8 @@ export function CodeWorkspace({
           />{" "}
           全選目前清單
         </label>
-        {chosenItems.length > 0 && (
-          <>
-            <span>已選取 {chosenItems.length} 筆</span>
-            <button
-              className="secondary-button compact"
-              disabled={pending}
-              onClick={() => setChosen(new Set())}
-              type="button"
-            >
-              取消選取
-            </button>
-            {view === "trash" ? (
-              <>
-                <button
-                  className="button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("restore")}
-                  type="button"
-                >
-                  批量還原
-                </button>
-                <button
-                  className="delete-button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("permanent")}
-                  type="button"
-                >
-                  永久刪除
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="secondary-button compact"
-                  disabled={pending}
-                  onClick={() => setOrganizeOpen(true)}
-                  type="button"
-                >
-                  整理
-                </button>
-                <button
-                  className="delete-button compact"
-                  disabled={pending}
-                  onClick={() => setBulkConfirm("trash")}
-                  type="button"
-                >
-                  移至垃圾桶
-                </button>
-              </>
-            )}
-          </>
-        )}
       </div>
-      <MobileBatchActionBar count={chosenItems.length} onCancel={() => setChosen(new Set())}>
+      <BatchActionBar count={chosenItems.length} onCancel={() => setChosen(new Set())}>
         {view === "trash" ? (<>
           <button className="button" disabled={pending} onClick={() => setBulkConfirm("restore")} type="button">還原</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("permanent")} type="button">永久刪除</button>
@@ -488,7 +435,7 @@ export function CodeWorkspace({
           <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
           <button className="delete-button" disabled={pending} onClick={() => setBulkConfirm("trash")} type="button">刪除</button>
         </>)}
-      </MobileBatchActionBar>
+      </BatchActionBar>
       <div className="content-item-list">
         {list.map((item) => (
           <article className={`content-item-card ${mobileStyles.itemCard}`} data-language={item.language.toLowerCase()} data-pinned={item.pinned ? "true" : undefined} key={item.id}>

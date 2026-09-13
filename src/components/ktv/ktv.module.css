@@ -283,6 +283,11 @@
   margin-left: auto;
 }
 
+.batchToolbar > strong,
+.batchToolbar > button {
+  display: none;
+}
+
 .songList {
   overflow: visible;
   border: 1px solid var(--line);

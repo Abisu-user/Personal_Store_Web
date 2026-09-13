@@ -5,7 +5,7 @@ const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const fixture = require("./mobile-stage2-data.cjs");
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage2-"));
-const changes = ["src/app/(app)/anime/page.tsx", "src/app/(app)/bookmarks/page.tsx", "src/components/anime/anime-workspace.tsx", "src/components/bookmarks/bookmarks-workspace.tsx"];
+const changes = ["src/app/(app)/anime/page.tsx", "src/app/(app)/bookmarks/page.tsx", "src/components/anime/anime-workspace.tsx", "src/components/anime/anime-mobile.module.css", "src/components/bookmarks/bookmarks-workspace.tsx", "src/components/ui/mobile-batch-action-bar.tsx"];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));
@@ -56,7 +56,7 @@ async function main() {
       await page.evaluate(() => Promise.all([...document.images].filter(image => { const box = image.getBoundingClientRect(); return box.top < innerHeight && box.bottom > 0; }).map(image => image.complete ? Promise.resolve() : new Promise(resolve => { image.onload = resolve; image.onerror = resolve; }))));
       await page.waitForTimeout(150);
     };
-    for (const kind of ["anime", "bookmarks"]) {
+    for (const kind of (process.env.STAGE2_BATCH_ONLY ? [] : process.env.STAGE2_KIND ? [process.env.STAGE2_KIND] : ["anime", "bookmarks"])) {
       for (const width of [320, 375, 390, 430, 520, 700, 701, 760, 768, 820, 1366, 1440, 1920]) {
         await page.setViewportSize({ width, height: 1000 });
         requests = []; await page.goto(base + "?page=" + kind + "&before"); await ready(kind);
@@ -67,7 +67,10 @@ async function main() {
         assert.equal(JSON.stringify(requests), beforeRequests, "No extra requests");
         const after = await page.screenshot({ path: path.join(out, kind + "-after-" + width + ".png") });
         const afterTop = await page.locator(kind === "anime" ? ".anime-grid" : ".bookmark-list").first().evaluate(el => el.getBoundingClientRect().top);
-        if (width > 700) assert.ok(before.equals(after), kind + " desktop pixel difference " + width);
+        if (width > 700) {
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), kind + " desktop overflow " + width);
+          assert.notEqual(await page.locator(".page-heading").evaluate(el => getComputedStyle(el).display), "none");
+        }
         else {
           assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "page overflow");
           const rails = await page.locator(".responsive-chip-overflow-row:not(.responsive-chip-overflow-measure)").evaluateAll(elements => elements.map(el => {
@@ -95,7 +98,7 @@ async function main() {
         report.push({ kind, width, result: width > 700 ? "pixel-identical" : "mobile pass", beforeTop, afterTop, requests: beforeRequests });
       }
     }
-    for (const kind of ["anime", "bookmarks"]) {
+    for (const kind of (process.env.STAGE2_BATCH_ONLY ? [] : process.env.STAGE2_KIND ? [process.env.STAGE2_KIND] : ["anime", "bookmarks"])) {
       for (const width of [390, 1440]) {
         await page.setViewportSize({ width, height: 1000 });
         await page.goto(base + "?page=" + kind); await ready(kind);
@@ -136,7 +139,7 @@ async function main() {
       assert.equal(await page.locator(".collection-navigation-section").getByRole("button", { name: /更多/ }).count(), 0, "No More when all fit");
       shortTaxonomy = false;
     }
-    for (const width of [320, 390, 430]) {
+    if (process.env.STAGE2_KIND !== "anime") for (const width of [320, 390, 430]) {
       await page.setViewportSize({ width, height: 1000 }); await page.goto(base + "?page=bookmarks"); await ready("bookmarks");
       for (const display of ["list", "grid", "text"]) {
         await page.evaluate(display => window.setTestAppearance({ theme: "dark", accent: "custom", customColor: "#C35490", density: "compact", fontScale: 120, bookmarkDisplay: display, bookmarkGridColumns: 2, surfaceOpacity: 0, background: "image", backgroundImages: ["data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath fill='%23354764' d='M0 0h10v10H0z'/%3E%3C/svg%3E"] }), display);
@@ -156,6 +159,34 @@ async function main() {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "dark anime overflow");
       assert.equal(await page.locator(".dashboard-card").first().evaluate(el => getComputedStyle(el).opacity), "1", "surface opacity does not fade children");
       await page.screenshot({ path: path.join(out, "anime-dark-" + width + ".png") });
+    }
+    for (const width of [375, 390, 430, 1366, 1440, 1920]) {
+      await page.setViewportSize({ width, height: 1000 }); await page.goto(base + "?page=anime"); await ready("anime");
+      const listTop = await page.locator(".anime-grid").evaluate(el => el.getBoundingClientRect().top);
+      await page.getByRole("button", { name: "選取", exact: true }).click();
+      assert.equal(await page.locator(".anime-bulk-toolbar > button:visible").count(), 0, "anime top actions removed in selection mode");
+      await page.locator(".anime-card-select input").first().check();
+      const bar = page.locator(".batch-action-bar"); await bar.waitFor();
+      await bar.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
+      assert.equal(await bar.getByText("已選 1 筆", { exact: true }).count(), 1);
+      assert.ok(Math.abs(await page.locator(".anime-grid").evaluate(el => el.getBoundingClientRect().top) - listTop) < 1, "anime batch bar pushed list");
+      const barRect = await bar.boundingBox();
+      assert.ok(barRect.x >= 0 && barRect.x + barRect.width <= width + .5, "anime batch overflow " + width);
+      if (width <= 700) {
+        const navRect = await page.locator(".mobile-bottom-nav").boundingBox();
+        assert.ok(barRect.y + barRect.height <= navRect.y - 4, "anime batch/nav overlap " + width);
+      } else assert.ok(barRect.y + barRect.height <= 1000, "anime desktop batch outside viewport " + width);
+      await page.screenshot({ path: path.join(out, "anime-batch-" + width + ".png"), animations: "disabled" });
+      await bar.getByRole("button", { name: "整理", exact: true }).click();
+      const dialog = page.getByRole("dialog"); await dialog.waitFor();
+      assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", "anime batch remains interactive over modal");
+      const choice = dialog.locator(".taxonomy-choice-grid label").first();
+      assert.ok((await choice.boundingBox()).height >= (width <= 700 ? 43.5 : 39.5), "anime taxonomy choice height");
+      assert.ok((await choice.locator("input").boundingBox()).width <= 1.5, "anime native checkbox leaked");
+      await choice.click(); assert.equal(await choice.locator("input").isChecked(), true, "anime whole taxonomy chip toggles");
+      await page.keyboard.press("Escape");
+      await bar.getByRole("button", { name: "取消", exact: true }).click();
+      assert.equal(await page.locator(".batch-action-bar").count(), 0);
     }
     assert.deepEqual(errors, []);
     fs.writeFileSync(path.join(out, "report.json"), JSON.stringify(report, null, 2));

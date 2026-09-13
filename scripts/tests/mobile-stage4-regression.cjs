@@ -4,7 +4,7 @@ const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage4-"));
-const changes = ["src/app/(app)/calendar/page.tsx", "src/app/(app)/photos/page.tsx", "src/components/calendar/calendar-workspace.tsx", "src/components/photos/photos-workspace.tsx"];
+const changes = ["src/app/(app)/calendar/page.tsx", "src/app/(app)/photos/page.tsx", "src/components/calendar/calendar-workspace.tsx", "src/components/photos/photos-workspace.tsx", "src/components/ui/mobile-batch-action-bar.tsx"];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));

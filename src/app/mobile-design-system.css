@@ -1,7 +1,42 @@
 /* Shared phone-only presentation primitives. Feature layouts stay beside each feature. */
 .app-icon { display: block; width: 1em; height: 1em; flex: 0 0 auto; }
-.mobile-page-header, .mobile-section, .mobile-section-actions-trigger, .mobile-batch-action-bar { display: none; }
+.mobile-page-header, .mobile-section, .mobile-section-actions-trigger { display: none; }
 .mobile-create-chooser .create-type-options .app-icon { display: none; }
+
+.batch-action-bar {
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 55;
+  left: calc(256px + max(24px, (100vw - 976px) / 2));
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  width: min(720px, calc(100vw - 320px));
+  min-height: 50px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--brand) 34%, var(--line));
+  border-radius: 16px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  box-shadow: 0 12px 32px rgb(9 24 52 / 22%);
+  backdrop-filter: blur(16px);
+  animation: batch-action-enter 200ms ease-out both;
+}
+.batch-action-bar > strong { padding-inline: 10px 4px; color: var(--brand); font-size: .8rem; white-space: nowrap; }
+.batch-action-cancel,
+.batch-action-buttons > button { min-height: 38px; padding: 0 12px; border-radius: 11px; font: inherit; font-size: .8rem; font-weight: 850; white-space: nowrap; }
+.batch-action-cancel { border: 0; color: var(--muted); background: color-mix(in srgb, var(--canvas-tint) 78%, transparent); }
+.batch-action-buttons { display: flex; min-width: 0; justify-content: flex-end; gap: 6px; }
+.batch-action-buttons > .secondary-button,
+.batch-action-buttons > .button,
+.batch-action-buttons > .delete-button,
+.batch-action-buttons > .danger-button { width: auto; }
+body:has(.batch-action-bar) .app-main { padding-bottom: 86px; }
+body:has(.modal-dialog-backdrop) .batch-action-bar,
+body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-events: none; transform: translateY(12px); }
+@keyframes batch-action-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 700px) {
   :root {
@@ -31,7 +66,7 @@
   .mobile-section-action-list > button small { color: var(--muted); font-size: .7rem; }
   .mobile-section-action-list > button.destructive { color: var(--danger); }
 
-  .mobile-batch-action-bar {
+  .batch-action-bar {
     position: fixed;
     z-index: 75;
     right: max(8px, env(safe-area-inset-right));
@@ -39,30 +74,29 @@
     left: max(8px, env(safe-area-inset-left));
     display: grid;
     grid-template-columns: auto 44px minmax(0, 1fr);
-    min-height: 58px;
+    width: auto;
+    min-height: 52px;
     align-items: center;
-    gap: 7px;
-    padding: 7px;
+    gap: 4px;
+    padding: 3px;
     border: 1px solid color-mix(in srgb, var(--brand) 34%, var(--line));
     border-radius: 17px;
     color: var(--ink);
     background: color-mix(in srgb, var(--surface) 96%, transparent);
     box-shadow: 0 12px 32px rgb(9 24 52 / 22%);
     backdrop-filter: blur(16px);
-    animation: mobile-batch-enter 200ms ease-out both;
+    animation: batch-action-enter 200ms ease-out both;
   }
-  .mobile-batch-action-bar > strong { padding-inline: 5px 2px; color: var(--brand); font-size: .76rem; white-space: nowrap; }
-  .mobile-batch-cancel,
-  .mobile-batch-actions > button { min-width: 44px; min-height: 44px; padding: 0 8px; border: 0; border-radius: 12px; font: inherit; font-size: .75rem; font-weight: 850; white-space: nowrap; }
-  .mobile-batch-cancel { color: var(--muted); background: color-mix(in srgb, var(--canvas-tint) 78%, transparent); }
-  .mobile-batch-actions { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; min-width: 0; }
-  .mobile-batch-actions > .secondary-button,
-  .mobile-batch-actions > .button,
-  .mobile-batch-actions > .delete-button { width: 100%; min-width: 0; min-height: 44px; padding-inline: 6px; }
-  body:has(.modal-dialog-backdrop) .mobile-batch-action-bar,
-  body:has(.confirm-dialog-backdrop) .mobile-batch-action-bar,
-  html[data-mobile-keyboard="open"] .mobile-batch-action-bar { opacity: 0; pointer-events: none; transform: translateY(12px); }
-  @keyframes mobile-batch-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .batch-action-bar > strong { padding-inline: 6px 2px; font-size: .74rem; }
+  .batch-action-cancel,
+  .batch-action-buttons > button { min-width: 44px; min-height: 44px; padding: 0 6px; border: 0; border-radius: 11px; font-size: .73rem; }
+  .batch-action-buttons { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; }
+  .batch-action-buttons > .secondary-button,
+  .batch-action-buttons > .button,
+  .batch-action-buttons > .delete-button,
+  .batch-action-buttons > .danger-button { width: 100%; min-width: 0; min-height: 44px; padding-inline: 5px; }
+  html[data-mobile-keyboard="open"] .batch-action-bar { opacity: 0; pointer-events: none; transform: translateY(12px); }
+  body:has(.batch-action-bar) .app-main { padding-bottom: calc(var(--mobile-nav-height) + 68px); }
 
   .mobile-section { display: grid; min-width: 0; gap: 10px; }
   .mobile-section > header { display: flex; min-height: 28px; align-items: center; justify-content: space-between; gap: 12px; }
@@ -113,5 +147,5 @@
 
 @media (max-width: 700px) and (prefers-reduced-motion: reduce) {
   :root { --mobile-motion-fast: 0ms; }
-  .mobile-chip, .mobile-bottom-nav > a, .mobile-bottom-nav > button, .mobile-batch-action-bar { animation: none; transition: none; }
+  .mobile-chip, .mobile-bottom-nav > a, .mobile-bottom-nav > button, .batch-action-bar { animation: none; transition: none; }
 }

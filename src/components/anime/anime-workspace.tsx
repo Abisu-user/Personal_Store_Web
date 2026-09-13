@@ -15,6 +15,8 @@ import { AnimeDiscovery } from "@/components/anime/anime-discovery";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
+import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { PinPad } from "@/components/security/pin-pad";
 import {
   animeStatusLabels,
@@ -88,14 +90,6 @@ function coverUrl(anime: AnimeLibraryItem) {
     : anime.coverUrl
       ? `/api/anime/library/${anime.id}/cover?v=${encodeURIComponent(anime.updatedAt)}`
       : null;
-}
-
-function categoriesForFolders(categories: AnimeTag[], folderIds: string[]) {
-  return categories.filter((category) =>
-    folderIds.length
-      ? category.folderId !== null && folderIds.includes(category.folderId)
-      : category.folderId === null,
-  );
 }
 
 function toggledFolderIds(folderIds: string[], folderId: string) {
@@ -563,14 +557,6 @@ function AnimeCollectionList({
   const gridRef = useRef<HTMLDivElement | null>(null);
   const selected = new Set(selectedIds);
   const allSelected = items.length > 0 && selectedIds.length === items.length;
-  const scopedCategories = useMemo(
-    () => categoriesForFolders(categories, folderIds),
-    [categories, folderIds],
-  );
-  useEffect(() => {
-    const available = new Set(scopedCategories.map((category) => category.id));
-    setCategoryIds((current) => current.filter((id) => available.has(id)));
-  }, [scopedCategories]);
   useEffect(() => {
     if (!onGridColumnsChange || !gridRef.current) return;
     const grid = gridRef.current;
@@ -629,72 +615,29 @@ function AnimeCollectionList({
     <>
       {pending && <OperationStatus label="正在處理選取的動漫…" />}
       <div className="anime-bulk-toolbar">
-        <button
+        {!selecting && <button
           className="secondary-button compact"
           onClick={() => {
-            setSelecting((value) => !value);
+            setSelecting(true);
             setSelectedIds([]);
           }}
           type="button"
         >
-          {selecting ? "取消選取" : "選取"}
-        </button>
+          選取
+        </button>}
         {selecting && (
-          <>
-            <strong>已選 {selectedIds.length} 筆</strong>
-            <button
-              className="secondary-button compact"
-              onClick={() =>
-                setSelectedIds(
-                  allSelected ? [] : items.map((anime) => anime.id),
-                )
-              }
-              type="button"
-            >
-              {allSelected ? "取消全選" : "全選"}
-            </button>
-            {trashed ? (
-              <>
-                <button
-                  className="button compact"
-                  disabled={!selectedIds.length || pending}
-                  onClick={() => void run("restore")}
-                  type="button"
-                >
-                  還原
-                </button>
-                <button
-                  className="danger-button compact"
-                  disabled={!selectedIds.length || pending}
-                  onClick={() => setConfirmPermanent(true)}
-                  type="button"
-                >
-                  永久刪除
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  className="secondary-button compact"
-                  disabled={!selectedIds.length || pending}
-                  onClick={() => setOrganizeOpen(true)}
-                  type="button"
-                >
-                  整理
-                </button>
-                <button
-                  className="danger-button compact"
-                  disabled={!selectedIds.length || pending}
-                  onClick={() => void run("trash")}
-                  type="button"
-                >
-                  移至垃圾桶
-                </button>
-              </>
-            )}
-          </>
+          <label><input checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : items.map((anime) => anime.id))} type="checkbox" />全選目前清單</label>
         )}
       </div>
+      <BatchActionBar count={selectedIds.length} onCancel={() => { setSelectedIds([]); setSelecting(false); }}>
+        {trashed ? (<>
+          <button className="button" disabled={pending} onClick={() => void run("restore")} type="button">還原</button>
+          <button className="danger-button" disabled={pending} onClick={() => setConfirmPermanent(true)} type="button">永久刪除</button>
+        </>) : (<>
+          <button className="secondary-button" disabled={pending} onClick={() => setOrganizeOpen(true)} type="button">整理</button>
+          <button className="danger-button" disabled={pending} onClick={() => void run("trash")} type="button">刪除</button>
+        </>)}
+      </BatchActionBar>
       {message && <p className="notice error">{message}</p>}
       <div className="anime-grid" ref={gridRef}>
         {items.map((anime) => (
@@ -756,52 +699,20 @@ function AnimeCollectionList({
         pending={pending}
         title="批量整理動漫"
       >
-        <div className="anime-category-dialog">
-          <fieldset>
-            <legend>資料夾（可複選）</legend>
-            <div className="anime-tag-picker">
-              {folders.length ? folders
-                .filter((folder) => folder.isVisible || folderIds.includes(folder.id))
-                .map((folder) => (
-                  <label key={folder.id}>
-                    <input
-                      checked={folderIds.includes(folder.id)}
-                      onChange={() => setFolderIds((current) => toggledFolderIds(current, folder.id))}
-                      type="checkbox"
-                    />{" "}
-                    {folder.name}
-                  </label>
-                )) : <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
-            </div>
-            <p className="anime-field-hint">未勾選任何資料夾時，會移至未整理。</p>
-          </fieldset>
-          <fieldset>
-            <legend>類別（可複選）</legend>
-            <div className="anime-tag-picker">
-              {scopedCategories.length ? (
-                scopedCategories
-                  .map((category) => (
-                    <label key={category.id}>
-                      <input
-                        checked={categoryIds.includes(category.id)}
-                        onChange={() =>
-                          setCategoryIds((ids) =>
-                            ids.includes(category.id)
-                              ? ids.filter((id) => id !== category.id)
-                              : [...ids, category.id],
-                          )
-                        }
-                        type="checkbox"
-                      />{" "}
-                      {categoryLabelInFolderSelection(category, folders, folderIds)}
-                    </label>
-                  ))
-              ) : (
-                <p className="anime-field-hint">此資料夾尚未建立類別。</p>
-              )}
-            </div>
-          </fieldset>
-          <div className="dialog-actions">
+        <div className="anime-category-dialog bulk-organize-dialog">
+          <TaxonomyMultiSelect
+            categories={categories.map((category) => ({ id: category.id, name: categoryLabelInFolderSelection(category, folders, folderIds), folder_id: category.folderId }))}
+            categoryIds={categoryIds}
+            disabled={pending}
+            folderIds={folderIds}
+            folders={folders.map((folder) => ({ id: folder.id, name: folder.name, is_visible: folder.isVisible }))}
+            onCategoryIdsChange={setCategoryIds}
+            onFolderIdsChange={setFolderIds}
+            showUnassignedCategoriesWithFolders={false}
+          />
+          {!folders.length && <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
+          <p className="anime-field-hint">未勾選任何資料夾時，會移至未整理。</p>
+          <div className="dialog-actions bulk-organize-actions">
             <button
               className="secondary-button"
               disabled={pending}
@@ -2702,14 +2613,6 @@ function AnimeEditor({
   const [adultSource, setAdultSource] = useState(
     anime?.adultSource ?? "manual",
   );
-  const scopedCategories = useMemo(
-    () => categoriesForFolders(categories, folderIds),
-    [categories, folderIds],
-  );
-  useEffect(() => {
-    const available = new Set(scopedCategories.map((category) => category.id));
-    setCategoryIds((current) => current.filter((id) => available.has(id)));
-  }, [scopedCategories]);
   const save = async () => {
     if (!title.trim()) {
       setMessage("請輸入動漫名稱。");
@@ -2823,52 +2726,18 @@ function AnimeEditor({
             {rating === null ? "尚未評分" : `${rating} / 10`}
           </small>
         </fieldset>
-        <fieldset>
-          <legend>資料夾（可複選）</legend>
-          <div className="anime-tag-picker">
-            {folders.length ? folders
-              .filter((folder) => folder.isVisible || folderIds.includes(folder.id))
-              .map((folder) => (
-                <label key={folder.id}>
-                  <input
-                    checked={folderIds.includes(folder.id)}
-                    onChange={() => setFolderIds((current) => toggledFolderIds(current, folder.id))}
-                    type="checkbox"
-                  />{" "}
-                  {folder.name}
-                </label>
-              )) : <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
-          </div>
-          <p className="anime-field-hint">可同時加入多個資料夾；未勾選代表未整理。</p>
-        </fieldset>
-        <fieldset>
-          <legend>類別（可複選）</legend>
-          <div className="anime-tag-picker">
-            {scopedCategories.length ? (
-              scopedCategories
-                .map((category) => (
-                  <label key={category.id}>
-                    <input
-                      checked={categoryIds.includes(category.id)}
-                      onChange={() =>
-                        setCategoryIds((ids) =>
-                          ids.includes(category.id)
-                            ? ids.filter((id) => id !== category.id)
-                            : [...ids, category.id],
-                        )
-                      }
-                      type="checkbox"
-                    />{" "}
-                    {categoryLabelInFolderSelection(category, folders, folderIds)}
-                  </label>
-                ))
-            ) : (
-              <p className="anime-field-hint">
-                先在這個資料夾的類別列按 ＋ 新增類別後即可選取。
-              </p>
-            )}
-          </div>
-        </fieldset>
+        <TaxonomyMultiSelect
+          categories={categories.map((category) => ({ id: category.id, name: categoryLabelInFolderSelection(category, folders, folderIds), folder_id: category.folderId }))}
+          categoryIds={categoryIds}
+          disabled={pending}
+          folderIds={folderIds}
+          folders={folders.map((folder) => ({ id: folder.id, name: folder.name, is_visible: folder.isVisible }))}
+          onCategoryIdsChange={setCategoryIds}
+          onFolderIdsChange={setFolderIds}
+          showUnassignedCategoriesWithFolders={false}
+        />
+        {!folders.length && <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
+        <p className="anime-field-hint">可同時加入多個資料夾；未勾選代表未整理。</p>
         <label>
           私人備註
           <textarea
