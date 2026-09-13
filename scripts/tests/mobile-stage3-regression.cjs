@@ -4,7 +4,7 @@ const { execFileSync } = require("node:child_process");
 const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage3-"));
-const changes = ["src/app/(app)/notes/page.tsx", "src/app/(app)/code/page.tsx", "src/app/(app)/files/page.tsx", "src/components/notes/notes-workspace.tsx", "src/components/code/code-workspace.tsx", "src/components/files/files-workspace.tsx", "src/components/ui/mobile-batch-action-bar.tsx"];
+const changes = ["src/app/(app)/notes/page.tsx", "src/app/(app)/code/page.tsx", "src/app/(app)/files/page.tsx", "src/components/notes/notes-workspace.tsx", "src/components/code/code-workspace.tsx", "src/components/files/files-workspace.tsx", "src/components/ui/batch-action-bar.tsx"];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));
@@ -122,10 +122,15 @@ async function main() {
       await bar.getByRole("button", { name: "整理", exact: true }).click();
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
       assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", kind + " batch remains interactive over modal");
+      assert.equal(await dialog.locator("fieldset").count(), 0, kind + " legacy fieldset leaked");
+      assert.ok(await dialog.locator(".taxonomy-section-card").count() >= 2, kind + " taxonomy section cards missing");
+      assert.ok(await dialog.locator(".taxonomy-section-icon .app-icon").first().isVisible(), kind + " taxonomy icon missing");
+      const dialogBox = await dialog.boundingBox(); assert.ok(dialogBox.width <= Math.min(width, 760) + .5, kind + " dialog too wide");
       assert.equal(await dialog.locator(".styled-select select").evaluate(el => getComputedStyle(el).appearance), "none");
       const choice = dialog.locator(".taxonomy-choice-grid label").first();
       assert.ok((await choice.locator("input").boundingBox()).width <= 1.5, kind + " native checkbox leaked");
       await choice.click(); assert.equal(await choice.locator("input").isChecked(), true);
+      const footerButtons = await dialog.locator(".bulk-organize-actions button").all(); const firstFooter = await footerButtons[0].boundingBox(); const secondFooter = await footerButtons[1].boundingBox(); assert.ok(Math.abs(firstFooter.y - secondFooter.y) < 1, kind + " footer buttons not aligned");
       await page.keyboard.press("Escape");
       await bar.getByRole("button", { name: "取消", exact: true }).click();
       assert.equal(await page.locator(".batch-action-bar").count(), 0);

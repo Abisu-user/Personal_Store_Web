@@ -9,7 +9,7 @@ const changes = [
   "src/app/(app)/bookmarks/page.tsx", "src/app/(app)/notes/page.tsx", "src/app/(app)/photos/page.tsx",
   "src/components/bookmarks/bookmarks-workspace.tsx", "src/components/notes/notes-workspace.tsx",
   "src/components/photos/photos-workspace.tsx", "src/components/content/collection-navigation.tsx",
-  "src/components/ui/mobile-batch-action-bar.tsx",
+  "src/components/ui/batch-action-bar.tsx",
 ];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -139,10 +139,19 @@ async function main() {
       await page.screenshot({ path: path.join(out, `${kind}-batch-${width}.png`), animations: "disabled" });
       await bar.getByRole("button", { name: "整理", exact: true }).click(); await page.getByRole("dialog").waitFor();
       assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", `${kind} batch remains interactive over modal`);
+      const dialog = page.getByRole("dialog");
+      assert.equal(await dialog.locator("fieldset").count(), 0, `${kind} legacy fieldset leaked`);
+      assert.ok(await dialog.locator(".taxonomy-section-card").count() >= 2, `${kind} taxonomy section cards missing`);
+      assert.ok(await dialog.locator(".taxonomy-section-icon .app-icon").first().isVisible(), `${kind} taxonomy icon missing`);
+      const dialogBox = await dialog.boundingBox(); assert.ok(dialogBox.width <= Math.min(width, 760) + .5, `${kind} dialog too wide`);
       assert.equal(await page.locator(".styled-select select").evaluate(el => getComputedStyle(el).appearance), "none", `${kind} styled operation select`);
       const choice = page.locator(".taxonomy-choice-grid label").first();
       assert.ok((await choice.boundingBox()).height >= (width <= 700 ? 43.5 : 39.5), `${kind} taxonomy choice height`);
       assert.ok((await choice.locator("input").boundingBox()).width <= 1.5, `${kind} native checkbox leaked`);
+      const chipParts = await choice.evaluate(el => { const marker = getComputedStyle(el, "::before"); const text = el.querySelector("span").getBoundingClientRect(); const box = el.getBoundingClientRect(); return { display: getComputedStyle(el).display, marker: marker.display, textInside: text.left >= box.left && text.right <= box.right }; });
+      assert.ok(["flex", "inline-flex"].includes(chipParts.display) && chipParts.marker === "grid" && chipParts.textInside, `${kind} chip row layout`);
+      const footerButtons = await dialog.locator(".bulk-organize-actions button").all(); const firstFooter = await footerButtons[0].boundingBox(); const secondFooter = await footerButtons[1].boundingBox();
+      assert.ok(Math.abs(firstFooter.y - secondFooter.y) < 1, `${kind} footer buttons not aligned`);
       await choice.click();
       assert.equal(await choice.locator("input").isChecked(), true, `${kind} whole taxonomy chip toggles`);
       await page.keyboard.press("Escape");

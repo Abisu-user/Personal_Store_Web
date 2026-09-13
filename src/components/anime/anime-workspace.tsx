@@ -693,13 +693,15 @@ function AnimeCollectionList({
         ))}
       </div>
       <ModalDialog
-        className="mobile-sheet-dialog"
+        className="mobile-sheet-dialog bulk-organize-modal"
         onClose={() => setOrganizeOpen(false)}
         open={organizeOpen}
         pending={pending}
-        title="批量整理動漫"
+        title="批量整理選取資料"
       >
         <div className="anime-category-dialog bulk-organize-dialog">
+          <p className="bulk-organize-description">整理 {selectedIds.length} 筆動漫。套用後會更新所選作品的資料夾與類別歸屬。</p>
+          <div className="bulk-organize-static-mode"><span>操作方式</span><div className="operation-select-row"><span className="operation-select-icon"><AppIcon name="folder" /></span><strong>設定資料夾／類別</strong></div></div>
           <TaxonomyMultiSelect
             categories={categories.map((category) => ({ id: category.id, name: categoryLabelInFolderSelection(category, folders, folderIds), folder_id: category.folderId }))}
             categoryIds={categoryIds}
@@ -709,6 +711,8 @@ function AnimeCollectionList({
             onCategoryIdsChange={setCategoryIds}
             onFolderIdsChange={setFolderIds}
             showUnassignedCategoriesWithFolders={false}
+            folderHint="選擇要設定的資料夾"
+            categoryHint="選擇要設定的類別"
           />
           {!folders.length && <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
           <p className="anime-field-hint">未勾選任何資料夾時，會移至未整理。</p>

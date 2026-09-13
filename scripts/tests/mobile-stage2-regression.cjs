@@ -5,7 +5,7 @@ const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const fixture = require("./mobile-stage2-data.cjs");
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-mobile-stage2-"));
-const changes = ["src/app/(app)/anime/page.tsx", "src/app/(app)/bookmarks/page.tsx", "src/components/anime/anime-workspace.tsx", "src/components/anime/anime-mobile.module.css", "src/components/bookmarks/bookmarks-workspace.tsx", "src/components/ui/mobile-batch-action-bar.tsx"];
+const changes = ["src/app/(app)/anime/page.tsx", "src/app/(app)/bookmarks/page.tsx", "src/components/anime/anime-workspace.tsx", "src/components/anime/anime-mobile.module.css", "src/components/bookmarks/bookmarks-workspace.tsx", "src/components/ui/batch-action-bar.tsx"];
 for (const file of changes) {
   const target = path.join(out, file); fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, execFileSync("git", ["show", "HEAD:" + file], { cwd: root }));
@@ -180,10 +180,15 @@ async function main() {
       await bar.getByRole("button", { name: "整理", exact: true }).click();
       const dialog = page.getByRole("dialog"); await dialog.waitFor();
       assert.equal(await bar.evaluate(el => getComputedStyle(el).pointerEvents), "none", "anime batch remains interactive over modal");
+      assert.equal(await dialog.locator("fieldset").count(), 0, "anime legacy fieldset leaked");
+      assert.equal(await dialog.locator(".taxonomy-section-card").count(), 2, "anime taxonomy section cards missing");
+      assert.ok(await dialog.locator(".taxonomy-section-icon .app-icon").first().isVisible(), "anime taxonomy icon missing");
+      const dialogBox = await dialog.boundingBox(); assert.ok(dialogBox.width <= Math.min(width, 760) + .5, `anime dialog too wide ${width}px viewport: ${dialogBox.width}px`);
       const choice = dialog.locator(".taxonomy-choice-grid label").first();
       assert.ok((await choice.boundingBox()).height >= (width <= 700 ? 43.5 : 39.5), "anime taxonomy choice height");
       assert.ok((await choice.locator("input").boundingBox()).width <= 1.5, "anime native checkbox leaked");
       await choice.click(); assert.equal(await choice.locator("input").isChecked(), true, "anime whole taxonomy chip toggles");
+      const footerButtons = await dialog.locator(".bulk-organize-actions button").all(); const firstFooter = await footerButtons[0].boundingBox(); const secondFooter = await footerButtons[1].boundingBox(); assert.ok(Math.abs(firstFooter.y - secondFooter.y) < 1, "anime footer buttons not aligned");
       await page.keyboard.press("Escape");
       await bar.getByRole("button", { name: "取消", exact: true }).click();
       assert.equal(await page.locator(".batch-action-bar").count(), 0);

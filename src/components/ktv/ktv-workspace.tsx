@@ -294,11 +294,17 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
       <div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setCategoryManagerOpen(false)} type="button">取消</button><button className="button" disabled={pending || categoryDrafts.some((item) => !item.name.trim())} onClick={() => void saveCategories()} type="button">{pending ? "儲存中…" : "儲存分類"}</button></div>
     </ModalDialog>
 
-    <ModalDialog className={styles.batchCategoryDialog} onClose={() => { if (!pending) { setBatchCategoryOpen(false); setError(null); } }} open={batchCategoryOpen} pending={pending} title={`分類 ${selectedSongIds.size} 首歌曲`}>
-      <p className={styles.batchHint}>選取一個目的分類；所有已勾選歌曲會一次移動，不會逐首發送請求。</p>
-      <div className={styles.batchCategoryChoices}><button aria-pressed={batchCategoryId === null} className={batchCategoryId === null ? styles.activeChip : ""} onClick={() => setBatchCategoryId(null)} type="button">未分類</button>{categories.map((category) => <button aria-pressed={batchCategoryId === category.id} className={batchCategoryId === category.id ? styles.activeChip : ""} key={category.id} onClick={() => setBatchCategoryId(category.id)} type="button">{category.name}</button>)}</div>
-      {error && <p className="notice error" role="alert">{error}</p>}
-      <div className="dialog-actions"><button className="secondary-button" disabled={pending} onClick={() => setBatchCategoryOpen(false)} type="button">取消</button><button className="button" disabled={pending || !selectedSongIds.size} onClick={() => void categorizeSelectedSongs()} type="button">{pending ? "套用中…" : "套用分類"}</button></div>
+    <ModalDialog className={`${styles.batchCategoryDialog} mobile-sheet-dialog bulk-organize-modal`} onClose={() => { if (!pending) { setBatchCategoryOpen(false); setError(null); } }} open={batchCategoryOpen} pending={pending} title="批量整理選取資料">
+      <div className="bulk-organize-dialog">
+        <p className="bulk-organize-description">整理 {selectedSongIds.size} 首歌曲。選取一個目的分類，所有已勾選歌曲會一次移動。</p>
+        <div className="bulk-organize-static-mode"><span>操作方式</span><div className="operation-select-row"><span className="operation-select-icon"><AppIcon name="tag" /></span><strong>設定歌曲分類</strong></div></div>
+        <section className="taxonomy-section-card">
+          <header className="taxonomy-section-header"><span className="taxonomy-section-icon taxonomy-section-icon-tag"><AppIcon name="tag" /></span><div><h3>類別（單選）</h3><p>選擇歌曲要移入的類別</p></div></header>
+          <div className="taxonomy-choice-grid"><button aria-pressed={batchCategoryId === null} className={batchCategoryId === null ? "selected" : ""} onClick={() => setBatchCategoryId(null)} type="button"><span>未分類</span></button>{categories.map((category) => <button aria-pressed={batchCategoryId === category.id} className={batchCategoryId === category.id ? "selected" : ""} key={category.id} onClick={() => setBatchCategoryId(category.id)} type="button"><span>{category.name}</span></button>)}</div>
+        </section>
+        {error && <p className="notice error" role="alert">{error}</p>}
+        <div className="dialog-actions bulk-organize-actions"><button className="secondary-button" disabled={pending} onClick={() => setBatchCategoryOpen(false)} type="button">取消</button><button className="button" disabled={pending || !selectedSongIds.size} onClick={() => void categorizeSelectedSongs()} type="button">{pending ? "套用中…" : "套用分類"}</button></div>
+      </div>
     </ModalDialog>
 
     <ModalDialog className={styles.categoryDialog} onClose={() => setCategoryMoreOpen(false)} open={categoryMoreOpen} title="更多分類">
