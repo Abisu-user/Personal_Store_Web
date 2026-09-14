@@ -86,6 +86,9 @@ export function MobileAppNavigation() {
       if (href === "/bookmarks" && pathname === "/bookmarks") {
         window.dispatchEvent(new CustomEvent("personal-vault:bookmarks-overview"));
       }
+      if (href === "/photos" && pathname === "/photos") {
+        window.dispatchEvent(new CustomEvent("personal-vault:photos-overview"));
+      }
       setPendingPath(href);
     },
   });

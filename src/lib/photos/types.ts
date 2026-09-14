@@ -1,6 +1,6 @@
 export type PhotoCategory = { id: string; name: string; sort_order: number; folder_id: string | null };
 import type { FolderLockStatus } from "@/lib/folder-locks/types";
-export type PhotoFolder = { id: string; name: string; sort_order: number; is_visible: boolean } & FolderLockStatus;
+export type PhotoFolder = { id: string; name: string; sort_order: number; is_visible: boolean; item_count?: number; is_unlocked?: boolean } & FolderLockStatus;
 
 export type StoredPhoto = {
   id: string;
@@ -18,6 +18,7 @@ export type StoredPhoto = {
   category: Pick<PhotoCategory, "id" | "name"> | null;
   categories: Pick<PhotoCategory, "id" | "name">[];
   imageUrl: string;
+  createdAt: string;
   updatedAt: string;
 };
 

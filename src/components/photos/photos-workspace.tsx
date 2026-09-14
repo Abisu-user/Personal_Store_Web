@@ -2,8 +2,9 @@
 import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { createBrowserStorageManager } from "@/lib/storage/client";
 import {
   CollectionCategory,
@@ -15,6 +16,9 @@ import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { AppIcon } from "@/components/ui/app-icon";
+import { MobilePageHeader } from "@/components/ui/mobile-layout";
+import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import type { PhotosWorkspaceData, StoredPhoto } from "@/lib/photos/types";
 import mobileStyles from "@/components/photos/photos-mobile.module.css";
 
@@ -85,6 +89,11 @@ export function PhotosWorkspace({
   const router = useRouter();
   const createFlow = useCreateFlow();
   const [data, setData] = useState(initialData);
+  const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
+  const [overviewTab, setOverviewTab] = useState<"all" | "albums">("all");
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [showAllPhotos, setShowAllPhotos] = useState(false);
+  const [recentMode, setRecentMode] = useState(false);
   const [query, setQuery] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +104,8 @@ export function PhotosWorkspace({
   const [editing, setEditing] = useState<StoredPhoto | null>(null);
   const [deleting, setDeleting] = useState<StoredPhoto | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [overviewLockedFolder, setOverviewLockedFolder] = useState<PhotosWorkspaceData["folders"][number] | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [bulkConfirm, setBulkConfirm] = useState<
     "trash" | "restore" | "permanent" | null
   >(null);
@@ -110,20 +121,53 @@ export function PhotosWorkspace({
   }, []);
   useCreatedItemRefresh("photo", load);
   useEffect(() => {
-    if (createMode) void load();
+    if (!createMode) return;
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
   }, [createMode, load]);
+  useEffect(() => {
+    if (createMode) return;
+    const target = window.sessionStorage.getItem("personal-vault:photos:overview-unlock-target");
+    if (!target) return;
+    window.sessionStorage.removeItem("personal-vault:photos:overview-unlock-target");
+    const timer = window.setTimeout(() => {
+      setMobileView("library");
+      setShowAllPhotos(false);
+      setRecentMode(false);
+      setFolderIds([target]);
+      setView(`folder:${target}`);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [createMode]);
+  useEffect(() => {
+    if (mobileView === "library" && mobileSearchOpen) searchInputRef.current?.focus();
+  }, [mobileSearchOpen, mobileView]);
+  useEffect(() => {
+    if (createMode) return;
+    const showOverview = () => {
+      setMobileView("overview");
+      setOverviewTab("all");
+      setMobileSearchOpen(false);
+      setShowAllPhotos(false);
+      setRecentMode(false);
+      setQuery("");
+      setChosen(new Set());
+    };
+    window.addEventListener("personal-vault:photos-overview", showOverview);
+    return () => window.removeEventListener("personal-vault:photos-overview", showOverview);
+  }, [createMode]);
   useEffect(
     () => () => {
       if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     },
     [previewUrl],
   );
-  const photos = useMemo(
-    () =>
-      data.photos.filter((photo) => {
+  const photos = useMemo(() => {
+      const filtered = data.photos.filter((photo) => {
         if (view === "trash" ? !photo.deletedAt : Boolean(photo.deletedAt))
           return false;
-        if (view === "all" && !folderIds.length && (photo.archived || photo.folders.length)) return false;
+        if (view === "all" && !showAllPhotos && !folderIds.length && (photo.archived || photo.folders.length)) return false;
+        if (showAllPhotos && (photo.archived || photo.deletedAt)) return false;
         if (view === "favorite" && (!photo.favorite || photo.archived))
           return false;
         if (view === "pinned" && (!photo.pinned || photo.archived))
@@ -144,9 +188,59 @@ export function PhotosWorkspace({
         return `${photo.title} ${photo.description ?? ""} ${photo.originalFilename}`
           .toLowerCase()
           .includes(query.toLowerCase());
-      }),
-    [category, data.photos, folderIds, query, view],
+      });
+      return recentMode
+        ? filtered.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        : filtered;
+    }, [category, data.photos, folderIds, query, recentMode, showAllPhotos, view]);
+  const overviewPhotos = useMemo(
+    () => data.photos
+      .filter((photo) => !photo.deletedAt && !photo.archived)
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
+    [data.photos],
   );
+  const visibleFolders = useMemo(() => data.folders.filter((folder) => folder.is_visible), [data.folders]);
+  const unorganizedPhotos = useMemo(() => overviewPhotos.filter((photo) => photo.folders.length === 0), [overviewPhotos]);
+  const recentPhotos = overviewPhotos.slice(0, 6);
+  const overviewFolderList = overviewTab === "all" ? visibleFolders.slice(0, 4) : visibleFolders;
+  const folderPreview = (folderId: string) =>
+    overviewPhotos.find((photo) => photo.folders.some((folder) => folder.id === folderId));
+  const openLibrary = ({ all = false, focusSearch = false, recent = false, trash = false }: { all?: boolean; focusSearch?: boolean; recent?: boolean; trash?: boolean } = {}) => {
+    setMobileView("library");
+    setMobileSearchOpen(focusSearch);
+    setShowAllPhotos(all || recent);
+    setRecentMode(recent);
+    setFolderIds([]);
+    setCategory([]);
+    setView(trash ? "trash" : "all");
+    if (!focusSearch) setQuery("");
+    setChosen(new Set());
+  };
+  const openFolder = (folderId: string | null) => {
+    const folder = folderId ? data.folders.find((item) => item.id === folderId) : null;
+    if (folder?.is_locked && !folder.is_unlocked) {
+      setOverviewLockedFolder(folder);
+      return;
+    }
+    setMobileView("library");
+    setMobileSearchOpen(false);
+    setShowAllPhotos(false);
+    setRecentMode(false);
+    setQuery("");
+    setCategory([]);
+    setFolderIds(folderId ? [folderId] : []);
+    setView(folderId ? `folder:${folderId}` : "all");
+    setChosen(new Set());
+  };
+  const libraryTitle = view === "trash"
+    ? "回收桶"
+    : recentMode
+      ? "最近上傳"
+      : showAllPhotos
+        ? "全部照片"
+        : folderIds.length
+          ? data.folders.find((folder) => folder.id === folderIds[0])?.name ?? "照片"
+          : "未整理";
   function pickPreview(file: File | null) {
     if (previewUrl.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(file ? URL.createObjectURL(file) : "");
@@ -410,6 +504,95 @@ export function PhotosWorkspace({
           {error}
         </p>
       )}
+      <section className={mobileStyles.mobileOverview} data-active={mobileView === "overview"}>
+        <MobilePageHeader
+          eyebrow="PHOTOS"
+          title="照片儲存"
+          actions={<>
+            <button aria-label="搜尋照片" className="mobile-icon-button" onClick={() => openLibrary({ all: true, focusSearch: true })} type="button">
+              <AppIcon name="search" />
+            </button>
+            <CreateItemButton className={mobileStyles.overviewAddButton} kind="photo">
+              <AppIcon name="plus" />
+              <span>上傳</span>
+            </CreateItemButton>
+          </>}
+        />
+        <nav aria-label="照片首頁檢視" className={mobileStyles.overviewTabs}>
+          <button aria-current={overviewTab === "all" ? "page" : undefined} className={overviewTab === "all" ? mobileStyles.active : ""} onClick={() => setOverviewTab("all")} type="button">全部</button>
+          <button aria-current={overviewTab === "albums" ? "page" : undefined} className={overviewTab === "albums" ? mobileStyles.active : ""} onClick={() => setOverviewTab("albums")} type="button">相簿</button>
+          <button onClick={() => openLibrary({ recent: true })} type="button">最近</button>
+          <button onClick={() => openLibrary({ trash: true })} type="button">回收桶</button>
+        </nav>
+
+        <section className={mobileStyles.overviewSection}>
+          <header>
+            <h2>照片資料夾</h2>
+            {overviewTab === "all" && visibleFolders.length > overviewFolderList.length ? (
+              <button className={mobileStyles.sectionLink} onClick={() => setOverviewTab("albums")} type="button">查看全部 <span aria-hidden="true">›</span></button>
+            ) : null}
+          </header>
+          <div className={mobileStyles.folderGrid}>
+            <button onClick={() => openLibrary({ all: true })} type="button">
+              <span className={mobileStyles.folderCover}>
+                {overviewPhotos[0] ? <img alt="" src={overviewPhotos[0].imageUrl} /> : <AppIcon name="photo" />}
+              </span>
+              <strong>全部照片</strong>
+              <small>{overviewPhotos.length} 張照片</small>
+            </button>
+            <button onClick={() => openFolder(null)} type="button">
+              <span className={mobileStyles.folderCover}>
+                {unorganizedPhotos[0] ? <img alt="" src={unorganizedPhotos[0].imageUrl} /> : <AppIcon name="folder" />}
+              </span>
+              <strong>未整理</strong>
+              <small>{unorganizedPhotos.length} 張照片</small>
+            </button>
+            {overviewFolderList.map((folder) => {
+              const preview = !folder.is_locked || folder.is_unlocked ? folderPreview(folder.id) : undefined;
+              return (
+                <button key={folder.id} onClick={() => openFolder(folder.id)} type="button">
+                  <span className={mobileStyles.folderCover} data-locked={folder.is_locked && !folder.is_unlocked ? "true" : undefined}>
+                    {preview ? <img alt="" src={preview.imageUrl} /> : <AppIcon name={folder.is_locked && !folder.is_unlocked ? "lock" : "folder"} />}
+                  </span>
+                  <strong>{folder.name}</strong>
+                  <small>{folder.item_count ?? 0} 張照片</small>
+                </button>
+              );
+            })}
+          </div>
+          {overviewTab === "albums" && !visibleFolders.length ? <p className={mobileStyles.compactEmpty}>還沒有自訂照片資料夾</p> : null}
+        </section>
+
+        {overviewTab === "all" ? (
+          <section className={mobileStyles.overviewSection}>
+            <header>
+              <h2>最近上傳</h2>
+              {recentPhotos.length ? <button className={mobileStyles.sectionLink} onClick={() => openLibrary({ recent: true })} type="button">查看全部 <span aria-hidden="true">›</span></button> : null}
+            </header>
+            {recentPhotos.length ? (
+              <div className={mobileStyles.recentGrid}>
+                {recentPhotos.map((photo) => (
+                  <button aria-label={`預覽 ${photo.title}`} key={photo.id} onClick={() => setSelected(photo)} type="button">
+                    <img alt={photo.title} src={photo.imageUrl} />
+                  </button>
+                ))}
+              </div>
+            ) : <p className={mobileStyles.compactEmpty}>尚未上傳照片</p>}
+          </section>
+        ) : null}
+      </section>
+      <div className={mobileStyles.managementView} data-active={mobileView === "library"}>
+      <MobilePageHeader
+        eyebrow="PHOTO LIBRARY"
+        title={libraryTitle}
+        leading={<button aria-label="返回照片首頁" className="mobile-icon-button" onClick={() => { setMobileView("overview"); setMobileSearchOpen(false); setQuery(""); setChosen(new Set()); }} type="button"><span aria-hidden="true">‹</span></button>}
+        actions={<>
+          <button aria-expanded={mobileSearchOpen} aria-label="搜尋照片" className="mobile-icon-button" onClick={() => { setMobileSearchOpen(true); window.requestAnimationFrame(() => searchInputRef.current?.focus()); }} type="button">
+            <AppIcon name="search" />
+          </button>
+          <CreateItemButton className="mobile-header-create-button" kind="photo"><AppIcon name="plus" /><span className="sr-only">上傳照片</span></CreateItemButton>
+        </>}
+      />
       <div className="library-heading">
         <div>
           <p className="eyebrow">PRIVATE PHOTOS</p>
@@ -424,18 +607,22 @@ export function PhotosWorkspace({
         items={data.photos}
         mobileAppActions
         setCategory={setCategory}
-        setFolderIds={setFolderIds}
-        setView={setView}
+        setFolderIds={(value) => { setShowAllPhotos(false); setRecentMode(false); setFolderIds(value); }}
+        setView={(value) => { setShowAllPhotos(false); setRecentMode(false); setView(value); }}
         storageKey="personal-vault:photo-system-folders:v1"
         view={view}
       />
-      <input
-        aria-label="搜尋照片"
-        className="note-search"
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="搜尋照片標題或說明"
-        value={query}
-      />
+      <div className={mobileStyles.librarySearch} data-open={mobileSearchOpen}>
+        <input
+          aria-label="搜尋照片"
+          className="note-search"
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="搜尋照片標題或說明"
+          ref={searchInputRef}
+          value={query}
+        />
+        <button aria-label="關閉搜尋" className={mobileStyles.searchClose} onClick={() => { setQuery(""); setMobileSearchOpen(false); }} type="button">×</button>
+      </div>
       <div className="bulk-toolbar">
         <label>
           <input
@@ -469,9 +656,8 @@ export function PhotosWorkspace({
                 onChange={() =>
                   setChosen((current) => {
                     const next = new Set(current);
-                    next.has(photo.id)
-                      ? next.delete(photo.id)
-                      : next.add(photo.id);
+                    if (next.has(photo.id)) next.delete(photo.id);
+                    else next.add(photo.id);
                     return next;
                   })
                 }
@@ -497,6 +683,7 @@ export function PhotosWorkspace({
         ))}
         {photos.length === 0 && <p className="lead">此清單尚無照片。</p>}
       </div>
+      </div>
       <BulkOrganizeDialog categories={data.categories} count={chosenPhotos.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
       <ModalDialog
         onClose={() => setSelected(null)}
@@ -518,6 +705,10 @@ export function PhotosWorkspace({
               {selected.originalFilename} · {formatBytes(selected.byteSize)}
             </p>
             <div className="dialog-actions">
+              <a className="secondary-button" download={selected.originalFilename} href={`/api/photos?download=${encodeURIComponent(selected.id)}`} rel="noreferrer" target="_blank">
+                <AppIcon name="download" />
+                下載原圖
+              </a>
               {selected.deletedAt ? (
                 <>
                   <button
@@ -632,6 +823,16 @@ export function PhotosWorkspace({
               ? "批量還原照片？"
               : "批量移至垃圾桶？"
         }
+      />
+      <FolderUnlockDialog
+        folder={overviewLockedFolder}
+        kind="photo"
+        onClose={() => setOverviewLockedFolder(null)}
+        onUnlocked={() => {
+          if (!overviewLockedFolder) return;
+          window.sessionStorage.setItem("personal-vault:photos:overview-unlock-target", overviewLockedFolder.id);
+          window.location.reload();
+        }}
       />
     </section>
   );

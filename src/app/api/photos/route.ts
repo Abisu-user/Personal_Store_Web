@@ -15,21 +15,29 @@ const actionSchema = z.object({ id: z.string().uuid(), action: z.enum(["trash", 
 const bulkOrganizeSchema = z.object({ ids: z.array(z.string().uuid()).min(1).max(100), action: z.literal("organize"), folderIds: z.array(z.string().uuid()).max(30), categoryIds: z.array(z.string().uuid()).max(30), relationMode: z.enum(["add", "remove", "replace"]) });
 const deleteSchema = z.object({ id: z.string().uuid() });
 function error(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
+function attachmentHeader(filename: string) {
+  const fallback = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_") || "photo";
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
 
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const context = await getSecurityContext(); if (!context) return error("Unauthorized", 401);
   const requestedImage = request.nextUrl.searchParams.get("image");
-  if (!requestedImage) { try { return NextResponse.json(await getPhotosWorkspaceData(context.userId), { headers: { "Cache-Control": "private, no-store" } }); } catch { return error("目前無法讀取照片。", 503); } }
-  if (!imageId.safeParse(requestedImage).success) return error("Invalid request", 400);
+  const requestedDownload = request.nextUrl.searchParams.get("download");
+  const requestedFile = requestedDownload ?? requestedImage;
+  if (!requestedFile) { try { return NextResponse.json(await getPhotosWorkspaceData(context.userId), { headers: { "Cache-Control": "private, no-store" } }); } catch { return error("目前無法讀取照片。", 503); } }
+  if (!imageId.safeParse(requestedFile).success) return error("Invalid request", 400);
   try {
     const admin = createAdminClient();
-    const { data, error: queryError } = await admin.from("entries").select("file_details(storage_path, mime_type)").eq("id", requestedImage).eq("owner_id", context.userId).eq("kind", "photo").maybeSingle();
+    const { data, error: queryError } = await admin.from("entries").select("file_details(storage_path, mime_type, original_filename)").eq("id", requestedFile).eq("owner_id", context.userId).eq("kind", "photo").maybeSingle();
     const detail = data && (Array.isArray(data.file_details) ? data.file_details[0] : data.file_details); if (queryError) throw queryError;
     if (!detail) return error("找不到照片。", 404);
     const { data: object, error: objectError } = await createStorageManager(admin).download("vault-files", detail.storage_path);
     if (objectError || !object) throw objectError;
-    return new NextResponse(object, { headers: { "Content-Type": detail.mime_type || object.type || "image/jpeg", "Cache-Control": "private, no-store" } });
+    const headers: Record<string, string> = { "Content-Type": detail.mime_type || object.type || "application/octet-stream", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" };
+    if (requestedDownload) headers["Content-Disposition"] = attachmentHeader(detail.original_filename || "photo");
+    return new NextResponse(object, { headers });
   } catch { return error("暫時無法讀取照片。", 503); }
 }
 

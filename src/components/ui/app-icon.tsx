@@ -2,7 +2,7 @@ import type { SVGProps } from "react";
 
 export type AppIconName =
   | "anime" | "appearance" | "bookmark" | "calendar" | "code"
-  | "database" | "file" | "folder" | "home" | "lock" | "logout" | "more"
+  | "database" | "download" | "file" | "folder" | "home" | "lock" | "logout" | "more"
   | "music" | "note" | "organize" | "photo" | "plus" | "profile" | "search"
   | "security" | "settings" | "storage" | "tag" | "vocabulary";
 
@@ -24,6 +24,7 @@ const paths: Record<AppIconName, React.ReactNode> = {
   appearance: <><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z"/></>,
   storage: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></>,
   database: <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></>,
+  download: <><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5"/><path d="M4 18v3h16v-3"/></>,
   security: <><path d="M12 2 20 5v6c0 5.4-3.4 9-8 11-4.6-2-8-5.6-8-11V5Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></>,
   settings: <><circle cx="12" cy="12" r="3"/><path d="M19 13.5v-3l-2-.7a7 7 0 0 0-.7-1.7l.9-1.9-2.1-2.1-1.9.9a7 7 0 0 0-1.7-.7L10.5 2h-3l-.7 2a7 7 0 0 0-1.7.7l-1.9-.9-2.1 2.1L2 7.8a7 7 0 0 0-.7 1.7l-2 .7v3l2 .7a7 7 0 0 0 .7 1.7l-.9 1.9 2.1 2.1 1.9-.9a7 7 0 0 0 1.7.7l.7 2h3l.7-2a7 7 0 0 0 1.7-.7l1.9.9 2.1-2.1-.9-1.9a7 7 0 0 0 .7-1.7Z" transform="translate(3) scale(.75)"/></>,
   profile: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
