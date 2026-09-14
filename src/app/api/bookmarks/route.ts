@@ -76,11 +76,15 @@ async function replaceTags(entryId: string, tagIds: string[]) {
 }
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const context = await requireContext();
   if (!context) return jsonError("Unauthorized", 401);
+  const folderScope = request.nextUrl.searchParams.get("unlockedFolder");
+  if (folderScope && !z.string().uuid().safeParse(folderScope).success) {
+    return jsonError("Invalid folder scope", 400);
+  }
   try {
-    return NextResponse.json(await getBookmarksWorkspaceData(context.userId), { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json(await getBookmarksWorkspaceData(context.userId, folderScope), { headers: { "Cache-Control": "private, no-store" } });
   } catch { return jsonError("Bookmarks are temporarily unavailable.", 503); }
 }
 

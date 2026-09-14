@@ -9,6 +9,7 @@ const passwordMode = z.enum(["pin4", "pin6", "password"]);
 const configureSchema = z.object({ action: z.literal("configure"), kind: kindSchema, folderId: z.string().uuid(), mode: passwordMode, password: z.string().min(1).max(128) });
 const verifySchema = z.object({ action: z.literal("verify"), kind: kindSchema, folderId: z.string().uuid(), password: z.string().min(1).max(128) });
 const removeSchema = z.object({ action: z.literal("remove"), kind: kindSchema, folderId: z.string().uuid() });
+const relockSchema = z.object({ action: z.literal("relock"), kind: kindSchema, folderId: z.string().uuid() });
 
 function jsonError(error: string, status: number) { return NextResponse.json({ error }, { status }); }
 
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest) {
   const configure = configureSchema.safeParse(body);
   const verify = verifySchema.safeParse(body);
   const remove = removeSchema.safeParse(body);
-  const requestData = configure.success ? configure.data : verify.success ? verify.data : remove.success ? remove.data : null;
+  const relock = relockSchema.safeParse(body);
+  const requestData = configure.success ? configure.data : verify.success ? verify.data : remove.success ? remove.data : relock.success ? relock.data : null;
   if (!requestData) return jsonError("請檢查資料夾鎖定設定。", 400);
   try {
     if (!(await folderExists(context.userId, requestData.kind, requestData.folderId))) return jsonError("找不到指定資料夾。", 404);
@@ -37,6 +39,32 @@ export async function POST(request: NextRequest) {
       const { error } = await admin.from("folder_locks").delete().eq("owner_id", context.userId).eq("folder_kind", remove.data.kind).eq("folder_id", remove.data.folderId);
       if (error) throw error;
       return NextResponse.json({ ok: true });
+    }
+    if (relock.success) {
+      const { data: lock, error } = await admin
+        .from("folder_locks")
+        .select("id")
+        .eq("owner_id", context.userId)
+        .eq("folder_kind", relock.data.kind)
+        .eq("folder_id", relock.data.folderId)
+        .maybeSingle();
+      if (error) throw error;
+      const response = NextResponse.json({ ok: true });
+      if (lock) {
+        const cookieName = folderUnlockCookieName(lock.id);
+        const token = request.cookies.get(cookieName)?.value;
+        if (token) {
+          const { error: sessionError } = await admin
+            .from("folder_unlock_sessions")
+            .delete()
+            .eq("owner_id", context.userId)
+            .eq("folder_lock_id", lock.id)
+            .eq("token_hash", hashUnlockToken(token));
+          if (sessionError) throw sessionError;
+        }
+        response.cookies.delete(cookieName);
+      }
+      return response;
     }
     const verifyData = verify.data!;
     const { data: lock, error } = await admin.from("folder_locks").select("id, password_mode, password_salt, password_hash, failed_attempts, locked_until").eq("owner_id", context.userId).eq("folder_kind", verifyData.kind).eq("folder_id", verifyData.folderId).maybeSingle();

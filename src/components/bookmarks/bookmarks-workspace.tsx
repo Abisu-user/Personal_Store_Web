@@ -119,6 +119,21 @@ function readQuickFolderIds() {
   }
 }
 
+async function relockBookmarkFolder(folderId: string) {
+  try {
+    await fetch("/api/folder-locks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "relock", kind: "bookmark", folderId }),
+      keepalive: true,
+    });
+  } catch (cause) {
+    // The public bookmarks loader is fail-closed even if this best-effort
+    // session cleanup is interrupted by navigation or a network transition.
+    console.warn("[bookmarks] locked-folder session cleanup failed", cause);
+  }
+}
+
 function bookmarkHostname(item: Bookmark) {
   try {
     return item.detail?.url
@@ -305,7 +320,7 @@ function BookmarkFolderLockGate({
 }: {
   folders: BookmarksWorkspaceData["folders"];
   onOpen: (folderId: string) => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: (folderId: string) => Promise<void>;
 }) {
   const [lockedFolder, setLockedFolder] = useState<
     BookmarksWorkspaceData["folders"][number] | null
@@ -334,8 +349,10 @@ function BookmarkFolderLockGate({
       onClose={() => setLockedFolder(null)}
       onUnlocked={async () => {
         const folderId = lockedFolder?.id;
-        await onRefresh();
-        if (folderId) onOpen(folderId);
+        if (folderId) {
+          await onRefresh(folderId);
+          onOpen(folderId);
+        }
       }}
     />
   );
@@ -439,12 +456,14 @@ export function BookmarksWorkspace({
   const router = useRouter();
   const createFlow = useCreateFlow();
   const previewRequest = useRef<AbortController | null>(null);
+  const pendingRelock = useRef<{ folderId: string; timer: number } | null>(null);
   const [data, setData] = useState(initialData ?? emptyBookmarks);
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [freshData, setFreshData] = useState(Boolean(initialData));
   const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
   const [showAllBookmarks, setShowAllBookmarks] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [unlockedFolderScopeId, setUnlockedFolderScopeId] = useState<string | null>(null);
   const [shortcutManagerOpen, setShortcutManagerOpen] = useState(false);
   const [shortcutDraftIds, setShortcutDraftIds] = useState<string[]>([]);
   const [view, setView] = useState<View>("all");
@@ -530,8 +549,11 @@ export function BookmarksWorkspace({
   useEffect(() => {
     if (!createMode) router.prefetch("/bookmarks");
   }, [createMode, router]);
-  const load = useCallback(async () => {
-    const response = await fetch("/api/bookmarks", { cache: "no-store" });
+  const load = useCallback(async (folderScopeId?: string) => {
+    const endpoint = folderScopeId
+      ? `/api/bookmarks?unlockedFolder=${encodeURIComponent(folderScopeId)}`
+      : "/api/bookmarks";
+    const response = await fetch(endpoint, { cache: "no-store" });
     if (!response.ok) {
       setError("目前無法讀取網站收藏。");
       return;
@@ -540,6 +562,7 @@ export function BookmarksWorkspace({
     setData(next);
     setLoaded(true);
     setFreshData(true);
+    setUnlockedFolderScopeId(folderScopeId ?? null);
   }, []);
   useCreatedItemRefresh("bookmark", load);
   useEffect(() => { if (createMode) void load(); }, [createMode, load]);
@@ -567,6 +590,49 @@ export function BookmarksWorkspace({
       active = false;
     };
   }, [createMode]);
+  const restorePublicBookmarks = useCallback(() => {
+    if (!unlockedFolderScopeId) return;
+    // Remove the scoped private payload in the same interaction that leaves
+    // the folder. The following request then replaces it with the public-only
+    // workspace result.
+    setData((current) => ({ ...current, bookmarks: [] }));
+    setFreshData(false);
+    setUnlockedFolderScopeId(null);
+    void load();
+  }, [load, unlockedFolderScopeId]);
+  useEffect(() => {
+    const pending = pendingRelock.current;
+    if (pending?.folderId === unlockedFolderScopeId) {
+      window.clearTimeout(pending.timer);
+      pendingRelock.current = null;
+    }
+    if (!unlockedFolderScopeId) return;
+    const folderId = unlockedFolderScopeId;
+    const relock = () => { void relockBookmarkFolder(folderId); };
+    const onDocumentClick = (event: MouseEvent) => {
+      const anchor = (event.target as HTMLElement | null)?.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor) return;
+      try {
+        const target = new URL(anchor.href, window.location.href);
+        if (target.origin === window.location.origin && target.pathname !== "/bookmarks") relock();
+      } catch {
+        /* Ignore malformed, non-navigation links. */
+      }
+    };
+    window.addEventListener("pagehide", relock);
+    window.addEventListener("popstate", relock);
+    document.addEventListener("click", onDocumentClick, true);
+    return () => {
+      window.removeEventListener("pagehide", relock);
+      window.removeEventListener("popstate", relock);
+      document.removeEventListener("click", onDocumentClick, true);
+      const timer = window.setTimeout(() => {
+        void relockBookmarkFolder(folderId);
+        if (pendingRelock.current?.timer === timer) pendingRelock.current = null;
+      }, 0);
+      pendingRelock.current = { folderId, timer };
+    };
+  }, [unlockedFolderScopeId]);
   useEffect(() => {
     if (mobileView === "library" && mobileSearchOpen) searchInputRef.current?.focus();
   }, [mobileSearchOpen, mobileView]);
@@ -577,6 +643,7 @@ export function BookmarksWorkspace({
   }, [success]);
   useEffect(() => {
     const showOverview = () => {
+      restorePublicBookmarks();
       setMobileView("overview");
       setMobileSearchOpen(false);
       setQuery("");
@@ -584,7 +651,7 @@ export function BookmarksWorkspace({
     };
     window.addEventListener("personal-vault:bookmarks-overview", showOverview);
     return () => window.removeEventListener("personal-vault:bookmarks-overview", showOverview);
-  }, []);
+  }, [restorePublicBookmarks]);
   const activeFolderId = folderFilters[0] ?? null;
   const scopedCategories = useMemo(
     () =>
@@ -1773,6 +1840,7 @@ export function BookmarksWorkspace({
   const activeBookmarkCount = data.bookmarks.filter((item) => !item.deletedAt && !item.archived).length;
   const hasAnyBookmark = activeBookmarkCount > 0 || counts.all > 0 || data.folders.some((folder) => (folder.item_count ?? 0) > 0);
   const openLibrary = ({ all = false, focusSearch = false }: { all?: boolean; focusSearch?: boolean } = {}) => {
+    restorePublicBookmarks();
     setMobileView("library");
     setMobileSearchOpen(focusSearch);
     setShowAllBookmarks(all);
@@ -1781,6 +1849,9 @@ export function BookmarksWorkspace({
     setView("all");
   };
   const openFolder = (folderId: string | null) => {
+    if (!folderId || (unlockedFolderScopeId && folderId !== unlockedFolderScopeId)) {
+      restorePublicBookmarks();
+    }
     setMobileSearchOpen(false);
     setQuery("");
     setShowAllBookmarks(false);
@@ -1856,6 +1927,11 @@ export function BookmarksWorkspace({
     }
   };
   const selectBookmarkFolder = (folderId: string | null) => {
+    const leavesUnlockedScope = Boolean(
+      unlockedFolderScopeId
+        && (!folderId || folderId !== unlockedFolderScopeId || folderFilters.includes(folderId)),
+    );
+    if (leavesUnlockedScope) restorePublicBookmarks();
     setShowAllBookmarks(false);
     if (!folderId) { setFolderFilters([]); setView("all"); return; }
     setFolderFilters((current) => {
@@ -1996,7 +2072,7 @@ export function BookmarksWorkspace({
         <MobilePageHeader
           eyebrow="BOOKMARK LIBRARY"
           title="全部網站"
-          leading={<button aria-label="返回網站收藏首頁" className="mobile-icon-button" onClick={() => { setMobileView("overview"); setMobileSearchOpen(false); setQuery(""); }} type="button"><span aria-hidden="true">‹</span></button>}
+          leading={<button aria-label="返回網站收藏首頁" className="mobile-icon-button" onClick={() => { restorePublicBookmarks(); setMobileView("overview"); setMobileSearchOpen(false); setQuery(""); }} type="button"><span aria-hidden="true">‹</span></button>}
           actions={<>
             <button
               aria-expanded={mobileSearchOpen}
@@ -2060,7 +2136,7 @@ export function BookmarksWorkspace({
           renderItem={(item) => <button aria-selected={folderFilters.includes(item.id)} className={folderFilters.includes(item.id) ? "active" : ""} data-bookmark-folder-id={item.id} key={`folder-${item.id}`} onClick={() => selectBookmarkFolder(item.id)} role="tab" type="button">{item.is_locked ? "🔒 " : ""}{item.name} <span>{quickCount(item.id)}</span></button>}
           renderMore={(hasHiddenActive) => <button aria-label="查看更多網站收藏資料夾" className={hasHiddenActive ? "collection-category-utility active" : "collection-category-utility"} onClick={() => setFolderMoreOpen(true)} type="button">更多</button>}
           rowClassName="bookmark-view-tabs-scroll"
-          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { setShowAllBookmarks(false); setView("trash"); setFolderFilters([]); setCategory([]); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
+          trailing={folders.trash.visible ? <button aria-selected={view === "trash"} className={view === "trash" ? "active trash-tab" : "trash-tab"} onClick={() => { restorePublicBookmarks(); setShowAllBookmarks(false); setView("trash"); setFolderFilters([]); setCategory([]); }} role="tab" type="button">{folders.trash.label} <span>{counts.trash}</span></button> : null}
           trailingCount={folders.trash.visible ? 1 : 0}
         />
       </section>

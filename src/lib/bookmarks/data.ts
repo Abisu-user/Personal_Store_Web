@@ -24,7 +24,10 @@ function logQueryError(query: string, error: SupabaseQueryError | null, level: "
 }
 
 /** Server-only collection read shared by the page and its internal API. */
-export async function getBookmarksWorkspaceData(ownerId: string): Promise<BookmarksWorkspaceData> {
+export async function getBookmarksWorkspaceData(
+  ownerId: string,
+  unlockedFolderScopeId: string | null = null,
+): Promise<BookmarksWorkspaceData> {
   const admin = createAdminClient();
   const lockState = await getFolderLockState(ownerId, "bookmark");
   // A collection read is also the fallback cleanup path when the scheduled job is unavailable.
@@ -87,6 +90,11 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   const shortcutOrderByEntry = new Map(
     (shortcutsResult.data ?? []).map((shortcut) => [shortcut.entry_id, shortcut.sort_order] as const),
   );
+  const hasUnlockedFolderScope = Boolean(
+    unlockedFolderScopeId
+      && lockState.locks.has(unlockedFolderScopeId)
+      && lockState.unlockedFolderIds.has(unlockedFolderScopeId),
+  );
 
   const bookmarks: Bookmark[] = (entriesResult.data ?? []).flatMap((entry) => {
     const folder = Array.isArray(entry.bookmark_folders) ? entry.bookmark_folders[0] ?? null : entry.bookmark_folders;
@@ -97,7 +105,24 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     const linkedFolders = [...(folder ? [folder] : []), ...(foldersByEntry.get(entry.id) ?? [])]
       .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
     const linkedCategories = categoriesByEntry.get(entry.id) ?? (fallbackCategory ? [fallbackCategory] : []);
-    if (linkedFolders.some((item) => lockState.locks.has(item.id) && !lockState.unlockedFolderIds.has(item.id))) return [];
+    const lockedFolderIds = linkedFolders
+      .filter((item) => lockState.locks.has(item.id))
+      .map((item) => item.id);
+
+    // Default workspace reads are intentionally stricter than an unlock
+    // session: Overview, All, search, recent, and shortcuts never receive an
+    // entry linked to any locked folder. A locked entry is returned only for
+    // an explicit request scoped to that exact folder, and every locked
+    // relation on the entry must currently be unlocked.
+    if (lockedFolderIds.length) {
+      if (!hasUnlockedFolderScope || !unlockedFolderScopeId) return [];
+      if (!linkedFolders.some((item) => item.id === unlockedFolderScopeId)) return [];
+      if (lockedFolderIds.some((folderId) => !lockState.unlockedFolderIds.has(folderId))) return [];
+    } else if (hasUnlockedFolderScope) {
+      // A scoped private-folder response contains only that folder's entries,
+      // making it impossible to reuse the response as an "all items" result.
+      return [];
+    }
     return [{
     id: entry.id,
     title: entry.title,
