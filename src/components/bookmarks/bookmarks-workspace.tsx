@@ -33,10 +33,6 @@ import {
 import { BookmarkDisplay, readAppearance } from "@/lib/appearance/preferences";
 import { resolveBookmarkCover } from "@/lib/bookmarks/cover";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
-import {
-  readClientResource,
-  writeClientResource,
-} from "@/lib/pwa/client-resource-cache";
 import styles from "./bookmarks-mobile.module.css";
 
 type SystemView = "all" | "favorite" | "pinned" | "archived" | "trash";
@@ -448,6 +444,9 @@ export function BookmarksWorkspace({
   const [freshData, setFreshData] = useState(Boolean(initialData));
   const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
   const [showAllBookmarks, setShowAllBookmarks] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [shortcutManagerOpen, setShortcutManagerOpen] = useState(false);
+  const [shortcutDraftIds, setShortcutDraftIds] = useState<string[]>([]);
   const [view, setView] = useState<View>("all");
   const [category, setCategory] = useState<string[]>([]);
   const [folderFilters, setFolderFilters] = useState<string[]>([]);
@@ -541,19 +540,12 @@ export function BookmarksWorkspace({
     setData(next);
     setLoaded(true);
     setFreshData(true);
-    if (!createMode) writeClientResource("bookmarks:standard", next);
-  }, [createMode]);
+  }, []);
   useCreatedItemRefresh("bookmark", load);
   useEffect(() => { if (createMode) void load(); }, [createMode, load]);
   useEffect(() => {
     if (createMode) return;
     let active = true;
-    const cached =
-      readClientResource<BookmarksWorkspaceData>("bookmarks:standard");
-    if (cached) {
-      setData(cached);
-      setLoaded(true);
-    }
     const loadInitial = async () => {
       try {
         const response = await fetch("/api/bookmarks", { cache: "no-store" });
@@ -563,9 +555,8 @@ export function BookmarksWorkspace({
         setData(next);
         setLoaded(true);
         setFreshData(true);
-        writeClientResource("bookmarks:standard", next);
       } catch (cause) {
-        if (active && !cached)
+        if (active)
           setError(
             cause instanceof Error ? cause.message : "目前無法讀取網站收藏。",
           );
@@ -577,8 +568,8 @@ export function BookmarksWorkspace({
     };
   }, [createMode]);
   useEffect(() => {
-    if (loaded && !createMode) writeClientResource("bookmarks:standard", data);
-  }, [createMode, data, loaded]);
+    if (mobileView === "library" && mobileSearchOpen) searchInputRef.current?.focus();
+  }, [mobileSearchOpen, mobileView]);
   useEffect(() => {
     if (!success) return;
     const timer = window.setTimeout(() => setSuccess(null), 3000);
@@ -587,6 +578,8 @@ export function BookmarksWorkspace({
   useEffect(() => {
     const showOverview = () => {
       setMobileView("overview");
+      setMobileSearchOpen(false);
+      setQuery("");
       setChosen(new Set());
     };
     window.addEventListener("personal-vault:bookmarks-overview", showOverview);
@@ -1759,10 +1752,20 @@ export function BookmarksWorkspace({
     });
   const quickCount = (id: string) => data.folders.find((folder) => folder.id === id)?.item_count
     ?? data.bookmarks.filter((item) => !item.deletedAt && !item.archived && item.folders.some((folder) => folder.id === id)).length;
-  const frequentBookmarks = (freshData ? data.bookmarks : [])
-    .filter((item) => !item.deletedAt && !item.archived && (item.openedCount ?? 0) > 0 && item.detail?.url)
-    .sort((left, right) => (right.openedCount ?? 0) - (left.openedCount ?? 0) || new Date(right.lastOpenedAt ?? 0).getTime() - new Date(left.lastOpenedAt ?? 0).getTime())
-    .slice(0, 8);
+  const shortcutBookmarks = (freshData ? data.bookmarks : [])
+    .filter((item) => !item.deletedAt && !item.archived && item.shortcutOrder !== null && item.detail?.url)
+    .sort((left, right) => (left.shortcutOrder ?? Number.MAX_SAFE_INTEGER) - (right.shortcutOrder ?? Number.MAX_SAFE_INTEGER));
+  const shortcutCandidates = (freshData ? data.bookmarks : [])
+    .filter((item) => !item.deletedAt && !item.archived && item.detail?.url)
+    .sort((left, right) => left.title.localeCompare(right.title, "zh-Hant"));
+  const shortcutManagerBookmarks = [...shortcutCandidates].sort((left, right) => {
+    const leftIndex = shortcutDraftIds.indexOf(left.id);
+    const rightIndex = shortcutDraftIds.indexOf(right.id);
+    if (leftIndex >= 0 && rightIndex >= 0) return leftIndex - rightIndex;
+    if (leftIndex >= 0) return -1;
+    if (rightIndex >= 0) return 1;
+    return left.title.localeCompare(right.title, "zh-Hant");
+  });
   const recentBookmarks = (freshData ? data.bookmarks : [])
     .filter((item) => !item.deletedAt && !item.archived && item.lastOpenedAt && item.detail?.url)
     .sort((left, right) => new Date(right.lastOpenedAt ?? 0).getTime() - new Date(left.lastOpenedAt ?? 0).getTime())
@@ -1771,18 +1774,66 @@ export function BookmarksWorkspace({
   const hasAnyBookmark = activeBookmarkCount > 0 || counts.all > 0 || data.folders.some((folder) => (folder.item_count ?? 0) > 0);
   const openLibrary = ({ all = false, focusSearch = false }: { all?: boolean; focusSearch?: boolean } = {}) => {
     setMobileView("library");
+    setMobileSearchOpen(focusSearch);
     setShowAllBookmarks(all);
     setFolderFilters([]);
     setCategory([]);
     setView("all");
-    if (focusSearch) window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
   const openFolder = (folderId: string | null) => {
+    setMobileSearchOpen(false);
+    setQuery("");
     setShowAllBookmarks(false);
     setCategory([]);
     setFolderFilters(folderId ? [folderId] : []);
     setView(folderId ? `folder:${folderId}` : "all");
     setMobileView("library");
+  };
+  const openShortcutManager = () => {
+    setShortcutDraftIds(shortcutBookmarks.map((item) => item.id));
+    setShortcutManagerOpen(true);
+  };
+  const toggleShortcut = (id: string) => {
+    setShortcutDraftIds((current) => current.includes(id)
+      ? current.filter((entryId) => entryId !== id)
+      : [...current, id]);
+  };
+  const moveShortcut = (id: string, direction: -1 | 1) => {
+    setShortcutDraftIds((current) => {
+      const index = current.indexOf(id);
+      const destination = index + direction;
+      if (index < 0 || destination < 0 || destination >= current.length) return current;
+      const next = [...current];
+      [next[index], next[destination]] = [next[destination], next[index]];
+      return next;
+    });
+  };
+  const saveShortcuts = async () => {
+    setPending(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/bookmarks/shortcuts", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds: shortcutDraftIds }),
+      });
+      const body = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(body?.error ?? "目前無法儲存常用網站。");
+      const orderById = new Map(shortcutDraftIds.map((id, index) => [id, index]));
+      setData((current) => ({
+        ...current,
+        bookmarks: current.bookmarks.map((bookmark) => ({
+          ...bookmark,
+          shortcutOrder: orderById.get(bookmark.id) ?? null,
+        })),
+      }));
+      setShortcutManagerOpen(false);
+      setSuccess("常用網站已更新。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "目前無法儲存常用網站。");
+    } finally {
+      setPending(false);
+    }
   };
   const recordOpen = async (id: string) => {
     const openedAt = new Date().toISOString();
@@ -1871,20 +1922,22 @@ export function BookmarksWorkspace({
         </div>
 
         <section className={styles.overviewSection}>
-          <header><h2>常用網站</h2></header>
+          <header>
+            <h2>常用網站</h2>
+            <button className={styles.sectionLink} onClick={openShortcutManager} type="button">管理</button>
+          </header>
           {!freshData ? (
             <p className={styles.compactEmpty}>正在載入常用網站…</p>
-          ) : frequentBookmarks.length ? (
+          ) : shortcutBookmarks.length ? (
             <div className={styles.shortcutRail}>
-              {frequentBookmarks.map((item) => (
-                <a href={item.detail?.url ?? "#"} key={item.id} onClick={() => void recordOpen(item.id)} rel="noreferrer noopener" target="_blank">
+              {shortcutBookmarks.map((item) => (
+                <a aria-label={`開啟 ${item.title}`} href={item.detail?.url ?? "#"} key={item.id} onClick={() => void recordOpen(item.id)} rel="noreferrer noopener" target="_blank" title={item.title}>
                   <WebsiteMark item={item} />
-                  <span>{item.title}</span>
                 </a>
               ))}
             </div>
           ) : (
-            <p className={styles.compactEmpty}>{freshData ? "開啟過的網站會顯示在這裡。" : "正在載入常用網站…"}</p>
+            <button className={`${styles.compactEmpty} ${styles.shortcutEmpty}`} onClick={openShortcutManager} type="button">尚未設定常用網站，點此選擇。</button>
           )}
         </section>
 
@@ -1943,8 +1996,22 @@ export function BookmarksWorkspace({
         <MobilePageHeader
           eyebrow="BOOKMARK LIBRARY"
           title="全部網站"
-          leading={<button aria-label="返回網站收藏首頁" className="mobile-icon-button" onClick={() => setMobileView("overview")} type="button"><span aria-hidden="true">‹</span></button>}
-          actions={<CreateItemButton className="mobile-header-create-button" kind="bookmark"><AppIcon name="plus" /><span className="sr-only">新增網站收藏</span></CreateItemButton>}
+          leading={<button aria-label="返回網站收藏首頁" className="mobile-icon-button" onClick={() => { setMobileView("overview"); setMobileSearchOpen(false); setQuery(""); }} type="button"><span aria-hidden="true">‹</span></button>}
+          actions={<>
+            <button
+              aria-expanded={mobileSearchOpen}
+              aria-label={mobileSearchOpen ? "聚焦網站收藏搜尋" : "搜尋網站收藏"}
+              className="mobile-icon-button"
+              onClick={() => {
+                setMobileSearchOpen(true);
+                window.requestAnimationFrame(() => searchInputRef.current?.focus());
+              }}
+              type="button"
+            >
+              <AppIcon name="search" />
+            </button>
+            <CreateItemButton className="mobile-header-create-button" kind="bookmark"><AppIcon name="plus" /><span className="sr-only">新增網站收藏</span></CreateItemButton>
+          </>}
         />
       <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
@@ -2046,14 +2113,31 @@ export function BookmarksWorkspace({
           rowClassName="bookmark-view-tabs-scroll"
         />
       </section>
-      <div className="bookmark-toolbar">
+      <div className={`bookmark-toolbar ${styles.librarySearch}`} data-open={mobileSearchOpen || Boolean(query)}>
         <input
           aria-label="搜尋網站收藏"
           onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return;
+            setQuery("");
+            setMobileSearchOpen(false);
+            event.currentTarget.blur();
+          }}
           placeholder="搜尋標題或網址"
           ref={searchInputRef}
           value={query}
         />
+        <button
+          aria-label="清除並收合搜尋"
+          className={styles.searchClose}
+          onClick={() => {
+            setQuery("");
+            setMobileSearchOpen(false);
+          }}
+          type="button"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
       </div>
       <div className="bulk-toolbar">
         <label>
@@ -2109,6 +2193,53 @@ export function BookmarksWorkspace({
         )}
       </div>
       </div>
+      <ModalDialog
+        className={`mobile-sheet-dialog ${styles.shortcutDialog}`}
+        footer={(
+          <div className={styles.shortcutFooter}>
+            <button className="secondary-button" disabled={pending} onClick={() => setShortcutManagerOpen(false)} type="button">取消</button>
+            <button className="button" disabled={pending} onClick={() => void saveShortcuts()} type="button">{pending ? "儲存中…" : "儲存"}</button>
+          </div>
+        )}
+        onClose={() => setShortcutManagerOpen(false)}
+        open={shortcutManagerOpen}
+        pending={pending}
+        title="管理常用網站"
+      >
+        <div className={styles.shortcutManager}>
+          <p>選擇要顯示在首頁的網站；已鎖定資料夾中的內容不會在此處或首頁曝光。</p>
+          <div className={styles.shortcutOptions}>
+            {shortcutManagerBookmarks.map((item) => {
+              const selectedIndex = shortcutDraftIds.indexOf(item.id);
+              const selectedShortcut = selectedIndex >= 0;
+              return (
+                <article data-selected={selectedShortcut} key={`shortcut-option-${item.id}`}>
+                  <button
+                    aria-pressed={selectedShortcut}
+                    className={styles.shortcutChoice}
+                    onClick={() => toggleShortcut(item.id)}
+                    type="button"
+                  >
+                    <span aria-hidden="true" className={styles.shortcutCheck}>{selectedShortcut ? "✓" : ""}</span>
+                    <WebsiteMark item={item} />
+                    <span className={styles.shortcutChoiceCopy}>
+                      <strong>{item.title}</strong>
+                      <small>{bookmarkHostname(item)}</small>
+                    </span>
+                  </button>
+                  {selectedShortcut && (
+                    <div className={styles.shortcutOrderActions}>
+                      <button aria-label={`將 ${item.title} 往前移`} disabled={selectedIndex === 0} onClick={() => moveShortcut(item.id, -1)} type="button">↑</button>
+                      <button aria-label={`將 ${item.title} 往後移`} disabled={selectedIndex === shortcutDraftIds.length - 1} onClick={() => moveShortcut(item.id, 1)} type="button">↓</button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+            {!shortcutManagerBookmarks.length && <p className={styles.compactEmpty}>目前沒有可加入的網站收藏。</p>}
+          </div>
+        </div>
+      </ModalDialog>
       <ModalDialog
         className="mobile-sheet-dialog"
         onClose={() => setFolderAddOpen(false)}

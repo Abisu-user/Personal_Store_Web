@@ -31,7 +31,7 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
   // This keeps a trashed entry out of the account on its first visit after 30 days.
   const cleanupResult = await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "bookmark").lt("deleted_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
   logQueryError("expired trash cleanup", cleanupResult.error, "warn");
-  const [entriesResult, categoriesResult, foldersResult, tagsResult, categoryLinksResult, folderLinksResult] = await Promise.all([
+  const [entriesResult, categoriesResult, foldersResult, tagsResult, categoryLinksResult, folderLinksResult, shortcutsResult] = await Promise.all([
     admin
       .from("entries")
       .select("id, title, description, category_id, bookmark_folder_id, cover_image_path, cover_storage_object_id, is_favorite, is_pinned, is_archived, deleted_at, last_opened_at, opened_count, created_at, updated_at, categories:categories!entries_category_id_fkey(id, name), bookmark_folders:bookmark_folders!entries_bookmark_folder_id_fkey(id, name, is_visible), bookmark_details(url, favicon_url, site_title, notes), entry_tags(tags(id, name, color))")
@@ -44,7 +44,14 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
     admin.from("entry_category_links").select("entry_id, categories(id, name)").eq("owner_id", ownerId),
     admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders:bookmark_folders!bookmark_entry_folders_folder_id_fkey(id, name, is_visible), entry:entries!bookmark_entry_folders_entry_id_fkey(id, kind, is_archived, deleted_at)").eq("owner_id", ownerId),
+    admin.from("bookmark_overview_shortcuts").select("entry_id, sort_order").eq("owner_id", ownerId).order("sort_order").order("created_at"),
   ]);
+
+  // During a deploy the application can briefly run before its migration is
+  // applied. Treat only a genuinely missing shortcut table as an empty
+  // optional feature; every other query failure remains visible in logs.
+  const shortcutsTableMissing = shortcutsResult.error?.code === "42P01"
+    || shortcutsResult.error?.code === "PGRST205";
 
   const queryErrors = [
     ["entries select", entriesResult.error],
@@ -53,7 +60,9 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     ["tags select", tagsResult.error],
     ["category links select", categoryLinksResult.error],
     ["folder links select", folderLinksResult.error],
+    ["overview shortcuts select", shortcutsTableMissing ? null : shortcutsResult.error],
   ] as const;
+  if (shortcutsTableMissing) logQueryError("overview shortcuts table unavailable", shortcutsResult.error, "warn");
   queryErrors.forEach(([query, error]) => logQueryError(query, error));
   if (queryErrors.some(([, error]) => error)) {
     throw new Error("Unable to load bookmarks.");
@@ -75,10 +84,18 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     }
   }
 
+  const shortcutOrderByEntry = new Map(
+    (shortcutsResult.data ?? []).map((shortcut) => [shortcut.entry_id, shortcut.sort_order] as const),
+  );
+
   const bookmarks: Bookmark[] = (entriesResult.data ?? []).flatMap((entry) => {
     const folder = Array.isArray(entry.bookmark_folders) ? entry.bookmark_folders[0] ?? null : entry.bookmark_folders;
     const fallbackCategory = Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories;
-    const linkedFolders = foldersByEntry.get(entry.id) ?? (folder ? [folder] : []);
+    // Direct primary-folder FKs and junction rows coexist during the
+    // multi-folder transition. Privacy must inspect their union: preferring
+    // one source could expose an entry whose other relation is still locked.
+    const linkedFolders = [...(folder ? [folder] : []), ...(foldersByEntry.get(entry.id) ?? [])]
+      .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
     const linkedCategories = categoriesByEntry.get(entry.id) ?? (fallbackCategory ? [fallbackCategory] : []);
     if (linkedFolders.some((item) => lockState.locks.has(item.id) && !lockState.unlockedFolderIds.has(item.id))) return [];
     return [{
@@ -93,9 +110,10 @@ export async function getBookmarksWorkspaceData(ownerId: string): Promise<Bookma
     updatedAt: entry.updated_at,
     lastOpenedAt: entry.last_opened_at,
     openedCount: entry.opened_count,
+    shortcutOrder: shortcutOrderByEntry.get(entry.id) ?? null,
     coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null,
     category: linkedCategories[0] ?? fallbackCategory,
-    folder,
+    folder: linkedFolders[0] ?? folder,
     categories: linkedCategories,
     folders: linkedFolders,
     detail: Array.isArray(entry.bookmark_details) ? entry.bookmark_details[0] ?? null : entry.bookmark_details,

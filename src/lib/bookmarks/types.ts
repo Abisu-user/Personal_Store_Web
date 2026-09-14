@@ -14,6 +14,7 @@ export type Bookmark = {
   updatedAt: string;
   lastOpenedAt: string | null;
   openedCount: number;
+  shortcutOrder: number | null;
   coverImageUrl: string | null;
   category: Pick<BookmarkCategory, "id" | "name"> | null;
   folder: Pick<BookmarkFolder, "id" | "name" | "is_visible"> | null;
