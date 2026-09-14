@@ -19,8 +19,17 @@ export async function GET(request: NextRequest) {
   if (data.cover_storage_object_id) {
     const object = await createStorageMetadataRepository(admin).findOwnedActive(data.cover_storage_object_id, context.userId);
     if (!object || object.provider !== "b2" || object.category !== "content-cover" || !object.objectKey.startsWith(`${context.userId}/content-cover/`)) return NextResponse.json({ error: "找不到封面。" }, { status: 404 });
-    const { data: signed, error: signedError } = await createB2StorageManager().getSignedUrl(object.bucket, object.objectKey, 60);
-    if (signedError || !signed) return NextResponse.json({ error: "暫時無法讀取封面。" }, { status: 503 });
+    const { data: signed, error: signedError } = await createB2StorageManager().getSignedUrl(object.bucket, object.objectKey, 3600);
+    if (signedError || !signed) {
+      console.error("[content-covers:read] B2 signed URL failed", {
+        entryId: id,
+        storageObjectId: object.id,
+        bucket: object.bucket,
+        objectKey: object.objectKey,
+        error: signedError instanceof Error ? { name: signedError.name, message: signedError.message } : signedError,
+      });
+      return NextResponse.json({ error: "暫時無法讀取封面。" }, { status: 503 });
+    }
     return NextResponse.redirect(signed.signedUrl, { status: 307, headers: { "Cache-Control": "private, no-store" } });
   }
   if (!data.cover_image_path?.startsWith(`${context.userId}/covers/`)) return NextResponse.json({ error: "找不到封面。" }, { status: 404 });
@@ -28,6 +37,14 @@ export async function GET(request: NextRequest) {
   // to a signed Storage URL. This keeps the image same-origin and avoids an
   // expired/cross-origin signed URL being blocked by browser policy.
   const { data: object, error: objectError } = await createStorageManager(admin).download("content-covers", data.cover_image_path);
-  if (objectError || !object) return NextResponse.json({ error: "暫時無法讀取封面。" }, { status: 503 });
+  if (objectError || !object) {
+    console.error("[content-covers:read] Supabase download failed", {
+      entryId: id,
+      bucket: "content-covers",
+      path: data.cover_image_path,
+      error: objectError instanceof Error ? { name: objectError.name, message: objectError.message } : objectError,
+    });
+    return NextResponse.json({ error: "暫時無法讀取封面。" }, { status: 503 });
+  }
   return new NextResponse(object, { headers: { "Content-Type": object.type || "image/webp", "Cache-Control": "private, no-store" } });
 }

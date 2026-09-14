@@ -6,6 +6,7 @@ import { getLinkPreview } from "@/lib/bookmarks/preview";
 import { deleteCover, entryCoverFields, storedEntryCover, verifiedCover } from "@/lib/content/server";
 import { getSecurityContext } from "@/lib/security/activity";
 import { mutateEntryTaxonomy, replaceEntryTaxonomy, validateEntryTaxonomy } from "@/lib/content/entry-taxonomy";
+import type { VerifiedCover } from "@/lib/content/server";
 
 const bookmarkSchema = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -37,6 +38,21 @@ const bulkActionSchema = z.object({
 });
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status }); }
+function logBookmarkError(operation: string, cause: unknown, context: Record<string, unknown> = {}) {
+  const error = cause as { name?: string; message?: string; status?: number; statusCode?: number | string; code?: string; details?: string; hint?: string } | null;
+  console.error(`[bookmarks:${operation}] failed`, {
+    ...context,
+    error: {
+      name: error?.name ?? null,
+      message: error?.message ?? String(cause),
+      status: error?.status ?? null,
+      statusCode: error?.statusCode ?? null,
+      code: error?.code ?? null,
+      details: error?.details ?? null,
+      hint: error?.hint ?? null,
+    },
+  });
+}
 async function requireContext() { const context = await getSecurityContext(); return context; }
 async function safeLinkPreview(url: string) {
   try { return { preview: await getLinkPreview(url), refreshed: true }; }
@@ -75,6 +91,8 @@ export async function POST(request: NextRequest) {
   if (!parsed.success) return jsonError("請確認書籤資料格式。", 400);
   let normalizedUrl: string;
   try { const url = new URL(parsed.data.url); if (!/^https?:$/.test(url.protocol)) throw new Error(); normalizedUrl = url.toString(); } catch { return jsonError("網址必須以 http:// 或 https:// 開頭。", 400); }
+  let uploadedCover: VerifiedCover | null = null;
+  let createdEntryId: string | null = null;
   try {
     const admin = createAdminClient();
     const previewPromise = safeLinkPreview(normalizedUrl);
@@ -83,19 +101,33 @@ export async function POST(request: NextRequest) {
     if (!(await validateEntryTaxonomy(context.userId, "bookmark", categoryIds, folderIds, "bookmark"))) return jsonError("找不到指定分類或資料夾。", 400);
     const cover = await verifiedCover(context.userId, parsed.data.coverTicket);
     if (cover === undefined) return jsonError("封面上傳已過期，請重新選擇圖片。", 400);
+    uploadedCover = cover;
     const tagRows = await resolveTags(context.userId, parsed.data.tags);
     const { preview } = await previewPromise;
     const title = parsed.data.title || preview.title || preview.hostname;
     const description = parsed.data.description || preview.description || null;
     const { data: entry, error: entryError } = await admin.from("entries").insert({ owner_id: context.userId, kind: "bookmark", title, description, category_id: categoryIds[0] ?? null, bookmark_folder_id: folderIds[0] ?? null, ...entryCoverFields(cover), is_favorite: parsed.data.favorite, is_pinned: parsed.data.pinned && !parsed.data.archived, is_archived: parsed.data.archived }).select("id").single();
     if (entryError) throw entryError;
+    createdEntryId = entry.id;
     const { error: detailsError } = await admin.from("bookmark_details").insert({ entry_id: entry.id, url: normalizedUrl, site_title: preview.title, favicon_url: preview.imageUrl ?? preview.faviconUrl, notes: description });
     if (detailsError) { await admin.from("entries").delete().eq("id", entry.id).eq("owner_id", context.userId); throw detailsError; }
     await replaceTags(entry.id, tagRows.map((tag) => tag.id));
     await replaceEntryTaxonomy(context.userId, entry.id, "bookmark", categoryIds, folderIds, "bookmark");
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_created", entry_id: entry.id, metadata: { tag_count: tagRows.length, has_category: Boolean(parsed.data.categoryId) }, ip_hash: context.ipHash });
     return NextResponse.json({ id: entry.id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
-  } catch { return jsonError("無法儲存書籤，請稍後再試。", 503); }
+  } catch (cause) {
+    const admin = createAdminClient();
+    if (createdEntryId) {
+      const { error } = await admin.from("entries").delete().eq("id", createdEntryId).eq("owner_id", context.userId).eq("kind", "bookmark");
+      if (error) logBookmarkError("create-rollback-entry", error, { entryId: createdEntryId });
+    }
+    if (uploadedCover) {
+      try { await deleteCover(context.userId, uploadedCover); }
+      catch (cleanupError) { logBookmarkError("create-rollback-cover", cleanupError, { entryId: createdEntryId }); }
+    }
+    logBookmarkError("create", cause, { entryId: createdEntryId, hadCover: Boolean(uploadedCover) });
+    return jsonError("無法儲存書籤，請稍後再試。", 503);
+  }
 }
 
 export async function PATCH(request: NextRequest) {
@@ -156,7 +188,17 @@ export async function PATCH(request: NextRequest) {
       if (entryError) throw entryError;
       await replaceTags(current.id, tagRows.map((tag) => tag.id));
       await replaceEntryTaxonomy(context.userId, current.id, "bookmark", categoryIds, folderIds, "bookmark");
-      if (newCover) await deleteCover(context.userId, storedEntryCover(current));
+      if (newCover) {
+        try { await deleteCover(context.userId, storedEntryCover(current)); }
+        catch (cause) {
+          // The database already points at the new cover. Old-object cleanup must
+          // not turn a successful edit into a misleading 503 response.
+          console.warn("[bookmarks:update-cover-cleanup] old cover cleanup failed", {
+            entryId: current.id,
+            error: cause instanceof Error ? { name: cause.name, message: cause.message } : String(cause),
+          });
+        }
+      }
       await admin.from("audit_logs").insert({ owner_id: context.userId, action: "bookmark_updated", entry_id: current.id, metadata: { tag_count: tagRows.length }, ip_hash: context.ipHash });
       return NextResponse.json({ ok: true, metadataRefreshed: !urlChanged || refreshed }, { headers: { "Cache-Control": "private, no-store" } });
     }
@@ -192,7 +234,8 @@ export async function PATCH(request: NextRequest) {
     if (error) throw error;
     await admin.from("audit_logs").insert({ owner_id: context.userId, action: `bookmark_${parsed.data.action}`, entry_id: current.id, metadata: {}, ip_hash: context.ipHash });
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
-  } catch {
+  } catch (cause) {
+    logBookmarkError("update", cause);
     return jsonError("無法更新書籤狀態。", 503);
   }
 }

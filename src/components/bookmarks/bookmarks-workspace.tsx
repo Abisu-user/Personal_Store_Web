@@ -25,11 +25,13 @@ import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import {
+  CoverUploadError,
   CoverImageField,
   type CoverSelection,
   uploadCover,
 } from "@/components/content/cover-image-field";
 import { BookmarkDisplay, readAppearance } from "@/lib/appearance/preferences";
+import { resolveBookmarkCover } from "@/lib/bookmarks/cover";
 import type { Bookmark, BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 import {
   readClientResource,
@@ -131,13 +133,29 @@ function bookmarkHostname(item: Bookmark) {
   }
 }
 
+function BookmarkCoverImage({ item }: { item: Bookmark }) {
+  const resolved = resolveBookmarkCover(item);
+  const [source, setSource] = useState(resolved.primary);
+  useEffect(() => setSource(resolved.primary), [resolved.primary]);
+  if (!source) return null;
+  return (
+    <img
+      alt=""
+      loading="lazy"
+      onError={() => setSource((current) => current === resolved.primary ? resolved.fallback : null)}
+      referrerPolicy="no-referrer"
+      src={source}
+    />
+  );
+}
+
 function WebsiteMark({ item }: { item: Bookmark }) {
   const hostname = bookmarkHostname(item);
-  const cover = item.coverImageUrl ?? item.detail?.favicon_url;
+  const cover = resolveBookmarkCover(item);
   return (
     <span className={styles.websiteMark}>
       <span aria-hidden="true">{hostname.slice(0, 1).toUpperCase()}</span>
-      {cover && <img alt="" loading="lazy" referrerPolicy="no-referrer" src={cover} />}
+      {cover.primary && <BookmarkCoverImage item={item} />}
     </span>
   );
 }
@@ -162,10 +180,10 @@ function WebsitePreview({ item, onOpen }: { item: Bookmark; onOpen: (item: Bookm
   } catch {
     /* Existing records can be malformed. */
   }
-  const cover = item.coverImageUrl ?? item.detail?.favicon_url;
+  const cover = resolveBookmarkCover(item);
   return (
     <a
-      className={cover ? "bookmark-preview has-image" : "bookmark-preview"}
+      className={cover.primary ? "bookmark-preview has-image" : "bookmark-preview"}
       href={url}
       rel="noreferrer noopener"
       target="_blank"
@@ -174,9 +192,7 @@ function WebsitePreview({ item, onOpen }: { item: Bookmark; onOpen: (item: Bookm
       <span className="bookmark-preview-fallback">
         {hostname.slice(0, 1).toUpperCase()}
       </span>
-      {cover && (
-        <img alt="" loading="lazy" referrerPolicy="no-referrer" src={cover} />
-      )}
+      {cover.primary && <BookmarkCoverImage item={item} />}
       <span>{hostname}</span>
     </a>
   );
@@ -193,34 +209,33 @@ function expiry(value: string) {
   };
 }
 
-function BookmarkCoverField({ initialUrl }: { initialUrl?: string | null }) {
-  const [ticket, setTicket] = useState("");
-  const [coverError, setCoverError] = useState<string | null>(null);
-  const latestRequest = useRef(0);
-  async function change(selection: CoverSelection) {
-    const request = ++latestRequest.current;
-    setTicket("");
-    setCoverError(null);
-    if (!selection) return;
-    try {
-      const nextTicket = await uploadCover(selection);
-      if (request === latestRequest.current) setTicket(nextTicket ?? "");
-    } catch (error) {
-      if (request === latestRequest.current)
-        setCoverError(
-          error instanceof Error ? error.message : "無法處理自訂封面。",
-        );
-    }
-  }
+type BookmarkCoverStatus = "idle" | "selected" | "uploading" | "uploaded" | "error";
+
+function BookmarkCoverField({
+  initialUrl,
+  onChange,
+  onError,
+  status,
+  error,
+}: {
+  initialUrl?: string | null;
+  onChange: (selection: CoverSelection) => void;
+  onError: (message: string) => void;
+  status: BookmarkCoverStatus;
+  error?: string | null;
+}) {
   return (
     <div className="bookmark-custom-cover">
       <CoverImageField
         initialUrl={initialUrl}
-        onChange={(selection) => void change(selection)}
+        onChange={onChange}
+        onError={onError}
       />
-      <input name="coverTicket" type="hidden" value={ticket} />
-      {coverError && <p className="notice error">{coverError}</p>}
-      {!ticket && (
+      {status === "selected" && <p className="hint" role="status">已選擇圖片；按下儲存後會開始上傳。</p>}
+      {status === "uploading" && <p className="hint" role="status">封面上傳中…</p>}
+      {status === "uploaded" && <p className="hint" role="status">封面上傳完成，正在儲存網站收藏…</p>}
+      {status === "error" && error && <p className="notice error" role="alert">{error}</p>}
+      {status === "idle" && (
         <p className="hint">
           未上傳時會使用網站自動封面；若網站沒有圖片則顯示預設封面。
         </p>
@@ -238,6 +253,10 @@ function BookmarkCollectionSettings({
   folderId = "",
   categoryId = "",
   coverImageUrl,
+  onCoverChange,
+  onCoverError,
+  coverStatus = "idle",
+  coverError,
   compact = false,
 }: {
   categories?: BookmarksWorkspaceData["categories"];
@@ -248,6 +267,10 @@ function BookmarkCollectionSettings({
   folderId?: string;
   categoryId?: string;
   coverImageUrl?: string | null;
+  onCoverChange: (selection: CoverSelection) => void;
+  onCoverError: (message: string) => void;
+  coverStatus?: BookmarkCoverStatus;
+  coverError?: string | null;
   compact?: boolean;
 }) {
   const organizationFields = (
@@ -274,7 +297,7 @@ function BookmarkCollectionSettings({
         </summary>
         {organizationFields}
       </details>}
-      <BookmarkCoverField initialUrl={coverImageUrl} />
+      <BookmarkCoverField error={coverError} initialUrl={coverImageUrl} onChange={onCoverChange} onError={onCoverError} status={coverStatus} />
     </>
   );
 }
@@ -432,6 +455,14 @@ export function BookmarksWorkspace({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [createCover, setCreateCover] = useState<CoverSelection>(null);
+  const [createCoverTicket, setCreateCoverTicket] = useState<string | null>(null);
+  const [createCoverStatus, setCreateCoverStatus] = useState<BookmarkCoverStatus>("idle");
+  const [createCoverError, setCreateCoverError] = useState<string | null>(null);
+  const [editCover, setEditCover] = useState<CoverSelection>(null);
+  const [editCoverTicket, setEditCoverTicket] = useState<string | null>(null);
+  const [editCoverStatus, setEditCoverStatus] = useState<BookmarkCoverStatus>("idle");
+  const [editCoverError, setEditCoverError] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -491,6 +522,12 @@ export function BookmarksWorkspace({
       window.removeEventListener("personal-vault:appearance", syncDisplay);
   }, []);
   useEffect(() => () => previewRequest.current?.abort(), []);
+  useEffect(() => {
+    setEditCover(null);
+    setEditCoverTicket(null);
+    setEditCoverStatus("idle");
+    setEditCoverError(null);
+  }, [editing?.id]);
   useEffect(() => {
     if (!createMode) router.prefetch("/bookmarks");
   }, [createMode, router]);
@@ -646,13 +683,39 @@ export function BookmarksWorkspace({
       if (previewRequest.current === controller) previewRequest.current = null;
     }
   }
+  async function prepareBookmarkCover(
+    selection: CoverSelection,
+    currentTicket: string | null,
+    setTicket: (value: string | null) => void,
+    setStatus: (value: BookmarkCoverStatus) => void,
+    setCoverError: (value: string | null) => void,
+  ) {
+    if (!selection) return null;
+    if (currentTicket) return currentTicket;
+    setStatus("uploading");
+    setCoverError(null);
+    try {
+      const ticket = await uploadCover(selection);
+      if (!ticket) throw new CoverUploadError("upload", "封面上傳沒有回傳有效結果，請重試。");
+      setTicket(ticket);
+      setStatus("uploaded");
+      return ticket;
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "圖片讀取成功，但上傳失敗，請稍後再試。";
+      setStatus("error");
+      setCoverError(message);
+      throw cause;
+    }
+  }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     setPending(true);
     setError(null);
     setSuccess(null);
+    let submittedCoverTicket = createCoverTicket;
     try {
+    submittedCoverTicket = await prepareBookmarkCover(createCover, createCoverTicket, setCreateCoverTicket, setCreateCoverStatus, setCreateCoverError);
     const response = await fetch("/api/bookmarks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -662,7 +725,7 @@ export function BookmarksWorkspace({
         description: draftDescription,
         categoryIds: form.getAll("categoryIds").map(String),
         folderIds: form.getAll("folderIds").map(String),
-        coverTicket: form.get("coverTicket") || null,
+        coverTicket: submittedCoverTicket,
         favorite: form.get("favorite") === "on",
         pinned: form.get("pinned") === "on",
         archived: form.get("archived") === "on",
@@ -670,14 +733,20 @@ export function BookmarksWorkspace({
     });
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      setError(body?.error ?? "無法儲存網站收藏。");
-      return;
+      throw new Error(body?.error ?? "無法儲存網站收藏。");
     }
     setSuccess("網站收藏已儲存，正在開啟網站收藏清單…");
+    setCreateCover(null);
+    setCreateCoverTicket(null);
+    setCreateCoverStatus("idle");
+    setCreateCoverError(null);
     if (createFlow) { createFlow.complete(); return; }
     router.replace("/bookmarks");
     router.refresh();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存網站收藏。"); } finally { setPending(false); }
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "無法儲存網站收藏。";
+      setError(submittedCoverTicket && !(cause instanceof CoverUploadError) ? `圖片已上傳，但網站收藏資料儲存失敗：${message}` : message);
+    } finally { setPending(false); }
   }
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -691,11 +760,12 @@ export function BookmarksWorkspace({
     const description = String(form.get("description") ?? "");
     const categoryIds = form.getAll("categoryIds").map(String);
     const folderIds = form.getAll("folderIds").map(String);
-    const coverTicket = String(form.get("coverTicket") ?? "") || null;
     const favorite = form.get("favorite") === "on";
     const archived = form.get("archived") === "on";
     const pinned = form.get("pinned") === "on" && !archived;
+    let submittedCoverTicket = editCoverTicket;
     try {
+    submittedCoverTicket = await prepareBookmarkCover(editCover, editCoverTicket, setEditCoverTicket, setEditCoverStatus, setEditCoverError);
     const response = await fetch("/api/bookmarks", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -706,7 +776,7 @@ export function BookmarksWorkspace({
         description,
         categoryIds,
         folderIds,
-        coverTicket,
+        coverTicket: submittedCoverTicket,
         favorite,
         pinned,
         archived,
@@ -720,7 +790,8 @@ export function BookmarksWorkspace({
     setEditing(null);
     setSuccess("網站收藏已更新。");
     } catch (cause) {
-      setError(cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "目前無法連線並儲存修改，請稍後再試。");
+      const message = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "目前無法連線並儲存修改，請稍後再試。";
+      setError(submittedCoverTicket && !(cause instanceof CoverUploadError) ? `圖片已上傳，但網站收藏資料儲存失敗：${message}` : message);
     } finally { setPending(false); }
   }
   async function update(id: string, action: "trash" | "restore") {
@@ -1346,7 +1417,19 @@ export function BookmarksWorkspace({
       </label>
       <BookmarkCollectionSettings
         categories={data.categories}
+        coverError={createCoverError}
+        coverStatus={createCoverStatus}
         folders={data.folders}
+        onCoverChange={(selection) => {
+          setCreateCover(selection);
+          setCreateCoverTicket(null);
+          setCreateCoverError(null);
+          setCreateCoverStatus(selection ? "selected" : "idle");
+        }}
+        onCoverError={(message) => {
+          setCreateCoverError(message);
+          setCreateCoverStatus("error");
+        }}
       />
       <CreateFormActions pending={pending} returnHref="/bookmarks" label="儲存" pendingLabel="儲存中…" />
     </form>
@@ -2542,9 +2625,22 @@ export function BookmarksWorkspace({
               categories={data.categories}
               categoryId={editing.category?.id ?? ""}
               compact
+              coverError={editCoverError}
+              coverImageUrl={editing.coverImageUrl}
+              coverStatus={editCoverStatus}
               favorite={editing.favorite}
               folderId={editing.folder?.id ?? ""}
               folders={data.folders}
+              onCoverChange={(selection) => {
+                setEditCover(selection);
+                setEditCoverTicket(null);
+                setEditCoverError(null);
+                setEditCoverStatus(selection ? "selected" : "idle");
+              }}
+              onCoverError={(message) => {
+                setEditCoverError(message);
+                setEditCoverStatus("error");
+              }}
               pinned={editing.pinned}
             />
             <div className="dialog-actions">

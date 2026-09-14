@@ -13,6 +13,17 @@ function normalizedMime(value: string | null) {
   return value?.split(";", 1)[0]?.trim().toLowerCase() ?? null;
 }
 
+function storageError(cause: unknown) {
+  const value = cause as { name?: string; message?: string; status?: number; statusCode?: number | string; code?: string } | null;
+  return {
+    name: value?.name ?? null,
+    message: value?.message ?? String(cause),
+    status: value?.status ?? null,
+    statusCode: value?.statusCode ?? null,
+    code: value?.code ?? null,
+  };
+}
+
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
@@ -38,6 +49,14 @@ export async function POST(request: NextRequest) {
 
     const { data: object, error } = await createB2StorageManager().head(ticket.bucket, ticket.objectKey);
     if (error || !object) {
+      console.warn("[storage:b2:finalize] object is not visible yet", {
+        storageObjectId: ticket.storageObjectId,
+        bucket: ticket.bucket,
+        objectKey: ticket.objectKey,
+        byteSize: ticket.byteSize,
+        mimeType: ticket.mimeType,
+        error: storageError(error),
+      });
       return NextResponse.json({ error: "B2 尚未回報已上傳物件，請稍後重試。" }, { status: 503 });
     }
 
@@ -45,6 +64,13 @@ export async function POST(request: NextRequest) {
     const mimeMatches = normalizedMime(object.contentType) === normalizedMime(ticket.mimeType);
     const checksumMatches = ticket.sha256 === null || object.checksumSha256 === ticket.sha256;
     if (!sizeMatches || !mimeMatches || !checksumMatches || !object.name.startsWith(`${context.userId}/`)) {
+      console.error("[storage:b2:finalize] uploaded object verification failed", {
+        storageObjectId: ticket.storageObjectId,
+        bucket: ticket.bucket,
+        objectKey: ticket.objectKey,
+        expected: { byteSize: ticket.byteSize, mimeType: ticket.mimeType, checksum: ticket.sha256 },
+        actual: { byteSize: object.byteSize, mimeType: object.contentType, checksum: object.checksumSha256 },
+      });
       await metadata.markFailed(pending.id, context.userId);
       return NextResponse.json({ error: "B2 檔案驗證失敗，大小、類型或校驗碼不一致。" }, { status: 422 });
     }
@@ -63,7 +89,15 @@ export async function POST(request: NextRequest) {
       mimeType: active.mimeType,
       checksum: active.checksum,
     }, { headers: { "Cache-Control": "private, no-store" } });
-  } catch {
+  } catch (cause) {
+    console.error("[storage:b2:finalize] failed", {
+      storageObjectId: ticket.storageObjectId,
+      bucket: ticket.bucket,
+      objectKey: ticket.objectKey,
+      byteSize: ticket.byteSize,
+      mimeType: ticket.mimeType,
+      error: storageError(cause),
+    });
     return NextResponse.json({ error: "暫時無法完成 B2 上傳確認。" }, { status: 503 });
   }
 }
