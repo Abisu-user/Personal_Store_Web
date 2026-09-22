@@ -86,7 +86,11 @@ function DashboardContent({ email }: { email: string }) {
       if (request.current === controller && (!controller.signal.aborted || controller.signal.reason === "timeout")) setError("首頁摘要載入失敗，請重試。");
     } finally {
       window.clearTimeout(timeout);
-      if (request.current === controller) setPending(false);
+      if (request.current === controller) {
+        setPending(false);
+        document.documentElement.dataset.dashboardCriticalReady = "true";
+        window.dispatchEvent(new Event("personal-vault:dashboard-critical-ready"));
+      }
     }
   }, []);
   useEffect(() => {

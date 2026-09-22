@@ -4,7 +4,7 @@
  * service worker only keeps static application resources so that an
  * authenticated user's records never end up in the Cache Storage API.
  */
-const CACHE_NAME = "personal-vault-shell-v3";
+const CACHE_NAME = "personal-vault-shell-v4";
 const BOOTSTRAP_ASSETS = ["/manifest.webmanifest", "/icon.svg", "/apple-icon"];
 
 self.addEventListener("install", (event) => {
@@ -28,6 +28,13 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
   if (request.mode === "navigate") {
     event.respondWith((async () => (await event.preloadResponse) ?? fetch(request))());
+    return;
+  }
+  if (["/manifest.webmanifest", "/icon.svg", "/apple-icon"].includes(url.pathname)) {
+    event.respondWith(fetch(request).then((response) => {
+      if (response.ok) void caches.open(CACHE_NAME).then((cache) => cache.put(request, response.clone()));
+      return response;
+    }).catch(() => caches.match(request)));
     return;
   }
   const cacheableDestination = ["script", "style", "font", "image", "manifest"].includes(request.destination);

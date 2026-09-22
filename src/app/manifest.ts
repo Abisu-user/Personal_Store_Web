@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Personal Vault",
-    short_name: "Personal Vault",
+    name: "Personal Store",
+    short_name: "Personal Store",
     description: "Secure personal information storage.",
     // Launch the installed PWA inside the protected app shell. A valid
     // Supabase session then lands on the App PIN / Passkey lock overlay;
@@ -11,8 +11,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/dashboard",
     scope: "/",
     display: "standalone",
-    background_color: "#6572df",
-    theme_color: "#6572df",
+    background_color: "#f5f7fb",
+    theme_color: "#f5f7fb",
     icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
   };
 }

@@ -1,6 +1,7 @@
 import { BACKGROUND_IMAGE_MAX_BYTES, BackgroundImageError, normalizeBackgroundImageMimeType } from "@/lib/appearance/background-image-format";
 
 const accountAppearanceStoragePrefix = "personal-vault:appearance:account:v1";
+const appearanceBootstrapStoragePrefix = "personal-vault:appearance:bootstrap:v1";
 
 export type Theme = "light" | "dark" | "system";
 export type Accent = "blue" | "violet" | "emerald" | "rose" | "custom";
@@ -235,12 +236,36 @@ export function normalizeAppearance(value: unknown): Appearance {
 
 export function readAppearance(): Appearance { try { const key = getAppearanceStorageKey(); return key ? normalizeAppearance(JSON.parse(window.localStorage.getItem(key) ?? "{}")) : appearanceDefaults; } catch { return appearanceDefaults; } }
 export function activeBackground(appearance: Appearance) { return getBackgroundImageUrl(appearance.backgroundImages[appearance.backgroundActiveIndex] ?? appearance.backgroundImage); }
+export async function preloadActiveBackground(appearance: Appearance, timeoutMs = 4000) {
+  const source = activeBackground(appearance);
+  if (!source || appearance.background !== "image") return true;
+  return new Promise<boolean>((resolve) => {
+    const image = new Image();
+    let complete = false;
+    const finish = (loaded: boolean) => {
+      if (complete) return;
+      complete = true;
+      window.clearTimeout(timer);
+      image.onload = null;
+      image.onerror = null;
+      resolve(loaded);
+    };
+    const timer = window.setTimeout(() => finish(false), timeoutMs);
+    image.onload = () => finish(true);
+    image.onerror = () => finish(false);
+    image.src = source;
+    if (image.complete) finish(image.naturalWidth > 0);
+    else void image.decode?.().then(() => finish(true)).catch(() => undefined);
+  });
+}
 export function nextBackground(appearance: Appearance): Appearance { return appearance.backgroundImages.length > 1 ? { ...appearance, backgroundActiveIndex: (appearance.backgroundActiveIndex + 1) % appearance.backgroundImages.length } : appearance; }
 export function applyAppearance(appearance: Appearance) {
   const normalized = normalizeAppearance(appearance); const root = document.documentElement; const image = activeBackground(normalized);
   root.dataset.theme = normalized.theme === "system" ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light") : normalized.theme; root.dataset.accent = normalized.accent; root.dataset.background = normalized.background; root.dataset.density = normalized.density; root.dataset.bookmarkDisplay = normalized.bookmarkDisplay;
   const font = normalized.fontFamily === "rounded" ? "ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif" : normalized.fontFamily === "serif" ? "Iowan Old Style, 'Noto Serif TC', Georgia, serif" : normalized.fontFamily === "mono" ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" : "Inter, ui-sans-serif, system-ui, sans-serif";
   root.style.setProperty("--custom-brand", normalized.customColor); root.style.setProperty("--workspace-image", image ? `url("${image}")` : "none"); root.style.setProperty("--workspace-position", `${normalized.backgroundPositionX}% ${normalized.backgroundPositionY}%`); root.style.setProperty("--workspace-size", `${normalized.backgroundZoom}%`); root.style.setProperty("--workspace-tint", normalized.backgroundTint ?? "#FFFFFF"); root.style.setProperty("--workspace-canvas-color", normalized.canvasColor); root.style.setProperty("--workspace-font", font); root.style.setProperty("--user-font-scale", `${normalized.fontScale / 100}`); root.style.setProperty("--bookmark-grid-columns", String(normalized.bookmarkGridColumns)); root.style.setProperty("--user-text-color", normalized.textColor ?? ""); root.style.setProperty("--workspace-brightness", `${normalized.backgroundBrightness}%`); root.style.setProperty("--workspace-blur", `${normalized.backgroundBlur}px`); root.style.setProperty("--workspace-surface-opacity", `${normalized.surfaceOpacity}%`); root.dataset.hasWorkspaceImage = image && normalized.background === "image" ? "true" : "false"; root.dataset.hasCustomTextColor = normalized.textColor ? "true" : "false";
+  root.style.setProperty("--startup-canvas", root.dataset.theme === "dark" ? "#172137" : normalized.canvasColor);
+  try { window.localStorage.setItem(`${appearanceBootstrapStoragePrefix}:${getAppearanceDevice()}`, JSON.stringify(normalized)); } catch { /* The live appearance is still applied when storage is unavailable. */ }
 }
 export function saveAppearance(appearance: Appearance) {
   const normalized = normalizeAppearance(appearance);

@@ -4,16 +4,17 @@ import "./globals.css";
 import "./mobile-design-system.css";
 import { AppearanceProvider } from "@/components/appearance/appearance-provider";
 import { PwaClient } from "@/components/pwa/pwa-client";
+import { AppStartupProvider } from "@/components/startup/app-startup-provider";
 
 export const metadata: Metadata = {
   title: "Personal Digital Vault",
   description: "Secure personal information storage.",
-  applicationName: "Personal Vault",
+  applicationName: "Personal Store",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Personal Vault",
+    title: "Personal Store",
   },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
@@ -29,13 +30,54 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#6572df",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#172137" },
+  ],
 };
+
+const restoreAppearance = `try {
+  const root = document.documentElement;
+  const mobile = matchMedia("(max-width: 700px)").matches;
+  const device = mobile ? "mobile" : "desktop";
+  const key = "personal-vault:appearance:bootstrap:v1:" + device;
+  let stored = localStorage.getItem(key);
+  if (!stored) {
+    const legacyPrefix = "personal-vault:appearance:account:v1:";
+    const suffix = ":" + device;
+    for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+      const candidate = localStorage.key(index);
+      if (candidate && candidate.startsWith(legacyPrefix) && candidate.endsWith(suffix)) {
+        stored = localStorage.getItem(candidate);
+        if (stored) break;
+      }
+    }
+  }
+  const saved = JSON.parse(stored || "{}");
+  const systemDark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = saved.theme === "dark" || saved.theme === "light" ? saved.theme : (systemDark ? "dark" : "light");
+  const canvas = theme === "dark" ? "#172137" : (typeof saved.canvasColor === "string" ? saved.canvasColor : "#f5f7fb");
+  root.dataset.theme = theme;
+  root.dataset.accent = saved.accent || "blue";
+  root.dataset.background = saved.background || "default";
+  root.dataset.density = saved.density || "comfortable";
+  root.dataset.startupActive = "true";
+  root.dataset.startupState = "initializing";
+  root.dataset.appearanceReady = "false";
+  root.style.setProperty("--startup-canvas", canvas);
+  root.style.setProperty("--workspace-canvas-color", saved.canvasColor || "#f4f6fb");
+  root.style.setProperty("--custom-brand", saved.customColor || "#2b65bd");
+  root.style.setProperty("--workspace-image", "none");
+  window.__PERSONAL_STORE_STARTUP_AT__ = performance.now();
+} catch {
+  document.documentElement.dataset.startupActive = "true";
+  document.documentElement.dataset.startupState = "initializing";
+}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="zh-Hant" suppressHydrationWarning>
-      <body><Script id="restore-appearance" strategy="beforeInteractive">{`try { const root = document.documentElement; root.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; root.dataset.accent = "blue"; root.dataset.background = "default"; root.dataset.density = "comfortable"; root.style.setProperty("--workspace-image", "none"); } catch {}`}</Script><PwaClient /><AppearanceProvider />{children}</body>
+      <body><Script id="restore-appearance" strategy="beforeInteractive">{restoreAppearance}</Script><PwaClient /><AppearanceProvider /><AppStartupProvider>{children}</AppStartupProvider></body>
     </html>
   );
 }

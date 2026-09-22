@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { applyAppearance, clearAppearanceIdentity, loadAccountAppearance, nextBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
+import { applyAppearance, clearAppearanceIdentity, loadAccountAppearance, nextBackground, preloadActiveBackground, readAppearance, saveAppearance } from "@/lib/appearance/preferences";
 import { createClient } from "@/lib/supabase/client";
 
 /** Loads the signed-in account's server preference before showing its background. */
@@ -17,18 +17,40 @@ export function AppearanceProvider() {
         timer = window.setInterval(rotateBackground, appearance.backgroundRotationMinutes * 60_000);
       }
     };
+    const markReady = () => {
+      document.documentElement.dataset.appearanceReady = "true";
+      window.dispatchEvent(new Event("personal-vault:appearance-ready"));
+    };
     const load = async (rotateForLogin = false) => {
       window.clearInterval(timer);
       // Keep the last verified account/device appearance while refreshing.
       // Resetting here made route/auth refreshes briefly paint the default.
       let appearance;
-      try { appearance = (await loadAccountAppearance()).appearance; } catch { return; }
-      if (cancelled) return;
-      if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) {
-        appearance = nextBackground(appearance);
-        saveAppearance(appearance);
-      } else applyAppearance(appearance);
-      resetTimer(appearance);
+      let expired = false;
+      const startupDeadline = window.setTimeout(() => {
+        expired = true;
+        markReady();
+      }, 5400);
+      try {
+        appearance = (await loadAccountAppearance()).appearance;
+        if (cancelled || expired) return;
+        if (rotateForLogin && appearance.backgroundRotation === "login" && appearance.backgroundImages.length > 1) {
+          appearance = nextBackground(appearance);
+          await preloadActiveBackground(appearance);
+          if (cancelled || expired) return;
+          saveAppearance(appearance);
+        } else {
+          await preloadActiveBackground(appearance);
+          if (cancelled || expired) return;
+          applyAppearance(appearance);
+        }
+        resetTimer(appearance);
+      } catch {
+        // Startup must still complete when the appearance endpoint or image is unavailable.
+      } finally {
+        window.clearTimeout(startupDeadline);
+        if (!cancelled) markReady();
+      }
     };
 
     void load(true);
