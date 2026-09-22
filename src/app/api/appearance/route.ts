@@ -62,13 +62,15 @@ export async function GET(request: NextRequest) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("user_appearance_settings").select("preferences").eq("user_id", context.userId).eq("device_type", parsedDevice.data).maybeSingle();
   if (error) return NextResponse.json({ error: "目前無法讀取外觀設定。" }, { status: 503 });
+  const storedPreferences = data?.preferences && typeof data.preferences === "object" ? data.preferences as Record<string, unknown> : null;
+  const hasMobileNavigationPreference = Boolean(storedPreferences && "mobileNavigation" in storedPreferences);
   let appearance = data?.preferences ? await ownedAppearance(data.preferences, context.userId, parsedDevice.data) : appearanceDefaults;
   if (!data) {
     const { data: settings } = await admin.from("user_settings").select("theme").eq("user_id", context.userId).maybeSingle();
     if (settings?.theme) appearance = { ...appearance, theme: settings.theme };
   }
   const imageUrls = await signedImageUrls(context.userId, parsedDevice.data, appearance.backgroundImages);
-  return NextResponse.json({ userId: context.userId, device: parsedDevice.data, appearance, imageUrls }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({ userId: context.userId, device: parsedDevice.data, appearance, imageUrls, hasMobileNavigationPreference }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PUT(request: NextRequest) {

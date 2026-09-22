@@ -68,6 +68,11 @@ const restoreAppearance = `try {
   root.style.setProperty("--startup-canvas", canvas);
   root.style.setProperty("--workspace-canvas-color", saved.canvasColor || "#f4f6fb");
   root.style.setProperty("--custom-brand", saved.customColor || "#2b65bd");
+  const mobileNavigation = saved.mobileNavigation && typeof saved.mobileNavigation === "object" ? saved.mobileNavigation : {};
+  const mobileNavColor = typeof mobileNavigation.backgroundColor === "string" && /^#[0-9a-f]{6}$/i.test(mobileNavigation.backgroundColor) ? mobileNavigation.backgroundColor : "#101117";
+  const mobileNavOpacity = typeof mobileNavigation.opacity === "number" ? Math.max(40, Math.min(100, mobileNavigation.opacity)) : 92;
+  root.style.setProperty("--mobile-nav-user-color", mobileNavColor);
+  root.style.setProperty("--mobile-nav-user-opacity", mobileNavOpacity + "%");
   root.style.setProperty("--workspace-image", "none");
   window.__PERSONAL_STORE_STARTUP_AT__ = performance.now();
 } catch {

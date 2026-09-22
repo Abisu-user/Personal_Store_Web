@@ -2,24 +2,40 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import { MobileBottomSheet } from "@/components/ui/mobile-bottom-sheet";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
-import { clearAppearanceIdentity } from "@/lib/appearance/preferences";
-import { mobileNavigationDefaults, mobileNavigationDestinations, readMobileNavigationPreferences, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
+import { clearAppearanceIdentity, readAppearance } from "@/lib/appearance/preferences";
+import { mobileNavigationDefaults, mobileNavigationDestinations, mobileNavigationVisibleSlotKeys, normalizeMobileNavigationPreferences, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
 import { clearClientResources } from "@/lib/pwa/client-resource-cache";
 import { createClient } from "@/lib/supabase/client";
 import { useOpenCreate, type CreateKind } from "./create-item-provider";
 
-const moreItems: Array<{ href: string; icon: AppIconName; label: string }> = [
-  { href: "/notes", icon: "note", label: "筆記" }, { href: "/code", icon: "code", label: "程式碼" },
-  { href: "/photos", icon: "photo", label: "照片" }, { href: "/vocabulary", icon: "vocabulary", label: "單字學習" },
-  { href: "/anime", icon: "anime", label: "動漫收藏" }, { href: "/ktv", icon: "music", label: "KTV 點歌收藏" }, { href: "/vault", icon: "lock", label: "保管庫" },
-  { href: "/calendar", icon: "calendar", label: "日曆" }, { href: "/appearance", icon: "appearance", label: "外觀與布局" },
-  { href: "/storage-usage", icon: "storage", label: "儲存空間" }, { href: "/security", icon: "security", label: "安全中心" },
-  { href: "/security/mfa", icon: "security", label: "雙因素驗證" }, { href: "/profile", icon: "profile", label: "帳號設定" },
-];
+type Destination = (typeof mobileNavigationDestinations)[number];
+type NavigationItem = {
+  id: string;
+  label: string;
+  icon: AppIconName;
+  kind: "route" | "create" | "more";
+  href?: string;
+  destinationId?: Destination["id"];
+};
+
+const holdDurationMs = 300;
+const holdMovementThreshold = 12;
+
+function routeMatches(pathname: string, href: string) {
+  return pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
+}
+
+function destinationById(id: Destination["id"]) {
+  return mobileNavigationDestinations.find((item) => item.id === id);
+}
+
+function haptic(duration: number) {
+  try { navigator.vibrate?.(duration); } catch { /* Haptics are an optional enhancement. */ }
+}
 
 export function MobileAppNavigation() {
   const openCreate = useOpenCreate();
@@ -27,11 +43,17 @@ export function MobileAppNavigation() {
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const [pendingPath, setPendingPath] = useState<string | null>(null);
-  const [resolvedPath, setResolvedPath] = useState(pathname);
+  const [pendingTransition, setPendingTransition] = useState<{ from: string; target: string } | null>(null);
   const [navigation, setNavigation] = useState<MobileNavigationPreferences>(mobileNavigationDefaults);
-  const prefetch = (href: string) => router.prefetch(href);
-  const active = (href: string) => (pendingPath ?? pathname) === href || (href !== "/dashboard" && (pendingPath ?? pathname).startsWith(href));
+  const [scrubbing, setScrubbing] = useState(false);
+  const [scrubTarget, setScrubTarget] = useState<number | null>(null);
+  const navRef = useRef<HTMLElement>(null);
+  const holdTimerRef = useRef<number | null>(null);
+  const pointerRef = useRef<{ id: number; startX: number; startY: number; itemIndex: number } | null>(null);
+  const scrubbingRef = useRef(false);
+  const scrubTargetRef = useRef<number | null>(null);
+  const suppressClickUntilRef = useRef(0);
+  const currentPath = pendingTransition && pathname === pendingTransition.from ? pendingTransition.target : pathname;
 
   useEffect(() => {
     const root = document.documentElement;
@@ -57,18 +79,182 @@ export function MobileAppNavigation() {
     };
   }, []);
 
-  // Clear the optimistic highlight when navigation resolves, before rendering.
-  if (resolvedPath !== pathname) {
-    setResolvedPath(pathname);
-    setPendingPath(null);
-  }
   useEffect(() => {
-    const syncNavigation = () => setNavigation(readMobileNavigationPreferences());
+    const syncNavigation = () => setNavigation(readAppearance().mobileNavigation);
+    const syncLegacyFixture = (event: Event) => setNavigation(normalizeMobileNavigationPreferences((event as CustomEvent).detail));
     syncNavigation();
-    window.addEventListener("personal-vault:mobile-navigation", syncNavigation);
+    window.addEventListener("personal-vault:appearance", syncNavigation);
+    window.addEventListener("personal-vault:appearance-ready", syncNavigation);
+    window.addEventListener("personal-vault:mobile-navigation", syncLegacyFixture);
     window.addEventListener("storage", syncNavigation);
-    return () => { window.removeEventListener("personal-vault:mobile-navigation", syncNavigation); window.removeEventListener("storage", syncNavigation); };
+    return () => {
+      window.removeEventListener("personal-vault:appearance", syncNavigation);
+      window.removeEventListener("personal-vault:appearance-ready", syncNavigation);
+      window.removeEventListener("personal-vault:mobile-navigation", syncLegacyFixture);
+      window.removeEventListener("storage", syncNavigation);
+    };
   }, []);
+
+  const slotKeys = useMemo(() => mobileNavigationVisibleSlotKeys(navigation.sideCount), [navigation.sideCount]);
+  const visibleCustomIds = useMemo(
+    () => [...slotKeys.left, ...slotKeys.right].map((key) => navigation.slots[key]),
+    [navigation.slots, slotKeys],
+  );
+  const items = useMemo<NavigationItem[]>(() => {
+    const mapSlot = (key: (typeof slotKeys.left)[number]): NavigationItem | null => {
+      const destination = destinationById(navigation.slots[key]);
+      return destination ? { ...destination, kind: "route", destinationId: destination.id } : null;
+    };
+    const left = slotKeys.left.map(mapSlot).filter((item): item is NavigationItem => Boolean(item));
+    const right = slotKeys.right.map(mapSlot).filter((item): item is NavigationItem => Boolean(item));
+    return [
+      { id: "home", href: "/dashboard", icon: "home", label: "首頁", kind: "route" },
+      ...left,
+      { id: "create", icon: "plus", label: "新增", kind: "create" },
+      ...right,
+      { id: "more", icon: "more", label: "更多", kind: "more" },
+    ];
+  }, [navigation.slots, slotKeys]);
+  const moreItems = useMemo(
+    () => mobileNavigationDestinations.filter((item) => !visibleCustomIds.includes(item.id)),
+    [visibleCustomIds],
+  );
+  const activeIndex = useMemo(() => {
+    if (moreOpen) return items.length - 1;
+    const matched = items
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => item.kind === "route" && item.href && routeMatches(currentPath, item.href))
+      .sort((left, right) => (right.item.href?.length ?? 0) - (left.item.href?.length ?? 0))[0];
+    return matched?.index ?? items.length - 1;
+  }, [currentPath, items, moreOpen]);
+  const visualIndex = scrubTarget ?? activeIndex;
+
+  const prefetch = useCallback((href: string | undefined) => {
+    if (href && href !== pathname) router.prefetch(href);
+  }, [pathname, router]);
+
+  const startCreate = useCallback(() => {
+    if (["/anime", "/ktv", "/vault", "/calendar"].includes(pathname)) {
+      window.dispatchEvent(new CustomEvent("personal-vault:new-item"));
+      return;
+    }
+    const kind = ({ "/bookmarks": "bookmark", "/notes": "note", "/code": "code", "/files": "file", "/photos": "photo", "/vocabulary": "vocabulary" } as Record<string, CreateKind>)[pathname];
+    openCreate(kind);
+  }, [openCreate, pathname]);
+
+  const runItem = useCallback((item: NavigationItem) => {
+    if (item.kind === "create") {
+      startCreate();
+      return;
+    }
+    if (item.kind === "more") {
+      setMoreOpen(true);
+      return;
+    }
+    if (!item.href) return;
+    if (item.href === "/bookmarks" && pathname === "/bookmarks") {
+      window.dispatchEvent(new CustomEvent("personal-vault:bookmarks-overview"));
+    }
+    if (item.href === "/photos" && pathname === "/photos") {
+      window.dispatchEvent(new CustomEvent("personal-vault:photos-overview"));
+    }
+    if (item.href !== pathname) {
+      setPendingTransition({ from: pathname, target: item.href });
+      router.push(item.href);
+    }
+  }, [pathname, router, startCreate]);
+
+  const clearHold = useCallback(() => {
+    if (holdTimerRef.current !== null) {
+      window.clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }, []);
+
+  const previewScrubTarget = useCallback((index: number) => {
+    if (scrubTargetRef.current === index) return;
+    scrubTargetRef.current = index;
+    setScrubTarget(index);
+    haptic(8);
+  }, []);
+
+  const finishScrub = useCallback((commit: boolean) => {
+    clearHold();
+    if (!scrubbingRef.current) {
+      pointerRef.current = null;
+      return;
+    }
+    const target = scrubTargetRef.current;
+    scrubbingRef.current = false;
+    scrubTargetRef.current = null;
+    pointerRef.current = null;
+    setScrubbing(false);
+    setScrubTarget(null);
+    suppressClickUntilRef.current = performance.now() + 450;
+    if (commit && target !== null) runItem(items[target]);
+  }, [clearHold, items, runItem]);
+
+  function nearestItemIndex(clientX: number) {
+    const buttons = navRef.current?.querySelectorAll<HTMLElement>("[data-mobile-nav-index]");
+    if (!buttons?.length) return 0;
+    let nearest = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    buttons.forEach((button, index) => {
+      const bounds = button.getBoundingClientRect();
+      const nextDistance = Math.abs(clientX - (bounds.left + bounds.width / 2));
+      if (nextDistance < distance) {
+        nearest = index;
+        distance = nextDistance;
+      }
+    });
+    return nearest;
+  }
+
+  function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const button = (event.target as HTMLElement).closest<HTMLElement>("[data-mobile-nav-index]");
+    if (!button) return;
+    const index = Number(button.dataset.mobileNavIndex);
+    prefetch(items[index]?.href);
+    if (index !== activeIndex) return;
+    pointerRef.current = { id: event.pointerId, startX: event.clientX, startY: event.clientY, itemIndex: index };
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some embedded browsers. */ }
+    clearHold();
+    holdTimerRef.current = window.setTimeout(() => {
+      holdTimerRef.current = null;
+      if (!pointerRef.current || pointerRef.current.itemIndex !== activeIndex) return;
+      scrubbingRef.current = true;
+      setScrubbing(true);
+      previewScrubTarget(activeIndex);
+      haptic(18);
+    }, holdDurationMs);
+  }
+
+  function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
+    const pointer = pointerRef.current;
+    if (!pointer || pointer.id !== event.pointerId) return;
+    if (!scrubbingRef.current) {
+      if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) > holdMovementThreshold) {
+        clearHold();
+        pointerRef.current = null;
+        suppressClickUntilRef.current = performance.now() + 350;
+      }
+      return;
+    }
+    event.preventDefault();
+    previewScrubTarget(nearestItemIndex(event.clientX));
+  }
+
+  function handlePointerUp(event: ReactPointerEvent<HTMLElement>) {
+    if (pointerRef.current?.id !== event.pointerId) return;
+    if (scrubbingRef.current) {
+      event.preventDefault();
+      finishScrub(true);
+      return;
+    }
+    clearHold();
+    pointerRef.current = null;
+  }
 
   async function signOut() {
     setSigningOut(true);
@@ -79,40 +265,51 @@ export function MobileAppNavigation() {
     router.refresh();
   }
 
-  const linkProps = (href: string) => ({
-    onMouseEnter: () => prefetch(href),
-    onFocus: () => prefetch(href),
-    onPointerDown: () => prefetch(href),
-    onClick: () => {
-      if (href === "/bookmarks" && pathname === "/bookmarks") {
-        window.dispatchEvent(new CustomEvent("personal-vault:bookmarks-overview"));
-      }
-      if (href === "/photos" && pathname === "/photos") {
-        window.dispatchEvent(new CustomEvent("personal-vault:photos-overview"));
-      }
-      setPendingPath(href);
-    },
-  });
-  const customItems = navigation.items.map(id => mobileNavigationDestinations.find(item => item.id === id)).filter((item): item is typeof mobileNavigationDestinations[number] => Boolean(item));
-  const beforeCreate = customItems.slice(0, navigation.itemCount === 7 ? 2 : 1);
-  const afterCreate = customItems.slice(beforeCreate.length);
-
-  function startCreate() {
-    if (["/anime", "/ktv", "/vault", "/calendar"].includes(pathname)) { window.dispatchEvent(new CustomEvent("personal-vault:new-item")); return; }
-    const kind = ({ "/bookmarks": "bookmark", "/notes": "note", "/code": "code", "/files": "file", "/photos": "photo", "/vocabulary": "vocabulary" } as Record<string, CreateKind>)[pathname];
-    openCreate(kind);
-  }
-
-  const renderNavigationItem = (item: typeof mobileNavigationDestinations[number]) => <Link aria-current={active(item.href) ? "page" : undefined} className={active(item.href) ? "active" : ""} href={item.href} key={item.id} prefetch={false} {...linkProps(item.href)}><i><AppIcon name={item.icon as AppIconName} /></i><span>{item.label}</span></Link>;
+  const navStyle = {
+    "--mobile-navigation-count": items.length,
+    "--mobile-nav-visual-index": visualIndex,
+  } as CSSProperties;
 
   return <>
-    <nav aria-label="手機主要導覽" className={`mobile-bottom-nav${navigation.itemCount === 7 ? " has-seven-items" : ""}`} style={{ "--mobile-navigation-count": navigation.itemCount } as React.CSSProperties}>
-      <Link aria-current={active("/dashboard") ? "page" : undefined} className={active("/dashboard") ? "active" : ""} href="/dashboard" prefetch={false} {...linkProps("/dashboard")}><i><AppIcon name="home" /></i><span>首頁</span></Link>
-      {beforeCreate.map(renderNavigationItem)}
-      <button aria-label="新增資料" className="mobile-create" onClick={startCreate} type="button"><i><AppIcon name="plus" /></i><span>新增</span></button>
-      {afterCreate.map(renderNavigationItem)}
-      <button aria-expanded={moreOpen} aria-haspopup="dialog" className={moreOpen ? "active" : ""} onClick={() => setMoreOpen(true)} type="button"><i><AppIcon name="more" /></i><span>更多</span></button>
-    </nav>
-    {moreOpen && <MobileBottomSheet className="mobile-navigation-sheet" open title="更多功能" eyebrow="MORE" onClose={() => setMoreOpen(false)}><nav>{moreItems.map(item => <Link className={active(item.href) ? "active" : ""} href={item.href} key={item.href} onClick={() => { setMoreOpen(false); setPendingPath(item.href); }} onFocus={() => prefetch(item.href)} onMouseEnter={() => prefetch(item.href)} prefetch={false}><i><AppIcon name={item.icon} /></i>{item.label}</Link>)}</nav><button className="mobile-sheet-logout" disabled={signingOut} onClick={() => void signOut()} type="button"><i><AppIcon name="logout" /></i>{signingOut ? "登出中…" : "登出"}</button></MobileBottomSheet>}
+    <div className="mobile-bottom-nav-wrap">
+      <nav
+        aria-label="手機主要導覽"
+        className={`mobile-bottom-nav${scrubbing ? " is-scrubbing" : ""}`}
+        onContextMenu={(event) => event.preventDefault()}
+        onLostPointerCapture={() => { if (scrubbingRef.current) finishScrub(true); }}
+        onPointerCancel={(event) => { if (pointerRef.current?.id === event.pointerId) finishScrub(false); }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        ref={navRef}
+        style={navStyle}
+      >
+        <span aria-hidden="true" className="mobile-nav-active-indicator"><span /></span>
+        {items.map((item, index) => {
+          const selected = visualIndex === index;
+          return <button
+            aria-current={index === activeIndex && item.kind !== "create" ? "page" : undefined}
+            aria-expanded={item.kind === "more" ? moreOpen : undefined}
+            aria-haspopup={item.kind === "more" ? "dialog" : undefined}
+            aria-label={item.kind === "create" ? "新增資料" : item.label}
+            className={`mobile-nav-item${selected ? " is-active" : ""}${item.kind === "create" ? " mobile-create" : ""}`}
+            data-mobile-nav-index={index}
+            key={item.id}
+            onClick={() => {
+              if (performance.now() < suppressClickUntilRef.current) return;
+              runItem(item);
+            }}
+            onFocus={() => prefetch(item.href)}
+            onMouseEnter={() => prefetch(item.href)}
+            type="button"
+          >
+            <i aria-hidden="true"><AppIcon name={item.icon} /></i>
+            <span>{item.label}</span>
+          </button>;
+        })}
+      </nav>
+    </div>
+    <div aria-live="polite" className={`mobile-nav-scrub-tip${scrubbing ? " show" : ""}`} role="status">左右滑動選擇頁面，放手切換</div>
+    {moreOpen && <MobileBottomSheet className="mobile-navigation-sheet" open title="更多功能" eyebrow="MORE" onClose={() => setMoreOpen(false)}><nav>{moreItems.map(item => <Link aria-current={routeMatches(pathname, item.href) ? "page" : undefined} className={routeMatches(pathname, item.href) ? "active" : ""} href={item.href} key={item.href} onClick={() => { setMoreOpen(false); setPendingTransition({ from: pathname, target: item.href }); }} onFocus={() => prefetch(item.href)} onMouseEnter={() => prefetch(item.href)} prefetch={false}><i><AppIcon name={item.icon} /></i>{item.label}</Link>)}</nav><button className="mobile-sheet-logout" disabled={signingOut} onClick={() => void signOut()} type="button"><i><AppIcon name="logout" /></i>{signingOut ? "登出中…" : "登出"}</button></MobileBottomSheet>}
   </>;
 }
