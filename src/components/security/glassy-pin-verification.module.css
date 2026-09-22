@@ -1,0 +1,409 @@
+.shell {
+  --pin-gold: color-mix(in srgb, var(--brand, #d6a84a) 72%, #f3dca7);
+  --pin-gold-soft: color-mix(in srgb, var(--pin-gold) 18%, transparent);
+  --pin-green: #39d98a;
+  --pin-red: #ff6b72;
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 520px);
+  margin: 0 auto;
+  padding: clamp(22px, 5vw, 34px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--pin-gold) 38%, var(--line));
+  border-radius: 28px;
+  color: #fffaf0;
+  background:
+    linear-gradient(145deg, rgba(25, 25, 28, 0.91), rgba(10, 10, 13, 0.96)),
+    color-mix(in srgb, var(--surface) 86%, #0d0b08);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(26px) saturate(135%);
+  -webkit-backdrop-filter: blur(26px) saturate(135%);
+}
+
+.embedded {
+  width: 100%;
+  border-radius: 24px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.aurora {
+  position: absolute;
+  z-index: -1;
+  inset: -35% -18% auto;
+  height: 62%;
+  background:
+    radial-gradient(circle at 28% 55%, color-mix(in srgb, var(--brand) 28%, transparent), transparent 45%),
+    radial-gradient(circle at 73% 20%, rgba(255, 211, 128, 0.15), transparent 38%);
+  filter: blur(14px);
+  pointer-events: none;
+}
+
+.heading {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.heading h2,
+.heading p {
+  margin: 0;
+}
+
+.heading h2 {
+  margin-top: 3px;
+  color: #fff;
+  font-size: clamp(1.35rem, 5vw, 1.75rem);
+  letter-spacing: 0.01em;
+}
+
+.heading > div > p:last-child {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.eyebrow {
+  color: var(--pin-gold) !important;
+  font-size: 0.68rem !important;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+}
+
+.stateIcon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid color-mix(in srgb, var(--pin-gold) 44%, transparent);
+  border-radius: 17px;
+  color: var(--pin-gold);
+  background: var(--pin-gold-soft);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--pin-gold) 15%, transparent);
+  transition: color 220ms ease, border-color 220ms ease, background 220ms ease, transform 220ms ease;
+}
+
+.stateIconSuccess {
+  color: var(--pin-green);
+  border-color: color-mix(in srgb, var(--pin-green) 60%, transparent);
+  background: color-mix(in srgb, var(--pin-green) 18%, transparent);
+  transform: scale(1.06);
+}
+
+.stateIconError {
+  color: var(--pin-red);
+  border-color: color-mix(in srgb, var(--pin-red) 58%, transparent);
+  background: color-mix(in srgb, var(--pin-red) 16%, transparent);
+}
+
+.pinStage {
+  --pin-box-width: 62px;
+  --pin-box-height: 74px;
+  --pin-orbit-radius: 58px;
+  --pin-orbit-offset: -58px;
+  position: relative;
+  height: 156px;
+  margin: 24px auto 8px;
+  animation: stageIn 320ms ease both;
+}
+
+.pinStage6 {
+  --pin-box-width: clamp(40px, 11vw, 50px);
+  --pin-box-height: 68px;
+  --pin-orbit-radius: 62px;
+  --pin-orbit-offset: -62px;
+}
+
+.digitOrbit {
+  position: absolute;
+  top: 28px;
+  left: var(--pin-row-left);
+  width: var(--pin-box-width);
+  height: var(--pin-box-height);
+  margin-left: calc(var(--pin-box-width) / -2);
+  transform: none;
+  transform-origin: calc(var(--pin-box-width) / 2) calc(var(--pin-box-height) / 2);
+  transition:
+    left 540ms cubic-bezier(0.22, 0.82, 0.25, 1),
+    top 540ms cubic-bezier(0.22, 0.82, 0.25, 1),
+    transform 540ms cubic-bezier(0.22, 0.82, 0.25, 1),
+    opacity 380ms ease;
+}
+
+.digitFrame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 1px solid color-mix(in srgb, var(--pin-gold) 68%, transparent);
+  border-radius: 19px;
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.025)),
+    rgba(19, 17, 14, 0.75);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 30px rgba(0, 0, 0, 0.24),
+    0 0 0 1px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+  transition: border-color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+
+.digitFrame:focus-within {
+  border-color: var(--pin-gold);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--pin-gold) 17%, transparent),
+    0 14px 32px rgba(0, 0, 0, 0.28);
+}
+
+.digitContent {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.digitInput {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #fff;
+  background: transparent;
+  text-align: center;
+  font: 800 clamp(1.3rem, 5vw, 1.65rem) / 1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  -webkit-text-security: disc;
+  caret-color: var(--pin-gold);
+}
+
+.digitInput:disabled {
+  opacity: 1;
+  -webkit-text-fill-color: #fff;
+}
+
+.digitOrder {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  color: color-mix(in srgb, var(--pin-gold) 52%, transparent);
+  font-size: 0.54rem;
+  line-height: 1;
+}
+
+.stateVerifying .digitOrbit,
+.stateError .digitOrbit {
+  top: calc(50% - var(--pin-box-height) / 2);
+  left: 50%;
+  transform: rotate(var(--pin-angle)) translateY(var(--pin-orbit-offset));
+}
+
+.stateVerifying .digitOrbit {
+  animation: orbitPosition 1.18s linear 540ms infinite;
+}
+
+.stateVerifying .digitContent {
+  transform: rotate(var(--pin-counter-angle));
+  animation: orbitContent 1.18s linear 540ms infinite;
+}
+
+.stateVerifying .digitFrame {
+  border-color: color-mix(in srgb, var(--pin-gold) 82%, transparent);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--pin-gold) 20%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.stateSuccess .digitOrbit {
+  top: calc(50% - var(--pin-box-height) / 2);
+  left: 50%;
+  opacity: 0;
+  transform: scale(0.18);
+}
+
+.stateSuccess .digitFrame {
+  border-color: var(--pin-green);
+}
+
+.stateError {
+  animation: errorShake 460ms ease both;
+}
+
+.stateError .digitFrame {
+  border-color: var(--pin-red);
+  background: color-mix(in srgb, var(--pin-red) 14%, rgba(17, 13, 14, 0.88));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--pin-red) 24%, transparent);
+}
+
+.statusArea {
+  display: grid;
+  min-height: 47px;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+}
+
+.statusArea strong {
+  color: var(--pin-gold);
+  font-size: 0.92rem;
+  transition: color 180ms ease;
+}
+
+.statusArea span {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.shell[data-state="success"] .statusArea strong {
+  color: var(--pin-green);
+}
+
+.shell[data-state="error"] .statusArea strong,
+.shell[data-state="error"] .statusArea span {
+  color: var(--pin-red);
+}
+
+.successMark {
+  position: absolute;
+  z-index: 2;
+  top: 45%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 66px;
+  border: 1px solid color-mix(in srgb, var(--pin-green) 72%, transparent);
+  border-radius: 50%;
+  color: #061d13;
+  background: var(--pin-green);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--pin-green) 32%, transparent);
+  transform: translate(-50%, -50%);
+  animation: successPop 560ms cubic-bezier(0.2, 1.4, 0.35, 1) both, successRipple 1s ease-out 120ms both;
+}
+
+.successMark span {
+  font-size: 1.9rem;
+  font-weight: 900;
+}
+
+.secondaryActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.secondaryActions > * {
+  min-height: 44px;
+}
+
+.cancelButton {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 15px;
+  color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.06);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.cancelButton:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+@keyframes orbitPosition {
+  from {
+    transform: rotate(var(--pin-angle)) translateY(var(--pin-orbit-offset));
+  }
+  to {
+    transform: rotate(calc(var(--pin-angle) + 360deg)) translateY(var(--pin-orbit-offset));
+  }
+}
+
+@keyframes orbitContent {
+  from {
+    transform: rotate(var(--pin-counter-angle));
+  }
+  to {
+    transform: rotate(calc(var(--pin-counter-angle) - 360deg));
+  }
+}
+
+@keyframes stageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes errorShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(3px); }
+}
+
+@keyframes successPop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.35); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes successRipple {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--pin-green) 36%, transparent); }
+  100% { box-shadow: 0 0 0 24px transparent; }
+}
+
+@media (max-width: 700px) {
+  .shell {
+    width: 100%;
+    padding: 22px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+    border-radius: 24px;
+  }
+
+  .pinStage {
+    margin-top: 18px;
+  }
+
+  .secondaryActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 350px) {
+  .pinStage4 {
+    --pin-box-width: 56px;
+    --pin-box-height: 70px;
+  }
+
+  .pinStage6 {
+    --pin-box-width: 39px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .digitOrbit,
+  .digitContent,
+  .successMark,
+  .pinStage,
+  .stateError {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+
+  .stateVerifying .digitOrbit {
+    animation: none;
+  }
+
+  .stateVerifying .digitContent {
+    animation: none;
+  }
+}

@@ -2,6 +2,11 @@
 
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
+import {
+  GlassyPinVerification,
+  pinVerificationErrorFromResponse,
+} from "@/components/security/glassy-pin-verification";
 
 type LockDelay = "immediate" | "30" | "60" | "300" | "900";
 type PinMode = "pin4" | "pin6";
@@ -67,12 +72,13 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
   // Only the public PIN configuration and length are cached—never a PIN or
   // verifier—so the keypad can appear immediately. Verification stays server-side.
   const [pinStatus, setPinStatus] = useState<PinStatus>(() => initialPinStatus ?? readCachedPinStatus());
-  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const backgroundAt = useRef<number | null>(null);
   const lockTimer = useRef<number | null>(null);
   const statusRefreshTimer = useRef<number | null>(null);
   const needsClientPinStatusRefresh = useRef(initialPinStatus === null);
+
+  useMobileModalLayout(locked);
 
   const lock = useCallback(() => {
     if (lockTimer.current) window.clearTimeout(lockTimer.current);
@@ -83,7 +89,6 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
     }
     window.sessionStorage.removeItem(unlockSessionKey);
     document.documentElement.dataset.vaultLocked = "true";
-    setPin("");
     setLocked(true);
     setPasswordMode(false);
   }, [pinStatus.autoLockEnabled]);
@@ -93,7 +98,6 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
     window.sessionStorage.setItem(unlockSessionKey, "1");
     document.documentElement.dataset.vaultLocked = "false";
     setError(null);
-    setPin("");
     setPasswordMode(false);
     setLocked(false);
   }, []);
@@ -185,31 +189,16 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
     unlock();
   }
 
-  async function unlockWithPin(value = pin) {
+  async function verifyAppPin(value: string) {
     if (!pinStatus.mode || value.length !== (pinStatus.mode === "pin4" ? 4 : 6)) return;
-    setPending(true);
-    setError(null);
     const response = await fetch("/api/security/app-lock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "verify", pin: value }),
     });
-    const result = await response.json().catch(() => ({}));
-    setPending(false);
     if (!response.ok) {
-      setPin("");
-      setError(result.error ?? "PIN 碼驗證失敗，請再試一次。");
-      return;
+      throw await pinVerificationErrorFromResponse(response, "PIN 碼驗證失敗，請再試一次。");
     }
-    unlock();
-  }
-
-  function appendPin(digit: string) {
-    if (pending || !pinStatus.mode) return;
-    const length = pinStatus.mode === "pin4" ? 4 : 6;
-    const next = `${pin}${digit}`.slice(0, length);
-    setPin(next);
-    if (next.length === length) window.setTimeout(() => void unlockWithPin(next), 0);
   }
 
   async function unlockWithPassword(event: FormEvent<HTMLFormElement>) {
@@ -230,9 +219,15 @@ export function AppLockProvider({ children, email, initialPinStatus }: { childre
     unlock();
   }
 
-  const pinLength = pinStatus.mode === "pin4" ? 4 : 6;
-
-  return <>{children}{locked && <div aria-live="polite" className="app-lock-overlay" role="dialog" aria-modal="true"><section className="app-lock-card"><img alt="" src="/icon.svg" /><p className="eyebrow">PERSONAL VAULT</p><h1>Vault 已鎖定</h1><p>需要驗證身分才能繼續；你的資料不會顯示在鎖定畫面中。</p>{error && <p className="notice error" role="alert">{error}</p>}{passwordMode ? <form className="form" onSubmit={unlockWithPassword}><label className="field" htmlFor="app-lock-password">使用登入密碼解鎖<input autoComplete="current-password" id="app-lock-password" minLength={10} name="password" required type="password" /></label><button className="button" disabled={pending} type="submit">{pending ? "驗證中…" : "使用登入密碼解鎖"}</button><button className="secondary-button" disabled={pending} onClick={() => setPasswordMode(false)} type="button">返回</button></form> : <div className="app-lock-actions">{pinStatus.configured && pinStatus.mode && <div className="app-pin-unlock"><p>{pinStatus.mode === "pin4" ? "輸入 4 位數 App PIN" : "輸入 6 位數 App PIN"}</p><div aria-label="已輸入的 PIN 位數" className="app-pin-dots">{Array.from({ length: pinLength }, (_, index) => <i className={index < pin.length ? "filled" : ""} key={index} />)}</div><div className="app-pin-pad">{"123456789".split("").map((digit) => <button aria-label={`數字 ${digit}`} disabled={pending} key={digit} onClick={() => appendPin(digit)} type="button">{digit}</button>)}<span /><button aria-label="數字 0" disabled={pending} onClick={() => appendPin("0")} type="button">0</button><button aria-label="刪除一位 PIN" className="app-pin-backspace" disabled={pending || !pin} onClick={() => setPin((current) => current.slice(0, -1))} type="button">⌫</button></div></div>}<button className="button" disabled={pending} onClick={() => void unlockWithPasskey()} type="button">{pending ? "驗證中…" : "使用 Face ID / Passkey 解鎖"}</button><button className="secondary-button" disabled={pending} onClick={() => setPasswordMode(true)} type="button">使用登入密碼</button></div>}</section></div>}</>;
+  return <>{children}{locked && <div aria-live="polite" className="app-lock-overlay" role="dialog" aria-modal="true">{passwordMode ? <section className="app-lock-card"><img alt="" src="/icon.svg" /><p className="eyebrow">PERSONAL VAULT</p><h1>使用登入密碼解鎖</h1><p>輸入目前帳號的登入密碼；驗證內容不會儲存在裝置中。</p>{error && <p className="notice error" role="alert">{error}</p>}<form className="form" onSubmit={unlockWithPassword}><label className="field" htmlFor="app-lock-password">登入密碼<input autoComplete="current-password" id="app-lock-password" minLength={10} name="password" required type="password" /></label><button className="button" disabled={pending} type="submit">{pending ? "驗證中…" : "使用登入密碼解鎖"}</button><button className="secondary-button" disabled={pending} onClick={() => { setPasswordMode(false); setError(null); }} type="button">返回 PIN 驗證</button></form></section> : pinStatus.configured && pinStatus.mode ? <GlassyPinVerification
+    length={pinStatus.mode === "pin4" ? 4 : 6}
+    verifyPin={verifyAppPin}
+    onVerified={unlock}
+    title="Vault 已鎖定"
+    description="輸入 App PIN；完成最後一碼後會自動驗證。"
+    externalMessage={error ?? undefined}
+    secondaryActions={(busy) => <><button className="button" disabled={busy || pending} onClick={() => void unlockWithPasskey()} type="button">{pending ? "驗證中…" : "使用 Face ID / Passkey 解鎖"}</button><button className="secondary-button" disabled={busy || pending} onClick={() => { setPasswordMode(true); setError(null); }} type="button">使用登入密碼</button></>}
+  /> : <section className="app-lock-card"><img alt="" src="/icon.svg" /><p className="eyebrow">PERSONAL VAULT</p><h1>Vault 已鎖定</h1><p>需要驗證身分才能繼續；你的資料不會顯示在鎖定畫面中。</p>{error && <p className="notice error" role="alert">{error}</p>}<div className="app-lock-actions"><button className="button" disabled={pending} onClick={() => void unlockWithPasskey()} type="button">{pending ? "驗證中…" : "使用 Face ID / Passkey 解鎖"}</button><button className="secondary-button" disabled={pending} onClick={() => setPasswordMode(true)} type="button">使用登入密碼</button></div></section>}</div>}</>;
 }
 
 export { lockSettingKey, pinStatusEvent };

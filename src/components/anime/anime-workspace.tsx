@@ -17,7 +17,10 @@ import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
-import { PinPad } from "@/components/security/pin-pad";
+import {
+  GlassyPinVerification,
+  pinVerificationErrorFromResponse,
+} from "@/components/security/glassy-pin-verification";
 import {
   animeStatusLabels,
   type AnimeLibraryItem,
@@ -800,8 +803,6 @@ export function AnimeWorkspace({
   const [adultUnlocked, setAdultUnlocked] = useState(false);
   const [adultView, setAdultView] = useState<AdultView>("library");
   const [adultPinPrompt, setAdultPinPrompt] = useState(false);
-  const [adultPin, setAdultPin] = useState("");
-  const [adultPinError, setAdultPinError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState(
     initialData?.preferences ?? defaultPreferences,
   );
@@ -964,8 +965,6 @@ export function AnimeWorkspace({
       preferences.adultAccessMode === "pin4" ||
       preferences.adultAccessMode === "pin6"
     ) {
-      setAdultPin("");
-      setAdultPinError(null);
       setAdultPinPrompt(true);
       return;
     }
@@ -991,27 +990,23 @@ export function AnimeWorkspace({
     // Opening the protected tab is a one-time response to the direct route.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAdultAccess, initialAdultOpen, loaded]);
-  const unlockAdultWithPin = async (value = adultPin) => {
-    const length = preferences.adultAccessMode === "pin6" ? 6 : 4;
-    if (!new RegExp(`^\\d{${length}}$`).test(value)) {
-      setAdultPinError(`請輸入 ${length} 位數 PIN。`);
-      return;
+  const verifyAdultPin = async (value: string) => {
+    const response = await fetch("/api/anime/preferences/pin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "verify", pin: value }),
+    });
+    if (!response.ok) {
+      throw await pinVerificationErrorFromResponse(response, "成人區 PIN 驗證失敗。");
     }
-    setPending("adult-access");
-    setAdultPinError(null);
+  };
+  const finishAdultPinUnlock = async () => {
+    setAdultPinPrompt(false);
+    setPending(null);
     try {
-      await api("/api/anime/preferences/pin", {
-        method: "POST",
-        body: JSON.stringify({ action: "verify", pin: value }),
-      });
-      setAdultPinPrompt(false);
       await loadAdult();
     } catch (cause) {
-      setAdultPinError(
-        cause instanceof Error ? cause.message : "PIN 驗證失敗。",
-      );
-    } finally {
-      setPending(null);
+      setNotice(cause instanceof Error ? cause.message : "無法開啟成人內容。");
     }
   };
   useEffect(() => {
@@ -2033,42 +2028,16 @@ export function AnimeWorkspace({
         pending={pending === "adult-access"}
         title="解鎖成人內容"
       >
-        <div className="anime-category-dialog">
-          <p>
-            請輸入獨立的 {preferences.adultAccessMode === "pin6" ? "6" : "4"}{" "}
-            位數成人區 PIN。
-          </p>
-          <PinPad
-            disabled={pending === "adult-access"}
-            label={
-              preferences.adultAccessMode === "pin6"
-                ? "輸入 6 位數成人區 PIN"
-                : "輸入 4 位數成人區 PIN"
-            }
-            length={preferences.adultAccessMode === "pin6" ? 6 : 4}
-            onChange={(value) => {
-              setAdultPin(value);
-              setAdultPinError(null);
-            }}
-            onComplete={(value) => void unlockAdultWithPin(value)}
-            value={adultPin}
-          />
-          {adultPinError && (
-            <p className="notice error" role="alert">
-              {adultPinError}
-            </p>
-          )}
-          <div className="dialog-actions">
-            <button
-              className="secondary-button"
-              disabled={pending === "adult-access"}
-              onClick={() => setAdultPinPrompt(false)}
-              type="button"
-            >
-              取消
-            </button>
-          </div>
-        </div>
+        <GlassyPinVerification
+          embedded
+          length={preferences.adultAccessMode === "pin6" ? 6 : 4}
+          title="解鎖成人內容"
+          description={`請輸入獨立的 ${preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。`}
+          verifyPin={verifyAdultPin}
+          onVerified={finishAdultPinUnlock}
+          onCancel={() => setAdultPinPrompt(false)}
+          onStateChange={(state) => setPending(state === "verifying" || state === "success" ? "adult-access" : null)}
+        />
       </ModalDialog>
     </section>
   );
