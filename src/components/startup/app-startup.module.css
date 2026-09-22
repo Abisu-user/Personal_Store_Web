@@ -86,6 +86,10 @@
 .exiting .content { opacity: 0; transform: translate(-50%, calc(-50% - 4px)) scale(1.04); transition: opacity 400ms cubic-bezier(.4, 0, .2, 1), transform 420ms cubic-bezier(.4, 0, .2, 1); }
 .exiting .logo { animation-play-state: paused; }
 
+:global(html[data-startup-handoff="true"]) .content { visibility: hidden; }
+:global(html[data-startup-handoff="true"]) .ambient { background: var(--startup-canvas, var(--canvas)); }
+:global(html[data-startup-handoff="true"]) .splash { transition-duration: 260ms; }
+
 @keyframes logo-enter { to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes copy-enter { to { opacity: 1; transform: translateY(0); } }
 @keyframes logo-breathe { 0%, 100% { transform: scale(1); filter: brightness(1); } 50% { transform: scale(1.015); filter: brightness(1.025); } }

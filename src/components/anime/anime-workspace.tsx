@@ -118,6 +118,7 @@ function Cover({
     <img
       alt={blur ? "成人內容封面（已模糊）" : `${displayTitle(anime)} 封面`}
       className={`${className}${blur ? " anime-adult-cover-blur" : ""}`}
+      decoding="async"
       loading="lazy"
       src={src}
     />

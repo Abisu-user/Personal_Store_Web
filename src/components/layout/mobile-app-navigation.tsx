@@ -82,6 +82,7 @@ export function MobileAppNavigation() {
   const linkProps = (href: string) => ({
     onMouseEnter: () => prefetch(href),
     onFocus: () => prefetch(href),
+    onPointerDown: () => prefetch(href),
     onClick: () => {
       if (href === "/bookmarks" && pathname === "/bookmarks") {
         window.dispatchEvent(new CustomEvent("personal-vault:bookmarks-overview"));

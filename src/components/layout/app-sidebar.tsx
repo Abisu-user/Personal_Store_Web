@@ -19,7 +19,7 @@ export function AppSidebar({ email, displayName, avatar }: { email: string; disp
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const prefetchRoute = (href: string) => { const route = href.split("#", 1)[0]; if (!route || route === pathname) return; router.prefetch(route); };
-  const prefetchHandlers = (href: string) => ({ onFocus: () => prefetchRoute(href), onMouseEnter: () => prefetchRoute(href) });
+  const prefetchHandlers = (href: string) => ({ onFocus: () => prefetchRoute(href), onMouseEnter: () => prefetchRoute(href), onPointerDown: () => prefetchRoute(href) });
   const closeMenu = () => setMenuOpen(false);
   async function signOut() { setSigningOut(true); clearAppearanceIdentity(); clearClientResources(); await createClient().auth.signOut(); closeMenu(); router.replace("/login"); router.refresh(); }
   const navigationLink = (href: string, label: string, icon: ReactNode, active: boolean) => <Link className={active ? "nav-item active" : "nav-item"} href={href} key={label} onClick={closeMenu} prefetch={false} {...prefetchHandlers(href)}><i aria-hidden="true">{icon}</i>{label}</Link>;

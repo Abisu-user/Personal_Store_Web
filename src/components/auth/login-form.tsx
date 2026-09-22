@@ -1,15 +1,28 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { PasswordInput } from "@/components/auth/password-input";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 
 export function LoginForm({ passwordReset = false }: { passwordReset?: boolean }) {
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  function openAuthenticatedRoute(destination: string) {
+    // Warm the authenticated route while the two login panes are leaving.
+    // The final full navigation remains intentional: it prevents a cached
+    // anonymous App Router response from sending a fresh session to /login.
+    router.prefetch(destination);
+    window.sessionStorage.setItem("personal-store:post-login-handoff:v1", "1");
+    document.querySelector(".auth-shell")?.classList.add("auth-exiting");
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.setTimeout(() => window.location.assign(destination), reducedMotion ? 80 : 520);
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -39,7 +52,7 @@ export function LoginForm({ passwordReset = false }: { passwordReset?: boolean }
     // navigation after that write avoids reusing the App Router's anonymous
     // login response, which could otherwise bounce a newly signed-in user
     // straight back to /login.
-    window.setTimeout(() => window.location.assign(destination), 120);
+    openAuthenticatedRoute(destination);
   }
 
   async function signInWithPasskey() {
@@ -48,7 +61,7 @@ export function LoginForm({ passwordReset = false }: { passwordReset?: boolean }
     if (passkeyError) { setPending(false); setProgress(null); setError(passkeyError.code === "passkey_disabled" ? "Face ID / Passkey 尚未啟用，請使用帳號密碼登入。" : "無法完成 Face ID / Passkey 驗證。請再試一次或使用帳號密碼。"); return; }
     window.sessionStorage.setItem("personal-vault:unlock-after-login", "1");
     setProgress("登入成功，正在開啟你的保管庫…");
-    window.setTimeout(() => window.location.assign("/dashboard"), 120);
+    openAuthenticatedRoute("/dashboard");
   }
 
   return (

@@ -11,8 +11,10 @@ type StartupPhase = "initializing" | "exiting" | "complete";
 const APPEARANCE_READY_EVENT = "personal-vault:appearance-ready";
 const DASHBOARD_READY_EVENT = "personal-vault:dashboard-critical-ready";
 const MINIMUM_VISIBLE_MS = 760;
+const HANDOFF_MINIMUM_VISIBLE_MS = 140;
 const MAXIMUM_WAIT_MS = 6500;
 const EXIT_DURATION_MS = 440;
+const HANDOFF_EXIT_DURATION_MS = 260;
 const SLOW_MESSAGE_MS = 4500;
 
 type StartupWindow = Window & { __PERSONAL_STORE_STARTUP_AT__?: number };
@@ -35,6 +37,9 @@ export function AppStartupProvider({ children }: { children: ReactNode }) {
     startedAt.current = startupWindow.__PERSONAL_STORE_STARTUP_AT__ ?? performance.now();
     root.dataset.startupActive = "true";
     root.dataset.startupState = "initializing";
+    const handoff = root.dataset.startupHandoff === "true";
+    const minimumVisibleMs = handoff ? HANDOFF_MINIMUM_VISIBLE_MS : MINIMUM_VISIBLE_MS;
+    const exitDurationMs = handoff ? HANDOFF_EXIT_DURATION_MS : EXIT_DURATION_MS;
 
     const mobileDashboard = initialPathname.current === "/dashboard" && window.matchMedia("(max-width: 700px)").matches;
     let appearanceReady = root.dataset.appearanceReady === "true";
@@ -53,14 +58,16 @@ export function AppStartupProvider({ children }: { children: ReactNode }) {
         setPhase("complete");
         root.dataset.startupState = "complete";
         delete root.dataset.startupActive;
-      }, EXIT_DURATION_MS);
+        delete root.dataset.startupHandoff;
+        window.sessionStorage.removeItem("personal-store:post-login-handoff:v1");
+      }, exitDurationMs);
     };
 
     const check = (force = false) => {
       if (finishing || (!force && !(appearanceReady && documentReady && dashboardReady))) return;
       const elapsed = performance.now() - startedAt.current;
       window.clearTimeout(minimumTimer);
-      minimumTimer = window.setTimeout(finish, Math.max(0, MINIMUM_VISIBLE_MS - elapsed));
+      minimumTimer = window.setTimeout(finish, Math.max(0, minimumVisibleMs - elapsed));
     };
 
     const onAppearanceReady = () => { appearanceReady = true; check(); };

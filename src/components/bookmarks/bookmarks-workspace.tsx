@@ -152,6 +152,7 @@ function BookmarkCoverImage({ item }: { item: Bookmark }) {
   return (
     <img
       alt=""
+      decoding="async"
       loading="lazy"
       onError={() => setSource((current) => current === resolved.primary ? resolved.fallback : null)}
       referrerPolicy="no-referrer"
@@ -1442,6 +1443,7 @@ export function BookmarksWorkspace({
           {(preview.imageUrl ?? preview.faviconUrl) && (
             <img
               alt=""
+              decoding="async"
               referrerPolicy="no-referrer"
               src={preview.imageUrl ?? preview.faviconUrl ?? undefined}
             />

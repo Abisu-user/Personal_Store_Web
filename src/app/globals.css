@@ -9,6 +9,11 @@
   --danger: #b42318;
   --success: #087443;
   --startup-canvas: #f5f7fb;
+  --motion-fast: 180ms;
+  --motion-page: 220ms;
+  --motion-base: 340ms;
+  --motion-slow: 520ms;
+  --ease-out-smooth: cubic-bezier(.22, 1, .36, 1);
 }
 .photo-card-wrap { position: relative; }
 .photo-card-wrap .item-select { position: absolute; z-index: 2; top: 10px; left: 10px; padding: 5px; border-radius: 7px; background: rgb(255 255 255 / 88%); }
@@ -25,6 +30,48 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+
+/* One compact motion language: content changes, dialogs and login use only
+   compositor-friendly opacity/transform animations. */
+.app-page-transition {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  animation: app-page-enter var(--motion-page) var(--ease-out-smooth) both;
+}
+@keyframes app-page-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+.auth-shell.auth-exiting { overflow: hidden; }
+.auth-shell.auth-exiting .auth-brand { animation: auth-brand-exit var(--motion-slow) var(--ease-out-smooth) both; }
+.auth-shell.auth-exiting .auth-card { animation: auth-card-exit var(--motion-slow) var(--ease-out-smooth) both; }
+@keyframes auth-brand-exit { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes auth-card-exit { to { opacity: 0; transform: translateX(28px); } }
+
+.modal-dialog-backdrop { animation: modal-backdrop-enter var(--motion-fast) ease-out both; }
+.modal-dialog-backdrop > .modal-dialog { animation: modal-dialog-enter var(--motion-base) var(--ease-out-smooth) both; }
+@keyframes modal-backdrop-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-dialog-enter { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+.app-route-loading {
+  display: grid;
+  width: min(100% - 64px, 1180px);
+  min-height: 100%;
+  align-content: start;
+  gap: 18px;
+  margin: 0 auto;
+  padding: 46px 0;
+}
+.route-skeleton-heading { display: grid; width: min(440px, 78%); gap: 10px; }
+.route-skeleton-heading i:first-child { width: 118px; height: 12px; }
+.route-skeleton-heading i:last-child { width: min(390px, 100%); height: 34px; }
+.route-skeleton-toolbar { width: 100%; height: 54px; border-radius: 15px; }
+.route-skeleton-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.route-skeleton-card { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: center; gap: 13px; min-height: 126px; padding: 18px; border: 1px solid color-mix(in srgb, var(--line) 82%, transparent); border-radius: 17px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.route-skeleton-card > i { width: 52px; height: 52px; border-radius: 15px; }
+.route-skeleton-card > span { display: grid; gap: 9px; }
+.route-skeleton-card b { display: block; width: 88%; height: 14px; }
+.route-skeleton-card b:last-child { width: 58%; height: 11px; }
 
 html[data-startup-active="true"],
 html[data-startup-active="true"] body { background: var(--startup-canvas, var(--canvas)); }
@@ -55,7 +102,23 @@ html[data-network="offline"]::before { position: fixed; z-index: 200; top: max(6
   .mobile-bottom-nav { backdrop-filter: none; }
   .dashboard-card, .dashboard-overview article, .bookmark-card, .file-card, .vault-item { box-shadow: 0 5px 16px rgb(20 42 80 / 7%); }
   .mobile-more-sheet, .modal-dialog-backdrop .modal-dialog { backdrop-filter: none; }
+  .app-page-transition { animation-duration: var(--motion-fast); }
+  .auth-shell.auth-exiting .auth-brand { animation-name: auth-brand-exit-mobile; animation-duration: 320ms; }
+  .auth-shell.auth-exiting .auth-card { animation-name: auth-card-exit-mobile; animation-duration: 320ms; }
+  .app-route-loading { width: 100%; gap: 12px; padding: 8px var(--mobile-page-gutter-right) 18px var(--mobile-page-gutter); }
+  .route-skeleton-heading { width: 72%; gap: 7px; }
+  .route-skeleton-heading i:first-child { width: 90px; height: 9px; }
+  .route-skeleton-heading i:last-child { height: 27px; }
+  .route-skeleton-toolbar { height: 46px; }
+  .route-skeleton-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .route-skeleton-card { grid-template-columns: 38px minmax(0, 1fr); min-height: 82px; gap: 9px; padding: 11px; border-radius: 15px; }
+  .route-skeleton-card > i { width: 38px; height: 38px; border-radius: 11px; }
+  .route-skeleton-card b { height: 11px; }
+  .route-skeleton-card b:last-child { height: 9px; }
 }
+
+@keyframes auth-brand-exit-mobile { to { opacity: 0; transform: translateY(-8px); } }
+@keyframes auth-card-exit-mobile { to { opacity: 0; transform: translateY(12px); } }
 
 /* Storage & database resource page. The data itself comes from a server-only
    Supabase RPC, while this UI remains deliberately lightweight on mobile. */
@@ -499,9 +562,6 @@ html[data-bookmark-display="grid"] .content-item-list { grid-template-columns: r
   html[data-has-workspace-image="true"], html[data-has-workspace-image="true"] body { background-color: color-mix(in srgb, var(--workspace-tint) 72%, #172137); background-image: var(--workspace-image); background-position: var(--workspace-position); background-size: var(--workspace-size, cover); background-attachment: fixed; }
   html, body { min-height: 100lvh; }
   .app-shell { min-height: 100lvh; }
-  .app-route-loading { display: grid; min-height: 100%; place-content: center; gap: 10px; color: var(--muted); text-align: center; }
-  .app-route-loading span { width: 28px; height: 28px; justify-self: center; border: 3px solid color-mix(in srgb, var(--brand) 20%, transparent); border-top-color: var(--brand); border-radius: 50%; animation: operation-spin .72s linear infinite; }
-  .app-route-loading p { margin: 0; font-size: .84rem; font-weight: 800; }
   .mobile-bottom-nav .active { transition: color .12s ease, opacity .12s ease; }
   .mobile-navigation-slot-grid { grid-template-columns: 1fr; }
 }
@@ -1647,4 +1707,21 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .taxonomy-section-card .taxonomy-choice-grid :is(label, button) {
     transition: none;
   }
+}
+
+/* Bottom sheets keep the same dialog infrastructure and keyboard/safe-area
+   handling, but enter from the physical bottom edge like a native sheet. */
+@keyframes mobile-sheet-enter {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (max-width: 700px) {
+  .modal-dialog.mobile-bottom-sheet,
+  .modal-dialog.mobile-sheet-dialog {
+    animation: mobile-sheet-enter 280ms var(--ease-out-smooth) both;
+  }
+}
+@media (max-width: 700px) and (prefers-reduced-motion: reduce) {
+  .modal-dialog.mobile-bottom-sheet,
+  .modal-dialog.mobile-sheet-dialog { animation: none; }
 }

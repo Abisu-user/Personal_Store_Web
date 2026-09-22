@@ -535,14 +535,14 @@ export function PhotosWorkspace({
           <div className={mobileStyles.folderGrid}>
             <button onClick={() => openLibrary({ all: true })} type="button">
               <span className={mobileStyles.folderCover}>
-                {overviewPhotos[0] ? <img alt="" src={overviewPhotos[0].imageUrl} /> : <AppIcon name="photo" />}
+                {overviewPhotos[0] ? <img alt="" decoding="async" loading="lazy" src={overviewPhotos[0].imageUrl} /> : <AppIcon name="photo" />}
               </span>
               <strong>全部照片</strong>
               <small>{overviewPhotos.length} 張照片</small>
             </button>
             <button onClick={() => openFolder(null)} type="button">
               <span className={mobileStyles.folderCover}>
-                {unorganizedPhotos[0] ? <img alt="" src={unorganizedPhotos[0].imageUrl} /> : <AppIcon name="folder" />}
+                {unorganizedPhotos[0] ? <img alt="" decoding="async" loading="lazy" src={unorganizedPhotos[0].imageUrl} /> : <AppIcon name="folder" />}
               </span>
               <strong>未整理</strong>
               <small>{unorganizedPhotos.length} 張照片</small>
@@ -552,7 +552,7 @@ export function PhotosWorkspace({
               return (
                 <button key={folder.id} onClick={() => openFolder(folder.id)} type="button">
                   <span className={mobileStyles.folderCover} data-locked={folder.is_locked && !folder.is_unlocked ? "true" : undefined}>
-                    {preview ? <img alt="" src={preview.imageUrl} /> : <AppIcon name={folder.is_locked && !folder.is_unlocked ? "lock" : "folder"} />}
+                    {preview ? <img alt="" decoding="async" loading="lazy" src={preview.imageUrl} /> : <AppIcon name={folder.is_locked && !folder.is_unlocked ? "lock" : "folder"} />}
                   </span>
                   <strong>{folder.name}</strong>
                   <small>{folder.item_count ?? 0} 張照片</small>
@@ -573,7 +573,7 @@ export function PhotosWorkspace({
               <div className={mobileStyles.recentGrid}>
                 {recentPhotos.map((photo) => (
                   <button aria-label={`預覽 ${photo.title}`} key={photo.id} onClick={() => setSelected(photo)} type="button">
-                    <img alt={photo.title} src={photo.imageUrl} />
+                    <img alt={photo.title} decoding="async" loading="lazy" src={photo.imageUrl} />
                   </button>
                 ))}
               </div>
@@ -669,7 +669,7 @@ export function PhotosWorkspace({
               onClick={() => setSelected(photo)}
               type="button"
             >
-              <img alt={photo.title} src={photo.imageUrl} />
+              <img alt={photo.title} decoding="async" loading="lazy" src={photo.imageUrl} />
               <span>
                 <small>
                   {photo.categories.map((category) => category.name).join("、") || "未分類"}
@@ -696,6 +696,7 @@ export function PhotosWorkspace({
             <img
               alt={selected.title}
               className="photo-detail-image"
+              decoding="async"
               src={selected.imageUrl}
             />
             <p className="detail-content">

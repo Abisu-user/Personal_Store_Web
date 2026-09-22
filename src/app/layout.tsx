@@ -64,6 +64,7 @@ const restoreAppearance = `try {
   root.dataset.startupActive = "true";
   root.dataset.startupState = "initializing";
   root.dataset.appearanceReady = "false";
+  if (sessionStorage.getItem("personal-store:post-login-handoff:v1") === "1") root.dataset.startupHandoff = "true";
   root.style.setProperty("--startup-canvas", canvas);
   root.style.setProperty("--workspace-canvas-color", saved.canvasColor || "#f4f6fb");
   root.style.setProperty("--custom-brand", saved.customColor || "#2b65bd");
