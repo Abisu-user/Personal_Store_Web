@@ -13,5 +13,5 @@ import type { ReactNode } from "react";
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const user = await requireUser();
   const [profile, appLockPinStatus] = await Promise.all([getUserProfile(user), getAppLockPinStatus(user.id)]);
-  return <AppLockProvider email={user.email ?? ""} initialPinStatus={appLockPinStatus}><AppProfileProvider profile={profile}><CreateItemProvider><div className="app-shell"><AppSidebar avatar={profile.avatar} displayName={profile.displayName} email={user.email ?? "vault-user"} /><div className="app-main"><AppPageTransition>{children}</AppPageTransition><ContextCreateButton /></div><MobileAppNavigation /></div></CreateItemProvider></AppProfileProvider></AppLockProvider>;
+  return <AppLockProvider email={user.email ?? ""} initialPinStatus={appLockPinStatus}><AppProfileProvider profile={profile}><CreateItemProvider><div className="app-shell desktop-app-shell"><AppSidebar avatar={profile.avatar} displayName={profile.displayName} email={user.email ?? "vault-user"} /><div className="app-main desktop-app-main"><AppPageTransition>{children}</AppPageTransition><ContextCreateButton /></div><MobileAppNavigation /></div></CreateItemProvider></AppProfileProvider></AppLockProvider>;
 }
