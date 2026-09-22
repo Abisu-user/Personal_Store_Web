@@ -3,14 +3,18 @@
 }
 
 @media (min-width: 701px) {
-  :global(.desktop-app-shell) {
-    --desktop-sidebar-compact-width: 76px;
-    --desktop-sidebar-expanded-width: 264px;
-    --desktop-sidebar-panel-width: var(--desktop-sidebar-compact-width);
-    --desktop-sidebar-gutter: 14px;
-    --desktop-sidebar-gutter-total: 28px;
-    --desktop-sidebar-column-width: calc(var(--desktop-sidebar-panel-width) + var(--desktop-sidebar-gutter-total));
-    --desktop-sidebar-motion: 350ms cubic-bezier(.2, .84, .24, 1);
+  :global(.app-shell.desktop-app-shell) {
+    --desktop-sidebar-compact-width: 68px;
+    --desktop-sidebar-expanded-width: 240px;
+    --desktop-sidebar-layout-width: var(--desktop-sidebar-compact-width);
+    --desktop-sidebar-visual-width: var(--desktop-sidebar-compact-width);
+    --desktop-sidebar-gutter: 8px;
+    --desktop-sidebar-content-gap: 12px;
+    --desktop-sidebar-gutter-total: 16px;
+    --desktop-sidebar-column-width: calc(var(--desktop-sidebar-layout-width) + var(--desktop-sidebar-gutter) + var(--desktop-sidebar-content-gap));
+    --desktop-sidebar-motion: 320ms cubic-bezier(.22, .8, .24, 1);
+    position: relative;
+    isolation: isolate;
     display: grid;
     grid-template-columns: var(--desktop-sidebar-column-width) minmax(0, 1fr);
     width: 100%;
@@ -20,12 +24,18 @@
     transition: grid-template-columns var(--desktop-sidebar-motion);
   }
 
-  :global(.desktop-app-shell):has(.sidebar.pinned),
-  :global(.desktop-app-shell):has(.sidebar:focus-within) {
-    --desktop-sidebar-panel-width: var(--desktop-sidebar-expanded-width);
+  :global(.desktop-app-shell):has(.sidebar.pinned) {
+    --desktop-sidebar-layout-width: var(--desktop-sidebar-expanded-width);
+    --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
+  }
+
+  :global(.desktop-app-shell):has(.sidebar:has(:focus-visible)) {
+    --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
   }
 
   :global(.desktop-app-shell > .desktop-app-main) {
+    position: relative;
+    z-index: 1;
     width: 100%;
     min-width: 0;
     height: 100dvh;
@@ -37,19 +47,62 @@
     scrollbar-gutter: stable;
   }
 
+  :global(.desktop-app-shell > .desktop-app-main .dashboard) {
+    width: calc(100% - 8px);
+    max-width: none;
+    margin-right: 8px;
+    margin-left: 0;
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  :global(.desktop-app-shell > .desktop-app-main .app-route-loading) {
+    width: calc(100% - 8px);
+    max-width: none;
+    margin-right: 8px;
+    margin-left: 0;
+    padding-top: 24px;
+    padding-bottom: 24px;
+  }
+
+  :global(html[data-has-workspace-image="true"] .desktop-app-shell)::before {
+    position: fixed;
+    z-index: 0;
+    inset: 0;
+    background-color: color-mix(in srgb, var(--workspace-tint) 72%, #172137);
+    background-image: var(--workspace-image);
+    background-position: var(--workspace-position);
+    background-size: var(--workspace-size, cover);
+    background-repeat: no-repeat;
+    content: "";
+    filter: brightness(var(--workspace-brightness, 100%)) blur(var(--workspace-blur, 0px));
+    pointer-events: none;
+    transform: scale(1.025);
+  }
+
+  :global(html[data-has-workspace-image="true"] .desktop-app-shell > .desktop-app-main) {
+    background: transparent;
+    isolation: isolate;
+  }
+
+  :global(html[data-has-workspace-image="true"] .desktop-app-shell > .desktop-app-main)::before {
+    display: none;
+    content: none;
+  }
+
   .sidebar {
     --sidebar-text: color-mix(in srgb, #fff 94%, var(--brand-soft));
     --sidebar-muted: color-mix(in srgb, #fff 60%, var(--brand-soft));
     --sidebar-faint: color-mix(in srgb, #fff 40%, var(--brand-soft));
     position: relative;
-    z-index: 20;
+    z-index: 30;
     display: flex;
-    width: var(--desktop-sidebar-panel-width);
+    width: var(--desktop-sidebar-visual-width);
     height: calc(100dvh - var(--desktop-sidebar-gutter-total));
     min-height: 0;
     flex-direction: column;
     align-self: start;
-    margin: var(--desktop-sidebar-gutter);
+    margin: var(--desktop-sidebar-gutter) 0 var(--desktop-sidebar-gutter) var(--desktop-sidebar-gutter);
     overflow: hidden;
     border: 1px solid color-mix(in srgb, var(--brand-soft) 24%, rgba(255, 255, 255, .13));
     border-radius: 28px;
@@ -67,7 +120,7 @@
 
   @media (hover: hover) and (pointer: fine) {
     :global(.desktop-app-shell):has(.sidebar:not(.pinned):hover) {
-      --desktop-sidebar-panel-width: var(--desktop-sidebar-expanded-width);
+      --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
     }
 
     .sidebar:not(.pinned):hover {
@@ -80,24 +133,24 @@
   .profile {
     position: relative;
     display: flex;
-    min-height: 78px;
+    min-height: 68px;
     flex: 0 0 auto;
     align-items: center;
-    gap: 11px;
-    padding: 14px 15px;
+    gap: 10px;
+    padding: 11px 13px;
     border-bottom: 1px solid rgba(255, 255, 255, .075);
   }
 
   .avatar {
     display: grid;
-    width: 46px;
-    height: 46px;
-    min-width: 46px;
-    min-height: 46px;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    min-height: 42px;
     place-items: center;
     padding: 0;
     border: 1px solid rgba(255, 255, 255, .22);
-    border-radius: 16px;
+    border-radius: 14px;
     color: #fff;
     background:
       radial-gradient(circle at 28% 22%, rgba(255, 255, 255, .38), transparent 28%),
@@ -123,7 +176,7 @@
   .profileCopy strong,
   .profileCopy small {
     display: block;
-    max-width: 142px;
+    max-width: 124px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -146,7 +199,7 @@
   .pinToggle {
     position: absolute;
     top: 50%;
-    right: 10px;
+    right: 8px;
     display: grid;
     width: 32px;
     height: 32px;
@@ -176,7 +229,7 @@
   .navigation {
     min-height: 0;
     flex: 1 1 auto;
-    padding: 10px;
+    padding: 7px;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
@@ -189,7 +242,7 @@
 
   .group {
     display: grid;
-    gap: 2px;
+    gap: 1px;
   }
 
   .group + .group {
@@ -199,14 +252,14 @@
   .groupLabel {
     height: 0;
     margin: 0;
-    padding: 0 9px;
+    padding: 0 8px;
     overflow: hidden;
     color: var(--sidebar-faint);
     opacity: 0;
     font-size: .58rem;
     font-weight: 850;
     letter-spacing: .13em;
-    line-height: 18px;
+    line-height: 16px;
     white-space: nowrap;
     transition: height 250ms ease, padding 250ms ease, opacity 160ms ease;
   }
@@ -216,15 +269,15 @@
     position: relative;
     display: flex;
     width: 100%;
-    height: 48px;
-    min-height: 48px;
+    height: 44px;
+    min-height: 44px;
     align-items: center;
-    gap: 13px;
+    gap: 11px;
     margin: 1px 0;
     padding: 0 14px;
     overflow: hidden;
     border: 0;
-    border-radius: 16px;
+    border-radius: 14px;
     color: var(--sidebar-muted);
     background: transparent;
     font: inherit;
@@ -275,7 +328,7 @@
     display: grid;
     width: 26px;
     min-width: 26px;
-    height: 44px;
+    height: 42px;
     place-items: center;
     color: currentColor;
     font-style: normal;
@@ -302,7 +355,7 @@
 
   .footer {
     flex: 0 0 auto;
-    padding: 10px;
+    padding: 7px;
     border-top: 1px solid rgba(255, 255, 255, .075);
   }
 
@@ -325,8 +378,8 @@
 
   .pinned .profileCopy,
   .pinned .label,
-  .sidebar:focus-within .profileCopy,
-  .sidebar:focus-within .label {
+  .sidebar:has(:focus-visible) .profileCopy,
+  .sidebar:has(:focus-visible) .label {
     opacity: 1;
     transform: translateX(0);
     pointer-events: auto;
@@ -334,21 +387,21 @@
   }
 
   .pinned .pinToggle,
-  .sidebar:focus-within .pinToggle {
+  .sidebar:has(:focus-visible) .pinToggle {
     opacity: 1;
     pointer-events: auto;
   }
 
   .pinned .groupLabel,
-  .sidebar:focus-within .groupLabel {
-    height: 24px;
-    padding-top: 6px;
+  .sidebar:has(:focus-visible) .groupLabel {
+    height: 20px;
+    padding-top: 3px;
     opacity: 1;
   }
 
   .pinned .group + .group,
-  .sidebar:focus-within .group + .group {
-    margin-top: 4px;
+  .sidebar:has(:focus-visible) .group + .group {
+    margin-top: 3px;
   }
 
   @media (hover: hover) and (pointer: fine) {
@@ -366,13 +419,13 @@
     }
 
     .sidebar:not(.pinned):hover .groupLabel {
-      height: 24px;
-      padding-top: 6px;
+      height: 20px;
+      padding-top: 3px;
       opacity: 1;
     }
 
     .sidebar:not(.pinned):hover .group + .group {
-      margin-top: 4px;
+      margin-top: 3px;
     }
 
     .pinToggle:hover {
