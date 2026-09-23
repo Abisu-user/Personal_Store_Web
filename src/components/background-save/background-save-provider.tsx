@@ -34,10 +34,12 @@ type SaveContextValue = {
 
 class SaveRequestError extends Error {
   status?: number;
-  constructor(message: string, status?: number) {
+  payload?: unknown;
+  constructor(message: string, status?: number, payload?: unknown) {
     super(message);
     this.name = "SaveRequestError";
     this.status = status;
+    this.payload = payload;
   }
 }
 
@@ -80,12 +82,12 @@ function iconForType(type: string): AppIconName {
 }
 
 function stateText(job: BackgroundSaveJob) {
-  if (job.status === "queued") return "等待儲存";
-  if (job.status === "saving") return "儲存中";
+  if (job.status === "queued") return "等待處理";
+  if (job.status === "saving") return "處理中";
   if (job.status === "retrying") return "準備重試";
   if (job.status === "offline") return "離線等待";
-  if (job.status === "failed") return "儲存失敗";
-  return "已儲存";
+  if (job.status === "failed") return `${job.operation || "處理"}失敗`;
+  return job.operation?.includes("刪除") ? "已刪除" : "已完成";
 }
 
 function getErrorMessage(error: unknown) {
@@ -186,20 +188,30 @@ export function BackgroundSaveProvider({ userId, children }: { userId: string; c
           const payload = await response.json().catch(() => null);
           if (!response.ok) {
             const message = isPlainObject(payload) && typeof payload.error === "string" ? payload.error : `儲存失敗（${response.status}）`;
-            throw new SaveRequestError(message, response.status);
+            throw new SaveRequestError(message, response.status, payload);
           }
           result = payload;
         } else {
           throw new SaveRequestError("背景儲存工作缺少執行內容。");
         }
 
+        try {
+          await runtime.onSuccess?.(result);
+        } catch (callbackError) {
+          // The server mutation already succeeded. A view/cache refresh failure must
+          // never replay the mutation or trigger an optimistic rollback.
+          console.warn("[background-job] success callback failed", {
+            jobId: job.id,
+            type: job.type,
+            error: getErrorMessage(callbackError),
+          });
+        }
         setJobs((current) => {
           const completed = current.map((item) => item.id === job.id ? { ...item, status: "saved" as const, progress: 100, progressLabel: undefined, updatedAt: Date.now() } : item);
           let savedCount = 0;
           return completed.filter((item) => item.status !== "saved" || savedCount++ < 10);
         });
         void removePersistedBackgroundSaveJob(job.id);
-        await runtime.onSuccess?.(result);
       } catch (unknownError) {
         const error = unknownError instanceof Error ? unknownError : new Error(getErrorMessage(unknownError));
         const latest = jobsRef.current.find((item) => item.id === job.id) ?? job;
@@ -326,31 +338,26 @@ export function BackgroundSaveProvider({ userId, children }: { userId: string; c
   const savingCount = jobs.filter((job) => ["queued", "saving", "retrying"].includes(job.status)).length;
   const failedCount = jobs.filter((job) => job.status === "failed").length;
   const offlineCount = jobs.filter((job) => job.status === "offline").length;
-  const tone = failedCount ? "failed" : offlineCount ? "offline" : savingCount ? "saving" : "saved";
-  const label = failedCount ? `${failedCount} 筆失敗` : offlineCount ? `${offlineCount} 筆離線等待` : savingCount ? `儲存中 ${savingCount}` : "已儲存";
+  const label = failedCount ? `${failedCount} 筆失敗` : offlineCount ? `${offlineCount} 筆離線等待` : savingCount ? `背景處理中 ${savingCount}` : "所有變更已同步";
 
   return (
     <BackgroundSaveContext.Provider value={value}>
       {children}
-      <button className={styles.statusButton} data-tone={tone} type="button" onClick={() => setPanelOpen(true)} aria-label={`開啟儲存狀態：${label}`}>
-        {savingCount ? <AppIcon className={`${styles.statusIcon} ${styles.spinner}`} name="storage" /> : <span aria-hidden="true">{failedCount ? "!" : offlineCount ? "↯" : "✓"}</span>}
-        <span>{label}</span>
-      </button>
       {panelOpen ? (
         <>
           <button className={styles.backdrop} type="button" aria-label="關閉儲存狀態" onClick={() => setPanelOpen(false)} />
-          <section className={styles.panel} role="dialog" aria-modal="true" aria-label="儲存狀態">
+          <section className={styles.panel} role="dialog" aria-modal="true" aria-label="背景工作中心">
             <header className={styles.panelHeader}>
-              <div><h2 className={styles.heading}>儲存狀態</h2><p className={styles.summary}>{label}</p></div>
+              <div><h2 className={styles.heading}>背景工作中心</h2><p className={styles.summary}>{label}</p></div>
               <button className={styles.closeButton} type="button" onClick={() => setPanelOpen(false)} aria-label="關閉">×</button>
             </header>
             <div className={styles.jobList}>
-              {jobs.length === 0 ? <div className={styles.empty}>目前沒有背景儲存工作。</div> : jobs.map((job) => (
+              {jobs.length === 0 ? <div className={styles.empty}>目前沒有背景工作。</div> : jobs.map((job) => (
                 <article className={styles.job} data-status={job.status} key={job.id}>
                   <div className={styles.jobIcon}><AppIcon name={iconForType(job.type)} /></div>
                   <div className={styles.jobBody}>
                     <div className={styles.jobTitle}>{job.title}</div>
-                    <div className={styles.jobMeta}>{job.description || job.operation || "背景儲存"}</div>
+                    <div className={styles.jobMeta}>{job.description || job.operation || "背景處理"}</div>
                     {job.error ? <div className={styles.jobError}>{job.error}</div> : null}
                     {job.status === "saving" ? <div className={styles.progressTrack}><div className={`${styles.progressBar} ${job.progress === undefined ? styles.indeterminate : ""}`} style={{ "--progress": `${job.progress ?? 42}%` } as CSSProperties} /></div> : null}
                   </div>
@@ -361,7 +368,7 @@ export function BackgroundSaveProvider({ userId, children }: { userId: string; c
                 </article>
               ))}
             </div>
-            <footer className={styles.panelFooter}><span className={styles.summary}>切換頁面不會中斷儲存。</span><button className={styles.clearButton} type="button" onClick={clearFinished}>清除已完成</button></footer>
+            <footer className={styles.panelFooter}><span className={styles.summary}>切換頁面不會中斷工作。</span><button className={styles.clearButton} type="button" onClick={clearFinished}>清除已完成</button></footer>
           </section>
         </>
       ) : null}
@@ -373,4 +380,50 @@ export function useBackgroundSave() {
   const context = useContext(BackgroundSaveContext);
   if (!context) throw new Error("useBackgroundSave 必須在 BackgroundSaveProvider 內使用。");
   return context;
+}
+
+/**
+ * App-shell owned status entry. Keeping the entry outside the provider's
+ * overlay guarantees one stable, reserved location across every route.
+ */
+export function BackgroundJobIndicator() {
+  const context = useBackgroundSave();
+  const savingCount = context.jobs.filter((job) => ["queued", "saving", "retrying"].includes(job.status)).length;
+  const failedCount = context.jobs.filter((job) => job.status === "failed").length;
+  const offlineCount = context.jobs.filter((job) => job.status === "offline").length;
+  const tone = failedCount ? "failed" : offlineCount ? "offline" : savingCount ? "saving" : "saved";
+  const count = failedCount || offlineCount || savingCount;
+  const lastCompleted = context.jobs
+    .filter((job) => job.status === "saved")
+    .reduce<number | null>((latest, job) => latest === null || job.updatedAt > latest ? job.updatedAt : latest, null);
+  const lastSync = lastCompleted
+    ? new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit" }).format(lastCompleted)
+    : null;
+  const label = failedCount
+    ? `${failedCount} 筆背景工作失敗`
+    : offlineCount
+      ? `${offlineCount} 筆工作等待連線`
+      : savingCount
+        ? `${savingCount} 筆背景工作處理中`
+        : `所有變更已同步${lastSync ? `，最後同步 ${lastSync}` : ""}`;
+
+  return (
+    <div className={styles.indicatorSlot}>
+      <button
+        aria-label={`開啟背景工作中心：${label}`}
+        className={styles.statusButton}
+        data-tone={tone}
+        onClick={context.open}
+        title={label}
+        type="button"
+      >
+        {savingCount ? (
+          <AppIcon className={`${styles.statusIcon} ${styles.spinner}`} name="storage" />
+        ) : (
+          <span className={styles.statusGlyph} aria-hidden="true">{failedCount ? "!" : offlineCount ? "↯" : "✓"}</span>
+        )}
+        {count > 0 ? <span className={styles.statusBadge}>{count > 99 ? "99+" : count}</span> : null}
+      </button>
+    </div>
+  );
 }

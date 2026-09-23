@@ -1,8 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { OperationStatus } from "@/components/ui/modal-dialog";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import type { BookmarksWorkspaceData } from "@/lib/bookmarks/types";
 import type { NotesWorkspaceData } from "@/lib/notes/types";
 import type { CodeWorkspaceData } from "@/lib/code/types";
@@ -67,38 +66,47 @@ function ItemManager({ api, contentKind, count, description, fixedCount, items, 
   onChange: (items: Item[]) => void;
   title: string;
 }) {
-  const router = useRouter();
+  const backgroundJobs = useBackgroundSave();
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [value, setValue] = useState("");
-  const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function mutate(method: "POST" | "PATCH" | "DELETE", body: object) {
-    setPending(true); setError(null);
-    try {
-      const response = await fetch(api, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, ...(contentKind ? { contentKind } : {}), ...body }) });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(payload?.error ?? "操作失敗。");
-      if (method === "POST" && payload?.item) onChange([...items, payload.item].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")));
-      if (method === "PATCH") onChange(items.map((item) => item.id === (body as { id: string }).id ? { ...item, ...(body as { name?: string; visible?: boolean }) } : item));
-      if (method === "DELETE") onChange(items.filter((item) => item.id !== (body as { id: string }).id));
-      window.dispatchEvent(new CustomEvent("personal-vault:taxonomy-updated", { detail: contentKind ?? kind }));
-      router.refresh();
-      return true;
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "操作失敗。"); return false; } finally { setPending(false); }
+  function mutate(method: "POST" | "PATCH" | "DELETE", body: object) {
+    setError(null);
+    const previous = items;
+    const id = (body as { id?: string }).id;
+    if (method === "PATCH" && id) onChange(items.map((item) => item.id === id ? { ...item, ...(body as { name?: string; visible?: boolean }) } : item));
+    if (method === "DELETE" && id) onChange(items.filter((item) => item.id !== id));
+    backgroundJobs.enqueue({
+      type: "taxonomy",
+      title: `${method === "POST" ? "新增" : method === "PATCH" ? "更新" : "刪除"}${title}`,
+      operation: method === "DELETE" ? "刪除分類" : "更新分類",
+      page: "/manage/categories-folders",
+      entityKey: id ? `taxonomy:${kind}:${id}` : undefined,
+      mergeKey: method === "PATCH" && id ? `taxonomy:${kind}:${id}` : undefined,
+      request: { url: api, method, body: { kind, ...(contentKind ? { contentKind } : {}), ...body } },
+      persist: false,
+      rollback: () => onChange(previous),
+      onSuccess: (result) => {
+        const payload = result as { item?: Item } | null;
+        if (method === "POST" && payload?.item) onChange([...previous, payload.item].sort((a, b) => a.name.localeCompare(b.name, "zh-Hant")));
+        window.dispatchEvent(new CustomEvent("personal-vault:taxonomy-updated", { detail: contentKind ?? kind }));
+      },
+      onError: (cause) => setError(cause.message || "操作失敗。"),
+    });
+    return true;
   }
 
-  async function create(event: FormEvent) { event.preventDefault(); if (name.trim() && await mutate("POST", { name: name.trim() })) setName(""); }
+  function create(event: FormEvent) { event.preventDefault(); if (name.trim() && mutate("POST", { name: name.trim() })) setName(""); }
 
   return <section className="category-manager management-panel">
-    {pending && <OperationStatus label={`正在更新${title}…`} />}
     <header className="manager-heading"><div><p className="eyebrow">{title.toUpperCase()}</p><h2>{title}</h2><p>{description}</p></div></header>
     {error && <p className="notice error" role="alert">{error}</p>}
-    <form className="category-create-row" onSubmit={create}><input aria-label={`新增${title}名稱`} onChange={(event) => setName(event.target.value)} placeholder={`新增${title}名稱`} value={name} /><button className="button compact" disabled={pending} type="submit">＋ 新增</button></form>
+    <form className="category-create-row" onSubmit={create}><input aria-label={`新增${title}名稱`} onChange={(event) => setName(event.target.value)} placeholder={`新增${title}名稱`} value={name} /><button className="button compact" type="submit">＋ 新增</button></form>
     <div aria-label={`${title}清單`} className="folder-list management-item-list" tabIndex={0}>
       {fixedCount !== undefined && <article className="folder-row system-folder"><div><strong>未分類 <em>{fixedCount}</em></strong><small>固定保留，未指定類別的資料會顯示於此</small></div><span>固定保留</span></article>}
-      {items.length ? items.map((item) => <article className="folder-row" key={item.id}><div>{editing === item.id ? <input aria-label={`修改${title}名稱`} autoFocus onChange={(event) => setValue(event.target.value)} value={value} /> : <><strong>{item.is_locked ? "🔒 " : ""}{item.name} <em>{count(item.id)}</em></strong>{item.is_visible !== undefined && <small>{item.is_visible ? "目前顯示於清單與選單" : "目前已隱藏"}</small>}</>}</div><div className="manager-actions">{editing === item.id ? <><button className="button compact" disabled={pending} onClick={() => { if (value.trim()) void mutate("PATCH", { id: item.id, name: value.trim() }).then((ok) => ok && setEditing(null)); }} type="button">儲存</button><button className="secondary-button compact" disabled={pending} onClick={() => setEditing(null)} type="button">取消</button></> : <>{item.is_visible !== undefined && <button className="secondary-button compact" disabled={pending} onClick={() => void mutate("PATCH", { id: item.id, visible: !item.is_visible })} type="button">{item.is_visible ? "隱藏" : "顯示"}</button>}<button className="secondary-button compact" disabled={pending} onClick={() => { setEditing(item.id); setValue(item.name); }} type="button">修改</button><button className="delete-button compact" disabled={pending} onClick={() => void mutate("DELETE", { id: item.id })} type="button">移除</button></>}</div></article>) : <p className="manager-empty">尚未建立項目。</p>}
+      {items.length ? items.map((item) => <article className="folder-row" key={item.id}><div>{editing === item.id ? <input aria-label={`修改${title}名稱`} autoFocus onChange={(event) => setValue(event.target.value)} value={value} /> : <><strong>{item.is_locked ? "🔒 " : ""}{item.name} <em>{count(item.id)}</em></strong>{item.is_visible !== undefined && <small>{item.is_visible ? "目前顯示於清單與選單" : "目前已隱藏"}</small>}</>}</div><div className="manager-actions">{editing === item.id ? <><button className="button compact" onClick={() => { if (value.trim() && mutate("PATCH", { id: item.id, name: value.trim() })) setEditing(null); }} type="button">儲存</button><button className="secondary-button compact" onClick={() => setEditing(null)} type="button">取消</button></> : <>{item.is_visible !== undefined && <button className="secondary-button compact" onClick={() => mutate("PATCH", { id: item.id, visible: !item.is_visible })} type="button">{item.is_visible ? "隱藏" : "顯示"}</button>}<button className="secondary-button compact" onClick={() => { setEditing(item.id); setValue(item.name); }} type="button">修改</button><button className="delete-button compact" onClick={() => mutate("DELETE", { id: item.id })} type="button">移除</button></>}</div></article>) : <p className="manager-empty">尚未建立項目。</p>}
     </div>
   </section>;
 }

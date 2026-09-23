@@ -7,6 +7,7 @@ import { prepareBackgroundImage } from "@/lib/appearance/background-image-proces
 import { Accent, Appearance, Background, BackgroundRotation, BookmarkDisplay, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, getBackgroundImageUrl, loadAccountAppearance, normalizeHexColor, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, mobileNavigationVisibleSlotKeys, normalizeMobileNavigationColor, normalizeMobileNavigationPreferences, type MobileNavigationDestination, type MobileNavigationPreferences, type MobileNavigationSideCount, type MobileNavigationSlotKey } from "@/lib/layout/mobile-navigation-preferences";
 import { mobileNavigationThemeVariables } from "@/lib/layout/mobile-navigation-theme";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 
 const options = {
   theme: [["system", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as const,
@@ -38,6 +39,7 @@ function MobileNavigationPreview({ navigation }: { navigation: MobileNavigationP
   </div>;
 }
 export function AppearanceSettings() {
+  const backgroundJobs = useBackgroundSave();
   const [appearance, setAppearance] = useState<Appearance>(appearanceDefaults);
   const [ready, setReady] = useState(false);
   const [imageNotice, setImageNotice] = useState<string | null>(null);
@@ -60,7 +62,25 @@ export function AppearanceSettings() {
     window.addEventListener("personal-vault:appearance-sync-error", onSyncError);
     return () => { active = false; window.removeEventListener("personal-vault:appearance-sync-error", onSyncError); };
   }, []);
-  function commit(next: Appearance) { setAppearance(next); saveAppearance(next); }
+  function commit(next: Appearance, queueSync = true) {
+    setAppearance(next);
+    saveAppearance(next, { sync: false });
+    if (!queueSync) return;
+    backgroundJobs.enqueue({
+      type: "appearance",
+      title: "同步外觀設定",
+      operation: "更新設定",
+      page: "/appearance",
+      entityKey: "appearance:current-device",
+      mergeKey: "appearance:current-device",
+      debounceMs: 350,
+      persist: true,
+      sensitive: false,
+      request: { url: "/api/appearance", method: "PUT", body: { device: window.matchMedia("(max-width: 700px)").matches ? "mobile" : "desktop", appearance: next } },
+      onSuccess: () => { window.dispatchEvent(new CustomEvent("personal-vault:appearance-synced")); },
+      onError: () => { window.dispatchEvent(new CustomEvent("personal-vault:appearance-sync-error")); },
+    });
+  }
   function update<Key extends keyof Appearance>(key: Key, value: Appearance[Key]) { commit({ ...appearance, [key]: value } as Appearance); }
   function updateCustomColor(value: string) { commit({ ...appearance, accent: "custom" as Accent, customColor: normalizeHexColor(value, appearance.customColor) }); }
   function updateRgb(index: number, value: string) { if (value === "") return; const parsed = Number.parseInt(value, 10); if (!Number.isFinite(parsed)) return; const nextRgb = [...rgb]; nextRgb[index] = Math.max(0, Math.min(255, parsed)); updateCustomColor(rgbToHex(nextRgb)); }
@@ -80,30 +100,45 @@ export function AppearanceSettings() {
     if (/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(value.trim())) saveMobileNavigation({ ...mobileNavigation, backgroundColor: normalizeMobileNavigationColor(value) });
   }
   function resetMobileNavigation() { setNavigationColorDraft(mobileNavigationDefaults.backgroundColor); saveMobileNavigation(mobileNavigationDefaults); }
-  function reset() { appearance.backgroundImages.forEach((reference) => { void removeBackgroundImage(reference); }); setNavigationColorDraft(mobileNavigationDefaults.backgroundColor); setAppearance(appearanceDefaults); saveAppearance(appearanceDefaults); }
-  async function chooseBackgrounds(files: FileList | null) {
+  function reset() { const references = [...appearance.backgroundImages]; if (references.length) backgroundJobs.enqueue({ type: "appearance-upload", title: "移除工作區背景", operation: "刪除背景", page: "/appearance", execute: async ({ reportProgress }) => { reportProgress(undefined, "正在移除背景圖片"); await Promise.all(references.map(removeBackgroundImage)); }, persist: false, onError: (cause) => setImageNotice(cause.message || "背景圖片移除失敗，請稍後再試。") }); setNavigationColorDraft(mobileNavigationDefaults.backgroundColor); commit(appearanceDefaults); }
+  function chooseBackgrounds(files: FileList | null) {
     if (!files?.length) return;
     const selected = [...files];
     if (selected.some((file) => !backgroundImageMimeTypeForFile(file))) { setImageNotice(backgroundImageErrorMessage(new BackgroundImageError("validation", "BACKGROUND_IMAGE_FORMAT_NOT_ALLOWED"))); return; }
     if (selected.some((file) => file.size > BACKGROUND_IMAGE_MAX_BYTES)) { setImageNotice(backgroundImageErrorMessage(new BackgroundImageError("validation", "BACKGROUND_IMAGE_TOO_LARGE"))); return; }
-    try {
-      const available = Math.max(0, 10 - appearance.backgroundImages.length); const images = await Promise.all(selected.slice(0, available).map(prepareBackgroundImage)); if (!images.length) { setImageNotice("背景圖片最多可保留 10 張，請先移除不需要的圖片。"); return; } const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob))); const merged = [...appearance.backgroundImages, ...references].slice(-10); const activeIndex = Math.max(0, merged.length - references.length);
-      void Promise.all(appearance.backgroundImages.filter((reference) => !merged.includes(reference)).map(removeBackgroundImage));
-      try {
-        commit({ ...appearance, background: "image", backgroundImages: merged, backgroundActiveIndex: activeIndex, backgroundImage: merged[activeIndex] });
-      } catch (cause) {
-        throw new BackgroundImageError("appearance-save", "BACKGROUND_APPEARANCE_SAVE_FAILED", cause);
-      }
-      setImageNotice(images.some((item) => item.lowQuality) ? "已加入背景清單。原圖低於建議 2048 × 1152；過度放大或裁切後可能略為失真。" : `已加入 ${images.length} 張高畫質背景圖片。`);
-    } catch (error) {
-      if (process.env.NODE_ENV !== "production") {
-        console.error("[workspace-background]", error instanceof BackgroundImageError ? { stage: error.stage, code: error.code, cause: error.originalCause } : error);
-      }
-      setImageNotice(backgroundImageErrorMessage(error));
-    }
+    const previous = appearance;
+    const available = Math.max(0, 10 - previous.backgroundImages.length);
+    if (!available) { setImageNotice("背景圖片最多可保留 10 張，請先移除不需要的圖片。"); return; }
+    backgroundJobs.enqueue({
+      type: "appearance-upload",
+      title: `上傳 ${Math.min(selected.length, available)} 張工作區背景`,
+      operation: "上傳背景",
+      page: "/appearance",
+      persist: false,
+      execute: async ({ reportProgress }) => {
+        reportProgress(undefined, "正在處理圖片");
+        const images = await Promise.all(selected.slice(0, available).map(prepareBackgroundImage));
+        reportProgress(undefined, "正在上傳圖片");
+        const references = await Promise.all(images.map((item) => storeBackgroundImage(item.blob)));
+        const merged = [...previous.backgroundImages, ...references].slice(-10);
+        const activeIndex = Math.max(0, merged.length - references.length);
+        await Promise.all(previous.backgroundImages.filter((reference) => !merged.includes(reference)).map(removeBackgroundImage));
+        return { images, merged, activeIndex };
+      },
+      onSuccess: (result) => {
+        const value = result as { images: Awaited<ReturnType<typeof prepareBackgroundImage>>[]; merged: string[]; activeIndex: number };
+        commit({ ...previous, background: "image", backgroundImages: value.merged, backgroundActiveIndex: value.activeIndex, backgroundImage: value.merged[value.activeIndex] });
+        setImageNotice(value.images.some((item) => item.lowQuality) ? "已加入背景清單。原圖低於建議 2048 × 1152；過度放大或裁切後可能略為失真。" : `已加入 ${value.images.length} 張高畫質背景圖片。`);
+      },
+      onError: (error) => {
+        if (process.env.NODE_ENV !== "production") console.error("[workspace-background]", error);
+        setImageNotice(backgroundImageErrorMessage(error));
+      },
+    });
+    setImageNotice("背景圖片已加入背景工作，可繼續使用其他功能。");
   }
   function selectImage(index: number) { if (!getBackgroundImageUrl(appearance.backgroundImages[index])) setImageNotice("背景圖片正在載入，請稍候。 "); commit({ ...appearance, background: "image", backgroundActiveIndex: index, backgroundImage: appearance.backgroundImages[index], backgroundRotation: "manual" }); }
-  function removeImage(index: number) { const removed = appearance.backgroundImages[index]; const images = appearance.backgroundImages.filter((_, current) => current !== index); const activeIndex = Math.min(appearance.backgroundActiveIndex, Math.max(0, images.length - 1)); commit({ ...appearance, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] }); void removeBackgroundImage(removed); setImageNotice(images.length ? "背景圖片已移除。" : "已移除所有自訂背景圖片。"); }
+  function removeImage(index: number) { const removed = appearance.backgroundImages[index]; const images = appearance.backgroundImages.filter((_, current) => current !== index); const activeIndex = Math.min(appearance.backgroundActiveIndex, Math.max(0, images.length - 1)); commit({ ...appearance, backgroundImages: images, backgroundActiveIndex: activeIndex, backgroundImage: images[activeIndex] }); backgroundJobs.enqueue({ type: "appearance-upload", title: "移除工作區背景", operation: "刪除背景", page: "/appearance", execute: async ({ reportProgress }) => { reportProgress(undefined, "正在移除背景圖片"); await removeBackgroundImage(removed); }, persist: false, onError: (cause) => setImageNotice(cause.message || "背景圖片移除失敗，請稍後再試。") }); setImageNotice(images.length ? "背景圖片已移除。" : "已移除所有自訂背景圖片。"); }
   const previewImage = activeBackground(appearance);
 
   return <section aria-busy={!ready} className="appearance-workspace">

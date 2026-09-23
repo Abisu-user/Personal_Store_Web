@@ -14,8 +14,9 @@ import {
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { AppIcon } from "@/components/ui/app-icon";
 import { MobilePageHeader } from "@/components/ui/mobile-layout";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
@@ -88,6 +89,7 @@ export function PhotosWorkspace({
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
   const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
   const [overviewTab, setOverviewTab] = useState<"all" | "albums">("all");
@@ -95,7 +97,7 @@ export function PhotosWorkspace({
   const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [recentMode, setRecentMode] = useState(false);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<CollectionView>("all");
   const [category, setCategory] = useState<CollectionCategory>([]);
@@ -258,10 +260,27 @@ export function PhotosWorkspace({
       setError("請選擇 50 MB 以下的 JPG、PNG、WebP、GIF 或 AVIF 圖片。 ");
       return;
     }
-    setPending(true);
     setError(null);
-    try {
+    const metadata = {
+      title: String(form.get("title") || file.name),
+      description: String(form.get("description") || ""),
+      categoryIds: form.getAll("categoryIds").map(String),
+      folderIds: form.getAll("folderIds").map(String),
+      favorite: form.get("favorite") === "on",
+      pinned: form.get("pinned") === "on",
+      archived: form.get("archived") === "on",
+    };
+    backgroundJobs.enqueue({
+      type: "photo-upload",
+      title: "上傳照片",
+      description: file.name,
+      operation: "上傳照片",
+      page: "/photos",
+      persist: false,
+      execute: async ({ signal, reportProgress }) => {
+      reportProgress(undefined, "正在計算圖片雜湊");
       const hash = await sha256(file);
+      reportProgress(undefined, "正在準備上傳");
       const ticketResponse = await fetch("/api/photos/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -271,10 +290,12 @@ export function PhotosWorkspace({
           byteSize: file.size,
           sha256: hash,
         }),
+        signal,
       });
       const ticket = await ticketResponse.json();
       if (!ticketResponse.ok)
         throw new Error(ticket.error ?? "無法準備照片上傳。");
+      reportProgress(undefined, "正在上傳原圖");
       const { error: uploadError } = await createBrowserStorageManager()
         .uploadToSignedUrl("vault-files", ticket.storagePath, ticket.token, file, {
           contentType: file.type,
@@ -285,100 +306,91 @@ export function PhotosWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ticket: ticket.ticket,
-          title: String(form.get("title") || file.name),
-          description: String(form.get("description") || ""),
-          categoryIds: form.getAll("categoryIds").map(String),
-          folderIds: form.getAll("folderIds").map(String),
-          favorite: form.get("favorite") === "on",
-          pinned: form.get("pinned") === "on",
-          archived: form.get("archived") === "on",
+          ...metadata,
         }),
+        signal,
       });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error ?? "無法儲存照片。");
-      if (createMode) {
-        if (createFlow) { createFlow.complete(); return; }
-        router.replace("/photos");
-        router.refresh();
-      } else {
-        formElement.reset();
-        pickPreview(null);
-        await load();
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法上傳照片。");
-    } finally {
-      setPending(false);
+      reportProgress(100, "上傳完成");
+      return body;
+      },
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法上傳照片。"),
+    });
+    formElement.reset();
+    pickPreview(null);
+    if (createMode) {
+      if (createFlow) createFlow.complete();
+      else router.replace("/photos");
     }
   }
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editing) return;
     const form = new FormData(event.currentTarget);
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/photos", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    const previous = editing;
+    const body = {
           id: editing.id,
-          title: form.get("title"),
-          description: form.get("description"),
+          title: String(form.get("title") ?? "").trim(),
+          description: String(form.get("description") ?? "").trim(),
           categoryIds: form.getAll("categoryIds").map(String),
           folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
-        }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error ?? "無法儲存照片資訊。");
-      setEditing(null);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存照片資訊。");
-    } finally {
-      setPending(false);
-    }
+    };
+    const optimistic: StoredPhoto = { ...editing, title: body.title, description: body.description || null, favorite: body.favorite, pinned: body.pinned, archived: body.archived, categories: data.categories.filter((item) => body.categoryIds.includes(item.id)), category: data.categories.find((item) => body.categoryIds.includes(item.id)) ?? null, folders: data.folders.filter((item) => body.folderIds.includes(item.id)), folder: data.folders.find((item) => body.folderIds.includes(item.id)) ?? null, updatedAt: new Date().toISOString() };
+    setData((current) => ({ ...current, photos: current.photos.map((item) => item.id === editing.id ? optimistic : item) }));
+    setEditing(null);
+    backgroundJobs.enqueue({
+      type: "photo",
+      title: "更新照片資訊",
+      operation: "修改照片",
+      page: "/photos",
+      entityKey: `photo:${previous.id}`,
+      mergeKey: `photo:${previous.id}`,
+      request: { url: "/api/photos", method: "PATCH", body },
+      rollback: () => setData((current) => ({ ...current, photos: current.photos.map((item) => item.id === previous.id ? previous : item) })),
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法儲存照片資訊。"),
+    });
   }
   async function action(photo: StoredPhoto, actionName: "trash" | "restore") {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/photos", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: photo.id, action: actionName }),
-      });
-      if (!response.ok) throw new Error();
-      setSelected(null);
-      await load();
-    } catch {
-      setError("無法更新照片狀態。 ");
-    } finally {
-      setPending(false);
-    }
+    const optimistic = { ...photo, deletedAt: actionName === "trash" ? new Date().toISOString() : null };
+    setData((current) => ({ ...current, photos: current.photos.map((item) => item.id === photo.id ? optimistic : item) }));
+    setSelected(null);
+    backgroundJobs.enqueue({
+      type: "photo",
+      title: actionName === "trash" ? "刪除照片" : "還原照片",
+      operation: actionName === "trash" ? "移至垃圾桶" : "還原照片",
+      page: "/photos",
+      entityKey: `photo:${photo.id}`,
+      request: { url: "/api/photos", method: "PATCH", body: { id: photo.id, action: actionName } },
+      rollback: () => setData((current) => ({ ...current, photos: current.photos.map((item) => item.id === photo.id ? photo : item) })),
+      onSuccess: () => load(),
+      onError: () => setError("無法更新照片狀態，項目已恢復。"),
+    });
   }
   async function remove() {
     if (!deleting) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/photos", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deleting.id }),
-      });
-      if (!response.ok) throw new Error();
-      setDeleting(null);
-      setSelected(null);
-      await load();
-    } catch {
-      setError("無法永久刪除照片。 ");
-    } finally {
-      setPending(false);
-    }
+    const removed = deleting;
+    setData((current) => ({ ...current, photos: current.photos.filter((item) => item.id !== removed.id) }));
+    setDeleting(null);
+    setSelected(null);
+    backgroundJobs.enqueue({
+      type: "photo",
+      title: "永久刪除照片",
+      operation: "永久刪除",
+      page: "/photos",
+      entityKey: `photo:${removed.id}`,
+      request: { url: "/api/photos", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setData((current) => ({ ...current, photos: current.photos.some((item) => item.id === removed.id) ? current.photos : [removed, ...current.photos] })),
+      onError: () => setError("無法永久刪除照片，項目已恢復。"),
+    });
   }
   const chosenPhotos = photos.filter((photo) => chosen.has(photo.id));
   const toggleAll = () =>
@@ -389,42 +401,41 @@ export function PhotosWorkspace({
     );
   async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenPhotos.length) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/photos", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: chosenPhotos.map((photo) => photo.id),
-          action: "organize",
-          folderIds: change.folderIds,
-          categoryIds: change.categoryIds,
-          relationMode: change.mode,
-        }),
-      });
-      if (!response.ok)
-        throw new Error(
-          (await response.json().catch(() => null))?.error ?? "無法整理照片。",
-        );
-      setChosen(new Set());
-      setOrganizeOpen(false);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法整理照片。");
-    } finally {
-      setPending(false);
-    }
+    const ids = chosenPhotos.map((photo) => photo.id);
+    const previous = data.photos;
+    setChosen(new Set());
+    setOrganizeOpen(false);
+    backgroundJobs.enqueue({
+      type: "photo-batch",
+      title: `批量整理 ${ids.length} 張照片`,
+      operation: "批量整理",
+      page: "/photos",
+      request: { url: "/api/photos", method: "PATCH", body: { ids, action: "organize", folderIds: change.folderIds, categoryIds: change.categoryIds, relationMode: change.mode } },
+      rollback: () => setData((current) => ({ ...current, photos: previous })),
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法整理照片。"),
+    });
   }
   async function runBulk() {
     if (!bulkConfirm || !chosenPhotos.length) return;
     const ids = chosenPhotos.map((photo) => photo.id);
-    setPending(true);
     setError(null);
-    try {
-      const responses = await Promise.all(
+    const previous = data.photos;
+    const operation = bulkConfirm;
+    setData((current) => ({ ...current, photos: operation === "permanent" ? current.photos.filter((item) => !ids.includes(item.id)) : current.photos.map((item) => ids.includes(item.id) ? { ...item, deletedAt: operation === "trash" ? new Date().toISOString() : null } : item) }));
+    setChosen(new Set());
+    setBulkConfirm(null);
+    backgroundJobs.enqueue({
+      type: "photo-batch",
+      title: `${operation === "permanent" ? "永久刪除" : operation === "restore" ? "還原" : "刪除"} ${ids.length} 張照片`,
+      operation: operation === "permanent" ? "批量永久刪除" : operation === "restore" ? "批量還原" : "批量移至垃圾桶",
+      page: "/photos",
+      execute: async ({ reportProgress }) => {
+        reportProgress(undefined, `0 / ${ids.length}`);
+        const responses = await Promise.all(
         ids.map((id) =>
-          bulkConfirm === "permanent"
+          operation === "permanent"
             ? fetch("/api/photos", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
@@ -433,19 +444,18 @@ export function PhotosWorkspace({
             : fetch("/api/photos", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action: bulkConfirm }),
+                body: JSON.stringify({ id, action: operation }),
               }),
         ),
       );
       if (responses.some((response) => !response.ok)) throw new Error();
-      setChosen(new Set());
-      setBulkConfirm(null);
-      await load();
-    } catch {
-      setError("無法完成批量操作。請稍後再試。");
-    } finally {
-      setPending(false);
-    }
+        reportProgress(100, `${ids.length} / ${ids.length}`);
+        return { ok: true };
+      },
+      rollback: () => setData((current) => ({ ...current, photos: previous })),
+      onSuccess: () => load(),
+      onError: () => setError("無法完成批量操作，清單已恢復。"),
+    });
   }
   const form = (
     <form className="file-upload-form photo-upload-form" onSubmit={upload}>
@@ -487,7 +497,6 @@ export function PhotosWorkspace({
   if (createMode)
     return (
       <section className="files-workspace create-only">
-        {pending && <OperationStatus label="正在上傳照片…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -498,7 +507,6 @@ export function PhotosWorkspace({
     );
   return (
     <section className={`library-workspace ${mobileStyles.photosWorkspace}`}>
-      {pending && <OperationStatus label="正在處理照片…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}

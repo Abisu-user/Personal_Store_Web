@@ -18,8 +18,9 @@ import {
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import type { FilesWorkspaceData } from "@/lib/files/types";
 
 const maxFileBytes = 52_428_800;
@@ -46,9 +47,10 @@ export function FilesWorkspace({
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [view, setView] = useState<CollectionView>("all");
@@ -114,10 +116,29 @@ export function FilesWorkspace({
       setError("單一檔案上限為 50 MB。");
       return;
     }
-    setPending(true);
     setError(null);
-    try {
+    const uploadCoverSelection = cover;
+    const metadata = {
+      title: String(form.get("title") || file.name),
+      description: String(form.get("description") || ""),
+      categoryIds: form.getAll("categoryIds").map(String),
+      folderIds: form.getAll("folderIds").map(String),
+      favorite: form.get("favorite") === "on",
+      pinned: form.get("pinned") === "on",
+      archived: form.get("archived") === "on",
+      tags: [] as string[],
+    };
+    backgroundJobs.enqueue({
+      type: "file-upload",
+      title: "上傳檔案",
+      description: file.name,
+      operation: "上傳檔案",
+      page: "/files",
+      persist: false,
+      execute: async ({ signal, reportProgress }) => {
+      reportProgress(undefined, "正在計算檔案雜湊");
       const hash = await sha256(file);
+      reportProgress(undefined, "正在準備上傳");
       const ticketResponse = await fetch("/api/files/upload-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,47 +148,42 @@ export function FilesWorkspace({
           byteSize: file.size,
           sha256: hash,
         }),
+        signal,
       });
       const ticket = await ticketResponse.json();
       if (!ticketResponse.ok) throw new Error(ticket.error ?? "無法準備上傳。");
+      reportProgress(undefined, "正在上傳檔案");
       const { error: uploadError } = await createBrowserStorageManager()
         .uploadToSignedUrl("vault-files", ticket.storagePath, ticket.token, file, {
           contentType: file.type || "application/octet-stream",
         });
       if (uploadError) throw uploadError;
-      const coverTicket = await uploadCover(cover);
+      reportProgress(undefined, uploadCoverSelection ? "正在上傳封面" : "正在完成檔案資料");
+      const coverTicket = await uploadCover(uploadCoverSelection);
       const completeResponse = await fetch("/api/files", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ticket: ticket.ticket,
-          title: String(form.get("title") || file.name),
-          description: String(form.get("description") || ""),
-          categoryIds: form.getAll("categoryIds").map(String),
-          folderIds: form.getAll("folderIds").map(String),
-          favorite: form.get("favorite") === "on",
-          pinned: form.get("pinned") === "on",
-          archived: form.get("archived") === "on",
+          ...metadata,
           coverTicket,
-          tags: [],
         }),
+        signal,
       });
       const completed = await completeResponse.json();
       if (!completeResponse.ok)
         throw new Error(completed.error ?? "無法完成上傳。");
-      if (createMode) {
-        if (createFlow) { createFlow.complete(); return; }
-        router.replace("/files");
-        router.refresh();
-      } else {
-        formElement.reset();
-        setCover(null);
-        await load();
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法上傳檔案。");
-    } finally {
-      setPending(false);
+      reportProgress(100, "上傳完成");
+      return completed;
+      },
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法上傳檔案。"),
+    });
+    formElement.reset();
+    setCover(null);
+    if (createMode) {
+      if (createFlow) createFlow.complete();
+      else router.replace("/files");
     }
   }
   async function download(id: string) {
@@ -185,41 +201,41 @@ export function FilesWorkspace({
   }
   async function remove() {
     if (!deletingId) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/files", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deletingId }),
-      });
-      if (!response.ok) throw new Error();
-      setDeletingId(null);
-      setSelectedId(null);
-      await load();
-    } catch {
-      setError("無法永久刪除檔案。");
-    } finally {
-      setPending(false);
-    }
+    const removed = data.files.find((item) => item.id === deletingId);
+    if (!removed) return;
+    setData((current) => ({ ...current, files: current.files.filter((item) => item.id !== removed.id) }));
+    setDeletingId(null);
+    setSelectedId(null);
+    backgroundJobs.enqueue({
+      type: "file",
+      title: "永久刪除檔案",
+      operation: "永久刪除",
+      page: "/files",
+      entityKey: `file:${removed.id}`,
+      request: { url: "/api/files", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setData((current) => ({ ...current, files: current.files.some((item) => item.id === removed.id) ? current.files : [removed, ...current.files] })),
+      onError: () => setError("無法永久刪除檔案，項目已恢復。"),
+    });
   }
   async function action(id: string, actionName: "trash" | "restore") {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/files", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, action: actionName }),
-      });
-      if (!response.ok) throw new Error();
-      setSelectedId(null);
-      await load();
-    } catch {
-      setError("無法更新檔案狀態。");
-    } finally {
-      setPending(false);
-    }
+    const previous = data.files.find((item) => item.id === id);
+    if (!previous) return;
+    const optimistic = { ...previous, deletedAt: actionName === "trash" ? new Date().toISOString() : null };
+    setData((current) => ({ ...current, files: current.files.map((item) => item.id === id ? optimistic : item) }));
+    setSelectedId(null);
+    backgroundJobs.enqueue({
+      type: "file",
+      title: actionName === "trash" ? "刪除檔案" : "還原檔案",
+      operation: actionName === "trash" ? "移至垃圾桶" : "還原檔案",
+      page: "/files",
+      entityKey: `file:${id}`,
+      request: { url: "/api/files", method: "PATCH", body: { id, action: actionName } },
+      rollback: () => setData((current) => ({ ...current, files: current.files.map((item) => item.id === id ? previous : item) })),
+      onSuccess: () => load(),
+      onError: () => setError("無法更新檔案狀態，項目已恢復。"),
+    });
   }
   const chosenFiles = files.filter((file) => chosen.has(file.id));
   const toggleAll = () =>
@@ -230,42 +246,41 @@ export function FilesWorkspace({
     );
   async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenFiles.length) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/files", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: chosenFiles.map((file) => file.id),
-          action: "organize",
-          folderIds: change.folderIds,
-          categoryIds: change.categoryIds,
-          relationMode: change.mode,
-        }),
-      });
-      if (!response.ok)
-        throw new Error(
-          (await response.json().catch(() => null))?.error ?? "無法整理檔案。",
-        );
-      setChosen(new Set());
-      setOrganizeOpen(false);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法整理檔案。");
-    } finally {
-      setPending(false);
-    }
+    const ids = chosenFiles.map((file) => file.id);
+    const previous = data.files;
+    setChosen(new Set());
+    setOrganizeOpen(false);
+    backgroundJobs.enqueue({
+      type: "file-batch",
+      title: `批量整理 ${ids.length} 個檔案`,
+      operation: "批量整理",
+      page: "/files",
+      request: { url: "/api/files", method: "PATCH", body: { ids, action: "organize", folderIds: change.folderIds, categoryIds: change.categoryIds, relationMode: change.mode } },
+      rollback: () => setData((current) => ({ ...current, files: previous })),
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法整理檔案。"),
+    });
   }
   async function runBulk() {
     if (!bulkConfirm || !chosenFiles.length) return;
     const ids = chosenFiles.map((file) => file.id);
-    setPending(true);
     setError(null);
-    try {
-      const responses = await Promise.all(
+    const previous = data.files;
+    const operation = bulkConfirm;
+    setData((current) => ({ ...current, files: operation === "permanent" ? current.files.filter((item) => !ids.includes(item.id)) : current.files.map((item) => ids.includes(item.id) ? { ...item, deletedAt: operation === "trash" ? new Date().toISOString() : null } : item) }));
+    setChosen(new Set());
+    setBulkConfirm(null);
+    backgroundJobs.enqueue({
+      type: "file-batch",
+      title: `${operation === "permanent" ? "永久刪除" : operation === "restore" ? "還原" : "刪除"} ${ids.length} 個檔案`,
+      operation: operation === "permanent" ? "批量永久刪除" : operation === "restore" ? "批量還原" : "批量移至垃圾桶",
+      page: "/files",
+      execute: async ({ reportProgress }) => {
+        reportProgress(undefined, `0 / ${ids.length}`);
+        const responses = await Promise.all(
         ids.map((id) =>
-          bulkConfirm === "permanent"
+          operation === "permanent"
             ? fetch("/api/files", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
@@ -274,19 +289,18 @@ export function FilesWorkspace({
             : fetch("/api/files", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action: bulkConfirm }),
+                body: JSON.stringify({ id, action: operation }),
               }),
         ),
       );
       if (responses.some((response) => !response.ok)) throw new Error();
-      setChosen(new Set());
-      setBulkConfirm(null);
-      await load();
-    } catch {
-      setError("無法完成批量操作。請稍後再試。");
-    } finally {
-      setPending(false);
-    }
+        reportProgress(100, `${ids.length} / ${ids.length}`);
+        return { ok: true };
+      },
+      rollback: () => setData((current) => ({ ...current, files: previous })),
+      onSuccess: () => load(),
+      onError: () => setError("無法完成批量操作，清單已恢復。"),
+    });
   }
   const uploadForm = (
     <form className="file-upload-form" onSubmit={upload}>
@@ -332,7 +346,6 @@ export function FilesWorkspace({
   if (createMode)
     return (
       <section className="files-workspace create-only">
-        {pending && <OperationStatus label="正在處理檔案…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -344,7 +357,6 @@ export function FilesWorkspace({
   const selected = data.files.find((item) => item.id === selectedId) ?? null;
   return (
     <section className="library-workspace">
-      {pending && <OperationStatus label="正在處理檔案…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}

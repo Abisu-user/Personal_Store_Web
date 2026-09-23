@@ -14,7 +14,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { MobilePageHeader } from "@/components/ui/mobile-layout";
 import { AppIcon } from "@/components/ui/app-icon";
@@ -475,7 +475,7 @@ export function BookmarksWorkspace({
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [createCover, setCreateCover] = useState<CoverSelection>(null);
   const [createCoverTicket, setCreateCoverTicket] = useState<string | null>(null);
   const [createCoverStatus, setCreateCoverStatus] = useState<BookmarkCoverStatus>("idle");
@@ -906,18 +906,9 @@ export function BookmarksWorkspace({
     setEditCoverError(null);
   }
   async function update(id: string, action: "trash" | "restore") {
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/bookmarks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, action }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法更新網站收藏。");
-      return;
-    }
+    const previous = data.bookmarks.find((item) => item.id === id);
+    if (!previous) return;
     setData((current) => ({
       ...current,
       bookmarks: current.bookmarks.map((item) =>
@@ -931,44 +922,45 @@ export function BookmarksWorkspace({
             },
       ),
     }));
-    setSuccess(action === "trash" ? "已移至垃圾桶。" : "網站收藏已還原。");
     setConfirmation(null);
+    backgroundSave.enqueue({
+      type: "bookmark",
+      title: action === "trash" ? "刪除網站收藏" : "還原網站收藏",
+      operation: action === "trash" ? "移至垃圾桶" : "還原收藏",
+      page: "/bookmarks",
+      entityKey: `bookmark:${id}`,
+      request: { url: "/api/bookmarks", method: "PATCH", body: { id, action } },
+      rollback: () => setData((current) => ({ ...current, bookmarks: current.bookmarks.map((item) => item.id === id ? previous : item) })),
+      onSuccess: () => setSuccess(action === "trash" ? "已移至垃圾桶。" : "網站收藏已還原。"),
+      onError: () => setError("無法更新網站收藏，項目已恢復。"),
+    });
   }
   async function permanentlyRemove(id: string) {
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/bookmarks", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法永久刪除網站收藏。");
-      return;
-    }
+    const removed = data.bookmarks.find((item) => item.id === id);
+    if (!removed) return;
     setData((current) => ({
       ...current,
       bookmarks: current.bookmarks.filter((item) => item.id !== id),
     }));
-    setSuccess("網站收藏已永久刪除。");
     setConfirmation(null);
+    backgroundSave.enqueue({
+      type: "bookmark",
+      title: "永久刪除網站收藏",
+      operation: "永久刪除",
+      page: "/bookmarks",
+      entityKey: `bookmark:${id}`,
+      request: { url: "/api/bookmarks", method: "DELETE", body: { id } },
+      rollback: () => setData((current) => ({ ...current, bookmarks: current.bookmarks.some((item) => item.id === id) ? current.bookmarks : [removed, ...current.bookmarks] })),
+      onSuccess: () => setSuccess("網站收藏已永久刪除。"),
+      onError: () => setError("無法永久刪除網站收藏，項目已恢復。"),
+    });
   }
   async function trashSelected() {
     if (!selected.length) return;
     const ids = selected.map((item) => item.id);
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/bookmarks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, action: "trash" }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法批量移至垃圾桶。");
-      return;
-    }
+    const previous = data.bookmarks;
     setChosen(new Set());
     setData((current) => ({
       ...current,
@@ -978,118 +970,83 @@ export function BookmarksWorkspace({
           : item,
       ),
     }));
-    setSuccess(`已將 ${ids.length} 筆網站收藏移至垃圾桶。`);
     setConfirmation(null);
+    backgroundSave.enqueue({
+      type: "bookmark-batch",
+      title: `刪除 ${ids.length} 筆網站收藏`,
+      operation: "批量移至垃圾桶",
+      page: "/bookmarks",
+      request: { url: "/api/bookmarks", method: "PATCH", body: { ids, action: "trash" } },
+      rollback: () => setData((current) => ({ ...current, bookmarks: previous })),
+      onSuccess: () => setSuccess(`已將 ${ids.length} 筆網站收藏移至垃圾桶。`),
+      onError: () => setError("無法批量移至垃圾桶，清單已恢復。"),
+    });
   }
   async function permanentlyRemoveSelected() {
     if (!selected.length) return;
     const ids = selected.map((item) => item.id);
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/bookmarks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, action: "permanent" }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法批量永久刪除網站收藏。");
-      return;
-    }
+    const previous = data.bookmarks;
     setChosen(new Set());
     setData((current) => ({
       ...current,
       bookmarks: current.bookmarks.filter((item) => !ids.includes(item.id)),
     }));
-    setSuccess(`已永久刪除 ${ids.length} 筆網站收藏。`);
     setConfirmation(null);
+    backgroundSave.enqueue({
+      type: "bookmark-batch",
+      title: `永久刪除 ${ids.length} 筆網站收藏`,
+      operation: "批量永久刪除",
+      page: "/bookmarks",
+      request: { url: "/api/bookmarks", method: "PATCH", body: { ids, action: "permanent" } },
+      rollback: () => setData((current) => ({ ...current, bookmarks: previous })),
+      onSuccess: () => setSuccess(`已永久刪除 ${ids.length} 筆網站收藏。`),
+      onError: () => setError("無法批量永久刪除，清單已恢復。"),
+    });
   }
   async function organizeSelected(change: BulkOrganizeChange) {
     if (!selected.length) return;
     const count = selected.length;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/bookmarks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selected.map((item) => item.id), action: "organize", categoryIds: change.categoryIds, folderIds: change.folderIds, relationMode: change.mode }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error ?? "無法整理選取的網站收藏。");
-      setChosen(new Set());
-      setOrganizeOpen(false);
-      await load();
-      setSuccess(`已整理 ${count} 筆網站收藏。`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法整理選取的網站收藏。");
-    } finally { setPending(false); }
+    const ids = selected.map((item) => item.id);
+    setChosen(new Set());
+    setOrganizeOpen(false);
+    backgroundSave.enqueue({
+      type: "bookmark-batch",
+      title: `整理 ${count} 筆網站收藏`,
+      operation: "批量整理",
+      page: "/bookmarks",
+      request: { url: "/api/bookmarks", method: "PATCH", body: { ids, action: "organize", categoryIds: change.categoryIds, folderIds: change.folderIds, relationMode: change.mode } },
+      onSuccess: async () => { await load(); setSuccess(`已整理 ${count} 筆網站收藏。`); },
+      onError: (cause) => setError(cause.message || "無法整理選取的網站收藏。"),
+    });
   }
-  async function addCategory(event: FormEvent<HTMLFormElement>) {
+  function addCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newCategory.trim();
     if (!name) return;
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        kind: "category",
-        name,
-        contentKind: "bookmark",
-        folderId: activeFolderId,
-      }),
+    backgroundSave.enqueue({
+      type: "bookmark-taxonomy", title: "新增網站收藏類別", operation: "新增分類", page: "/bookmarks", persist: false,
+      request: { url: "/api/taxonomy", method: "POST", body: { kind: "category", name, contentKind: "bookmark", folderId: activeFolderId } },
+      onSuccess: (value) => { const payload = value as { item?: BookmarksWorkspaceData["categories"][number] } | null; if (payload?.item) setData((current) => ({ ...current, categories: [...current.categories, payload.item!].sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name, "zh-Hant")) })); setSuccess("類別已新增。 "); },
+      onError: (cause) => setError(cause.message || "無法新增類別，名稱可能已存在。"),
     });
-    const payload = (await response.json().catch(() => null)) as {
-      item?: BookmarksWorkspaceData["categories"][number];
-    } | null;
-    setPending(false);
-    if (!response.ok || !payload?.item) {
-      setError("無法新增類別，名稱可能已存在。");
-      return;
-    }
-    setData((current) => ({
-      ...current,
-      categories: [...current.categories, payload.item!].sort(
-        (left, right) =>
-          left.sort_order - right.sort_order ||
-          left.name.localeCompare(right.name, "zh-Hant"),
-      ),
-    }));
     setNewCategory("");
     setCategoryAddOpen(false);
-    setSuccess("類別已新增。 ");
   }
-  async function addBookmarkFolder(event: FormEvent<HTMLFormElement>) {
+  function addBookmarkFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newBookmarkFolder.trim();
     if (!name) return;
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "bookmark_folder", name }),
+    backgroundSave.enqueue({
+      type: "bookmark-taxonomy", title: "新增網站收藏資料夾", operation: "新增資料夾", page: "/bookmarks", persist: false,
+      request: { url: "/api/taxonomy", method: "POST", body: { kind: "bookmark_folder", name } },
+      onSuccess: (value) => { const payload = value as { item?: BookmarksWorkspaceData["folders"][number] } | null; if (payload?.item) setData((current) => ({ ...current, folders: [...current.folders, payload.item!].sort((left, right) => left.sort_order - right.sort_order || left.name.localeCompare(right.name, "zh-Hant")) })); setSuccess("網站收藏資料夾已新增。"); },
+      onError: (cause) => setError(cause.message || "無法新增網站收藏資料夾，名稱可能已存在。"),
     });
-    const payload = (await response.json().catch(() => null)) as {
-      item?: BookmarksWorkspaceData["folders"][number];
-    } | null;
-    setPending(false);
-    if (!response.ok || !payload?.item) {
-      setError("無法新增網站收藏資料夾，名稱可能已存在。");
-      return;
-    }
-    setData((current) => ({
-      ...current,
-      folders: [...current.folders, payload.item!].sort(
-        (left, right) =>
-          left.sort_order - right.sort_order ||
-          left.name.localeCompare(right.name, "zh-Hant"),
-      ),
-    }));
     setNewBookmarkFolder("");
-    setSuccess("網站收藏資料夾已新增。");
   }
   async function saveRename(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1108,92 +1065,63 @@ export function BookmarksWorkspace({
     }
     const name = renaming.value.trim();
     const kind = renaming.type;
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, id: renaming.id, name }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法修改資料夾。");
-      return;
-    }
+    const previous = data;
+    const renameId = renaming.id;
     setData((current) =>
       kind === "category"
         ? {
             ...current,
             categories: current.categories.map((item) =>
-              item.id === renaming.id ? { ...item, name } : item,
+              item.id === renameId ? { ...item, name } : item,
             ),
             bookmarks: current.bookmarks.map((item) => ({
               ...item,
-              categories: item.categories.map((category) => category.id === renaming.id ? { ...category, name } : category),
-              category: item.category?.id === renaming.id ? { ...item.category, name } : item.category,
+               categories: item.categories.map((category) => category.id === renameId ? { ...category, name } : category),
+               category: item.category?.id === renameId ? { ...item.category, name } : item.category,
             })),
           }
         : {
             ...current,
             folders: current.folders.map((item) =>
-              item.id === renaming.id ? { ...item, name } : item,
+              item.id === renameId ? { ...item, name } : item,
             ),
             bookmarks: current.bookmarks.map((item) => ({
               ...item,
-              folders: item.folders.map((folder) => folder.id === renaming.id ? { ...folder, name } : folder),
-              folder: item.folder?.id === renaming.id ? { ...item.folder, name } : item.folder,
+               folders: item.folders.map((folder) => folder.id === renameId ? { ...folder, name } : folder),
+               folder: item.folder?.id === renameId ? { ...item.folder, name } : item.folder,
             })),
           },
     );
     if (kind === "category")
       setManagedCategories((current) =>
         current.map((item) =>
-          item.id === renaming.id ? { ...item, name } : item,
+          item.id === renameId ? { ...item, name } : item,
         ),
       );
     else
       setManagedFolders((current) =>
         current.map((item) =>
-          item.id === renaming.id ? { ...item, name } : item,
+          item.id === renameId ? { ...item, name } : item,
         ),
       );
     setRenaming(null);
-    setSuccess("資料夾已更新。");
+    backgroundSave.enqueue({ type: "bookmark-taxonomy", title: "更新網站收藏分類", operation: "更新分類", page: "/bookmarks", entityKey: `bookmark-taxonomy:${kind}:${renameId}`, mergeKey: `bookmark-taxonomy:${kind}:${renameId}`, persist: false, request: { url: "/api/taxonomy", method: "PATCH", body: { kind, id: renameId, name } }, rollback: () => setData(previous), onSuccess: () => setSuccess("資料夾已更新。"), onError: (cause) => setError(cause.message || "無法修改資料夾。") });
   }
-  async function setBookmarkFolderVisibility(id: string, visible: boolean) {
-    setPending(true);
+  function setBookmarkFolderVisibility(id: string, visible: boolean) {
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "bookmark_folder", id, visible }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法更新網站收藏資料夾。 ");
-      return;
-    }
+    const previous = data;
     setData((current) => ({
       ...current,
       folders: current.folders.map((item) =>
         item.id === id ? { ...item, is_visible: visible } : item,
       ),
     }));
-    setSuccess(visible ? "網站收藏資料夾已顯示。" : "網站收藏資料夾已隱藏。");
+    backgroundSave.enqueue({ type: "bookmark-taxonomy", title: visible ? "顯示網站收藏資料夾" : "隱藏網站收藏資料夾", operation: "更新資料夾", page: "/bookmarks", entityKey: `bookmark-folder:${id}`, mergeKey: `bookmark-folder:${id}`, persist: false, request: { url: "/api/taxonomy", method: "PATCH", body: { kind: "bookmark_folder", id, visible } }, rollback: () => setData(previous), onSuccess: () => setSuccess(visible ? "網站收藏資料夾已顯示。" : "網站收藏資料夾已隱藏。"), onError: (cause) => setError(cause.message || "無法更新網站收藏資料夾。") });
   }
   async function deleteBookmarkFolder(id: string) {
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "bookmark_folder", id }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法刪除網站收藏資料夾。 ");
-      return;
-    }
+    const previous = data;
     setData((current) => ({
       ...current,
       folders: current.folders.filter((item) => item.id !== id),
@@ -1207,22 +1135,12 @@ export function BookmarksWorkspace({
       }),
     }));
     setFolderFilters((current) => current.filter((folderId) => folderId !== id));
-    setSuccess("網站收藏資料夾已刪除，原有網站收藏已移出資料夾。");
     setConfirmation(null);
+    backgroundSave.enqueue({ type: "bookmark-taxonomy", title: "刪除網站收藏資料夾", operation: "刪除資料夾", page: "/bookmarks", entityKey: `bookmark-folder:${id}`, request: { url: "/api/taxonomy", method: "DELETE", body: { kind: "bookmark_folder", id } }, persist: false, rollback: () => setData(previous), onSuccess: () => setSuccess("網站收藏資料夾已刪除，原有網站收藏已移出資料夾。"), onError: (cause) => setError(cause.message || "無法刪除網站收藏資料夾。") });
   }
   async function deleteCategory(id: string) {
-    setPending(true);
     setError(null);
-    const response = await fetch("/api/taxonomy", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "category", id }),
-    });
-    setPending(false);
-    if (!response.ok) {
-      setError("無法刪除資料夾。");
-      return;
-    }
+    const previous = data;
     saveQuickFolders(quickFolderIds.filter((current) => current !== id));
     setData((current) => ({
       ...current,
@@ -1237,10 +1155,8 @@ export function BookmarksWorkspace({
       }),
     }));
     setCategory((current) => current.filter((categoryId) => categoryId !== id));
-    setSuccess("資料夾已刪除，原有網站收藏已改為未分類。");
     setConfirmation(null);
-    await load();
-    router.refresh();
+    backgroundSave.enqueue({ type: "bookmark-taxonomy", title: "刪除網站收藏類別", operation: "刪除分類", page: "/bookmarks", entityKey: `bookmark-category:${id}`, request: { url: "/api/taxonomy", method: "DELETE", body: { kind: "category", id } }, persist: false, rollback: () => setData(previous), onSuccess: () => setSuccess("資料夾已刪除，原有網站收藏已改為未分類。"), onError: (cause) => setError(cause.message || "無法刪除資料夾。") });
   }
   function openManager(kind: "category" | "folder") {
     setError(null);
@@ -1277,7 +1193,7 @@ export function BookmarksWorkspace({
     if (kind === "category") setManagedCategories(move);
     else setManagedFolders(move);
   }
-  async function commitManager(kind: "category" | "bookmark_folder") {
+  function commitManager(kind: "category" | "bookmark_folder") {
     if (kind === "category") {
       const source = scopedCategories;
       const draft = managedCategories;
@@ -1289,9 +1205,16 @@ export function BookmarksWorkspace({
         setCategoryManagerOpen(false);
         return;
       }
-      setPending(true);
       setError(null);
-      try {
+      const previous = data;
+      const removedIds = [...removedCategoryIds];
+      setData((current) => ({ ...current, categories: [...current.categories.filter((item) => (item.folder_id ?? null) !== activeFolderId), ...draft.map((item, sort_order) => ({ ...item, sort_order }))] }));
+      setCategory((current) => current.filter((categoryId) => !removedIds.includes(categoryId)));
+      setCategoryManagerOpen(false);
+      setDragging(null);
+      backgroundSave.enqueue({
+        type: "bookmark-taxonomy", title: "整理網站收藏類別", operation: "批量整理", page: "/bookmarks", persist: false,
+        execute: async ({ signal }) => {
         for (const [sortOrder, item] of draft.entries()) {
           if (
             source.findIndex((candidate) => candidate.id === item.id) !==
@@ -1305,39 +1228,24 @@ export function BookmarksWorkspace({
                 id: item.id,
                 sortOrder,
                 contentKind: "bookmark",
-              }),
+              }), signal,
             });
             if (!response.ok) throw new Error("無法更新排序。");
           }
         }
-        for (const id of removedCategoryIds) {
+        for (const id of removedIds) {
           const response = await fetch("/api/taxonomy", {
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind, id, contentKind: "bookmark" }),
+            body: JSON.stringify({ kind, id, contentKind: "bookmark" }), signal,
           });
           if (!response.ok) throw new Error("無法移除項目。");
         }
-        setData((current) => ({
-          ...current,
-          categories: [
-            ...current.categories.filter(
-              (item) => (item.folder_id ?? null) !== activeFolderId,
-            ),
-            ...draft.map((item, sort_order) => ({ ...item, sort_order })),
-          ],
-        }));
-        setCategory((current) =>
-          current.filter((categoryId) => !removedCategoryIds.includes(categoryId)),
-        );
-        setCategoryManagerOpen(false);
-        setSuccess("整理結果已儲存。 ");
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "無法儲存整理結果。");
-      } finally {
-        setPending(false);
-        setDragging(null);
-      }
+        },
+        rollback: () => setData(previous),
+        onSuccess: () => setSuccess("整理結果已儲存。 "),
+        onError: (cause) => setError(cause.message || "無法儲存整理結果。"),
+      });
       return;
     }
     const source = data.folders;
@@ -1350,9 +1258,15 @@ export function BookmarksWorkspace({
       setFolderManagerOpen(false);
       return;
     }
-    setPending(true);
     setError(null);
-    try {
+    const previous = data;
+    const removedIds = [...removedFolderIds];
+    setData((current) => ({ ...current, folders: draft.map((item, sort_order) => ({ ...item, sort_order })), bookmarks: current.bookmarks.map((item) => { const folders = item.folders.filter((folder) => !removedIds.includes(folder.id)); return { ...item, folders, folder: item.folder && removedIds.includes(item.folder.id) ? (folders[0] ?? null) : item.folder }; }) }));
+    setFolderManagerOpen(false);
+    setDragging(null);
+    backgroundSave.enqueue({
+      type: "bookmark-taxonomy", title: "整理網站收藏資料夾", operation: "批量整理", page: "/bookmarks", persist: false,
+      execute: async ({ signal }) => {
       for (const [sortOrder, item] of draft.entries()) {
         if (
           source.findIndex((candidate) => candidate.id === item.id) !==
@@ -1361,35 +1275,24 @@ export function BookmarksWorkspace({
           const response = await fetch("/api/taxonomy", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ kind, id: item.id, sortOrder }),
+            body: JSON.stringify({ kind, id: item.id, sortOrder }), signal,
           });
           if (!response.ok) throw new Error("無法更新排序。");
         }
       }
-      for (const id of removedFolderIds) {
+      for (const id of removedIds) {
         const response = await fetch("/api/taxonomy", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kind, id }),
+          body: JSON.stringify({ kind, id }), signal,
         });
         if (!response.ok) throw new Error("無法移除項目。");
       }
-      setData((current) => ({
-        ...current,
-        folders: draft.map((item, sort_order) => ({ ...item, sort_order })),
-        bookmarks: current.bookmarks.map((item) => {
-          const folders = item.folders.filter((folder) => !removedFolderIds.includes(folder.id));
-          return { ...item, folders, folder: item.folder && removedFolderIds.includes(item.folder.id) ? (folders[0] ?? null) : item.folder };
-        }),
-      }));
-      setFolderManagerOpen(false);
-      setSuccess("整理結果已儲存。 ");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存整理結果。");
-    } finally {
-      setPending(false);
-      setDragging(null);
-    }
+      },
+      rollback: () => setData(previous),
+      onSuccess: () => setSuccess("整理結果已儲存。 "),
+      onError: (cause) => setError(cause.message || "無法儲存整理結果。"),
+    });
   }
   function beginLongPress(
     kind: "category" | "folder",
@@ -1596,7 +1499,6 @@ export function BookmarksWorkspace({
   if (createMode)
     return (
       <section className="bookmarks-workspace create-only">
-        {pending && <OperationStatus label="正在更新網站收藏設定…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -1932,17 +1834,10 @@ export function BookmarksWorkspace({
     });
   };
   const saveShortcuts = async () => {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/bookmarks/shortcuts", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderedIds: shortcutDraftIds }),
-      });
-      const body = await response.json().catch(() => null) as { error?: string } | null;
-      if (!response.ok) throw new Error(body?.error ?? "目前無法儲存常用網站。");
-      const orderById = new Map(shortcutDraftIds.map((id, index) => [id, index]));
+    const previous = data.bookmarks;
+    const orderedIds = [...shortcutDraftIds];
+    const orderById = new Map(orderedIds.map((id, index) => [id, index]));
       setData((current) => ({
         ...current,
         bookmarks: current.bookmarks.map((bookmark) => ({
@@ -1950,13 +1845,18 @@ export function BookmarksWorkspace({
           shortcutOrder: orderById.get(bookmark.id) ?? null,
         })),
       }));
-      setShortcutManagerOpen(false);
-      setSuccess("常用網站已更新。");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "目前無法儲存常用網站。");
-    } finally {
-      setPending(false);
-    }
+    setShortcutManagerOpen(false);
+    backgroundSave.enqueue({
+      type: "bookmark-shortcuts",
+      title: "更新常用網站",
+      operation: "更新捷徑排序",
+      page: "/bookmarks",
+      mergeKey: "bookmark-shortcuts",
+      request: { url: "/api/bookmarks/shortcuts", method: "PUT", body: { orderedIds } },
+      rollback: () => setData((current) => ({ ...current, bookmarks: previous })),
+      onSuccess: () => setSuccess("常用網站已更新。"),
+      onError: (cause) => setError(cause.message || "目前無法儲存常用網站。"),
+    });
   };
   const recordOpen = async (id: string) => {
     const openedAt = new Date().toISOString();
@@ -1999,7 +1899,6 @@ export function BookmarksWorkspace({
   };
   return (
     <section className="bookmarks-workspace">
-      {pending && <OperationStatus label="正在處理網站收藏資料…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}

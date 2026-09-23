@@ -10,6 +10,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import mobileStyles from "@/components/vault/vault-mobile.module.css";
 
 type VaultStatus = { initialized: boolean; salt?: string; wrappedVaultKey?: string; wrappedKeyNonce?: string; kdfParameters?: { algorithm: "PBKDF2"; hash: "SHA-256"; iterations: number; keyLength: 256 } };
@@ -48,6 +49,7 @@ function VaultGate({ creating, error, pending, onSubmit }: { creating: boolean; 
 }
 
 export function VaultWorkspace() {
+  const backgroundJobs = useBackgroundSave();
   const [status, setStatus] = useState<VaultStatus | null>(null); const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null); const [items, setItems] = useState<PlainItem[]>([]); const [categories, setCategories] = useState<VaultCategory[]>([]); const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(() => new Set()); const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(() => new Set()); const [selectionMode, setSelectionMode] = useState(false); const [batchMoveOpen, setBatchMoveOpen] = useState(false); const [batchDeleteOpen, setBatchDeleteOpen] = useState(false); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [pending, setPending] = useState(false); const [deleting, setDeleting] = useState<PlainItem | null>(null); const [editing, setEditing] = useState<PlainItem | null>(null); const [itemDialogOpen, setItemDialogOpen] = useState(false); const [menuItemId, setMenuItemId] = useState<string | null>(null); const [query, setQuery] = useState(""); const [categoryFilters, setCategoryFilters] = useState<string[]>([]); const [categoryMoreOpen, setCategoryMoreOpen] = useState(false); const [categoryAddOpen, setCategoryAddOpen] = useState(false); const [categoryName, setCategoryName] = useState(""); const [categoryManagerOpen, setCategoryManagerOpen] = useState(false); const [categoryDraft, setCategoryDraft] = useState<VaultCategory[]>([]); const [deletingCategory, setDeletingCategory] = useState<VaultCategory | null>(null); const [reassignCategoryId, setReassignCategoryId] = useState<string>("unclassified"); const activityTimer = useRef<number | null>(null);
   const lock = useCallback(() => { setVaultKey(null); setItems([]); setCategories([]); setVisibleItemIds(new Set()); setSelectedItemIds(new Set()); setSelectionMode(false); setItemDialogOpen(false); setMenuItemId(null); setError(null); setNotice(null); }, []);
   const fetchStatus = useCallback(async () => { const response = await fetch("/api/vault", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取保管庫。"); return data as VaultStatus; }, []);
@@ -61,17 +63,105 @@ export function VaultWorkspace() {
   async function unlock(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!status?.initialized || !status.salt || !status.wrappedVaultKey || !status.wrappedKeyNonce || !status.kdfParameters) return; const password = String(new FormData(event.currentTarget).get("password") ?? ""); setPending(true); setError(null); try { const wrappingKey = await deriveKey(password, fromBase64(status.salt), status.kdfParameters.iterations); const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(status.wrappedKeyNonce), additionalData: encoder.encode("personal-vault-key:v1") }, wrappingKey, fromBase64(status.wrappedVaultKey)); const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]); await Promise.all([decryptItems(key), loadCategories()]); setVaultKey(key); } catch { setError("Vault 密碼錯誤，或加密資料無法驗證。"); } finally { setPending(false); } }
   useEffect(() => { const open = () => { if (vaultKey) { setEditing(null); setItemDialogOpen(true); } else setError("請先解鎖保管庫，再新增項目。"); }; window.addEventListener("personal-vault:new-item", open); return () => window.removeEventListener("personal-vault:new-item", open); }, [vaultKey]);
   function closeItemDialog() { if (!pending) { setItemDialogOpen(false); setEditing(null); } }
-  async function saveItem(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!vaultKey) return; const form = new FormData(event.currentTarget); const id = editing?.id ?? crypto.randomUUID(); const aad = { entryId: id, version: 1 as const }; const value = { label: String(form.get("label") ?? "").trim(), username: String(form.get("username") ?? "").trim(), secret: String(form.get("secret") ?? ""), notes: String(form.get("notes") ?? "").trim() }; const categoryIds = form.getAll("categoryIds").map(String); if (!value.label || !value.secret) { setError("請填寫項目名稱與敏感內容。"); return; } setPending(true); setError(null); try { const nonce = randomBytes(12); const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: encoder.encode(JSON.stringify(aad)) }, vaultKey, encoder.encode(JSON.stringify(value))); const response = await fetch("/api/vault/items", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ciphertext: toBase64(ciphertext), nonce: toBase64(nonce), aad, categoryIds }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法儲存項目。"); await Promise.all([decryptItems(vaultKey), loadCategories()]); setMenuItemId(null); setItemDialogOpen(false); setEditing(null); setNotice(editing ? "已重新加密並更新保管項目。" : "已加密儲存保管項目。"); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存項目。"); } finally { setPending(false); } }
+  async function saveItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!vaultKey) return;
+    const form = new FormData(event.currentTarget);
+    const previous = editing;
+    const id = previous?.id ?? crypto.randomUUID();
+    const aad = { entryId: id, version: 1 as const };
+    const value = { label: String(form.get("label") ?? "").trim(), username: String(form.get("username") ?? "").trim(), secret: String(form.get("secret") ?? ""), notes: String(form.get("notes") ?? "").trim() };
+    const categoryIds = form.getAll("categoryIds").map(String);
+    if (!value.label || !value.secret) { setError("請填寫項目名稱與敏感內容。"); return; }
+    const optimistic: PlainItem = { id, ...value, categoryId: categoryIds[0] ?? null, categoryIds };
+    setError(null);
+    setItems((current) => previous ? current.map((item) => item.id === id ? optimistic : item) : [optimistic, ...current]);
+    setMenuItemId(null);
+    setItemDialogOpen(false);
+    setEditing(null);
+    backgroundJobs.enqueue({
+      type: "vault",
+      title: previous ? "更新私密項目" : "新增私密項目",
+      description: "內容已加密，不會顯示於工作紀錄",
+      operation: previous ? "更新加密資料" : "新增加密資料",
+      page: "/vault",
+      entityKey: `vault:${id}`,
+      mergeKey: previous ? `vault:${id}` : undefined,
+      persist: false,
+      sensitive: true,
+      execute: async ({ signal }) => {
+        const nonce = randomBytes(12);
+        const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: encoder.encode(JSON.stringify(aad)) }, vaultKey, encoder.encode(JSON.stringify(value)));
+        const response = await fetch("/api/vault/items", { method: previous ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ciphertext: toBase64(ciphertext), nonce: toBase64(nonce), aad, categoryIds }), signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "無法儲存項目。");
+        return data;
+      },
+      rollback: () => setItems((current) => previous ? current.map((item) => item.id === id ? previous : item) : current.filter((item) => item.id !== id)),
+      onSuccess: async () => { await loadCategories(); setNotice(previous ? "已重新加密並更新保管項目。" : "已加密儲存保管項目。"); },
+      onError: (cause) => setError(cause.message || "無法儲存項目。"),
+    });
+  }
   async function copySecret(item: PlainItem) { try { await navigator.clipboard.writeText(item.secret); setNotice(`已複製「${item.label}」的敏感內容。`); } catch { setError("無法複製敏感內容，請確認瀏覽器允許剪貼簿權限。"); } }
-  async function remove() { if (!deleting) return; setPending(true); setError(null); try { const response = await fetch("/api/vault/items", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deleting.id }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法刪除項目。"); setDeleting(null); setMenuItemId(null); setItems((current) => current.filter((item) => item.id !== deleting.id)); await loadCategories(); setNotice("已刪除保管庫項目。"); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法刪除項目。"); } finally { setPending(false); } }
+  async function remove() {
+    if (!deleting) return;
+    const removed = deleting;
+    setError(null);
+    setItems((current) => current.filter((item) => item.id !== removed.id));
+    setDeleting(null);
+    setMenuItemId(null);
+    backgroundJobs.enqueue({
+      type: "vault",
+      title: "刪除私密項目",
+      description: "不顯示私密內容",
+      operation: "刪除加密資料",
+      page: "/vault",
+      entityKey: `vault:${removed.id}`,
+      sensitive: true,
+      request: { url: "/api/vault/items", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setItems((current) => current.some((item) => item.id === removed.id) ? current : [removed, ...current]),
+      onSuccess: async () => { await loadCategories(); setNotice("已刪除保管庫項目。"); },
+      onError: (cause) => setError(cause.message || "無法刪除項目，項目已恢復。"),
+    });
+  }
   function toggleItemSelection(id: string) { setSelectedItemIds((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }); }
   function closeSelectionMode() { setSelectionMode(false); setSelectedItemIds(new Set()); setBatchMoveOpen(false); setBatchDeleteOpen(false); }
-  async function runBatch(action: "organize" | "delete", change?: BulkOrganizeChange) { const ids = [...selectedItemIds]; if (!ids.length) return; setPending(true); setError(null); try { const response = await fetch("/api/vault/items/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action === "organize" ? { action, ids, categoryIds: change?.categoryIds ?? [], relationMode: change?.mode ?? "add" } : { action, ids }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法批量更新項目。"); const affected = new Set<string>(data.affectedIds ?? []); if (action === "organize") { if (vaultKey) await decryptItems(vaultKey); setNotice(`已整理 ${affected.size} 筆保管資料的分類。`); } else { setItems((current) => current.filter((item) => !affected.has(item.id))); setNotice(`已刪除 ${affected.size} 筆保管資料。`); } await loadCategories(); closeSelectionMode(); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法批量更新項目。"); } finally { setPending(false); } }
-  async function addCategory(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!categoryName.trim()) return; setPending(true); setError(null); try { const response = await fetch("/api/vault/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: categoryName.trim() }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法新增分類。"); await loadCategories(); setCategoryName(""); setCategoryAddOpen(false); setNotice("已新增保管庫分類。"); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法新增分類。"); } finally { setPending(false); } }
+  async function runBatch(action: "organize" | "delete", change?: BulkOrganizeChange) {
+    const ids = [...selectedItemIds];
+    if (!ids.length) return;
+    const previous = items;
+    setError(null);
+    if (action === "delete") setItems((current) => current.filter((item) => !ids.includes(item.id)));
+    closeSelectionMode();
+    backgroundJobs.enqueue({
+      type: "vault-batch",
+      title: action === "delete" ? `刪除 ${ids.length} 筆私密項目` : `整理 ${ids.length} 筆私密項目`,
+      description: "不顯示私密內容",
+      operation: action === "delete" ? "批量刪除" : "批量整理",
+      page: "/vault",
+      sensitive: true,
+      execute: async ({ signal, reportProgress }) => {
+        reportProgress(undefined, `正在處理 ${ids.length} 筆`);
+        const response = await fetch("/api/vault/items/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(action === "organize" ? { action, ids, categoryIds: change?.categoryIds ?? [], relationMode: change?.mode ?? "add" } : { action, ids }), signal });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error ?? "無法批量更新項目。");
+        return data;
+      },
+      rollback: () => setItems(previous),
+      onSuccess: async (result) => {
+        const affected = new Set<string>((result as { affectedIds?: string[] }).affectedIds ?? []);
+        if (action === "organize" && vaultKey) await decryptItems(vaultKey);
+        await loadCategories();
+        setNotice(action === "organize" ? `已整理 ${affected.size} 筆保管資料的分類。` : `已刪除 ${affected.size} 筆保管資料。`);
+      },
+      onError: (cause) => setError(cause.message || "無法批量更新項目。"),
+    });
+  }
+  function addCategory(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const name = categoryName.trim(); if (!name) return; setError(null); backgroundJobs.enqueue({ type: "vault-taxonomy", title: "新增保管庫分類", operation: "新增分類", page: "/vault", sensitive: true, request: { url: "/api/vault/categories", method: "POST", body: { name } }, persist: false, onSuccess: async () => { await loadCategories(); setNotice("已新增保管庫分類。"); }, onError: (cause) => setError(cause.message || "無法新增分類。") }); setCategoryName(""); setCategoryAddOpen(false); }
   function openManager() { setError(null); setCategoryDraft(categories.map((category) => ({ ...category }))); setCategoryManagerOpen(true); }
   function moveCategory(id: string, direction: -1 | 1) { setCategoryDraft((current) => { const index = current.findIndex((category) => category.id === id); const target = index + direction; if (index < 0 || target < 0 || target >= current.length) return current; const next = [...current]; [next[index], next[target]] = [next[target], next[index]]; return next; }); }
-  async function saveCategoryManager() { const changed = categoryDraft.some((category, index) => { const original = categories.find((value) => value.id === category.id); return !original || original.name !== category.name.trim() || original.sortOrder !== index; }); if (!changed) { setCategoryManagerOpen(false); return; } setPending(true); setError(null); try { for (const [sortOrder, category] of categoryDraft.entries()) { const original = categories.find((value) => value.id === category.id); if (!original || original.name !== category.name.trim() || original.sortOrder !== sortOrder) { const response = await fetch("/api/vault/categories", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: category.id, name: category.name.trim(), sortOrder }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法儲存分類。"); } } await loadCategories(); setCategoryManagerOpen(false); setNotice("已儲存分類整理。"); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存分類整理。"); } finally { setPending(false); } }
-  async function removeCategory() { if (!deletingCategory) return; setPending(true); setError(null); try { const response = await fetch("/api/vault/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: deletingCategory.id, reassignToId: reassignCategoryId === "unclassified" ? null : reassignCategoryId }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法刪除分類。"); await Promise.all([loadCategories(), vaultKey ? decryptItems(vaultKey) : Promise.resolve()]); setCategoryDraft((current) => current.filter((category) => category.id !== deletingCategory.id)); setCategoryFilters((current) => current.filter((id) => id !== deletingCategory.id)); setDeletingCategory(null); setNotice(data.reassignedCount ? `已刪除分類，並重新整理 ${data.reassignedCount} 筆項目。` : "已刪除分類。"); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法刪除分類。"); } finally { setPending(false); } }
+  function saveCategoryManager() { const changed = categoryDraft.some((category, index) => { const original = categories.find((value) => value.id === category.id); return !original || original.name !== category.name.trim() || original.sortOrder !== index; }); if (!changed) { setCategoryManagerOpen(false); return; } const previous = categories; const draft = categoryDraft.map((category, sortOrder) => ({ ...category, name: category.name.trim(), sortOrder })); setCategories(draft); setCategoryManagerOpen(false); setError(null); backgroundJobs.enqueue({ type: "vault-taxonomy", title: "整理保管庫分類", operation: "更新分類", page: "/vault", sensitive: true, persist: false, execute: async ({ signal }) => { for (const category of draft) { const original = previous.find((value) => value.id === category.id); if (!original || original.name !== category.name || original.sortOrder !== category.sortOrder) { const response = await fetch("/api/vault/categories", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: category.id, name: category.name, sortOrder: category.sortOrder }), signal }); const result = await response.json().catch(() => null); if (!response.ok) throw new Error(result?.error ?? "無法儲存分類。"); } } }, rollback: () => setCategories(previous), onSuccess: async () => { await loadCategories(); setNotice("已儲存分類整理。"); }, onError: (cause) => setError(cause.message || "無法儲存分類整理。") }); }
+  function removeCategory() { if (!deletingCategory) return; const removed = deletingCategory; const previous = categories; const reassignToId = reassignCategoryId === "unclassified" ? null : reassignCategoryId; setCategories((current) => current.filter((category) => category.id !== removed.id)); setCategoryDraft((current) => current.filter((category) => category.id !== removed.id)); setCategoryFilters((current) => current.filter((id) => id !== removed.id)); setDeletingCategory(null); setError(null); backgroundJobs.enqueue({ type: "vault-taxonomy", title: "刪除保管庫分類", operation: "刪除分類", page: "/vault", sensitive: true, request: { url: "/api/vault/categories", method: "DELETE", body: { id: removed.id, reassignToId } }, persist: false, rollback: () => setCategories(previous), onSuccess: async (value) => { const result = value as { reassignedCount?: number } | null; await Promise.all([loadCategories(), vaultKey ? decryptItems(vaultKey) : Promise.resolve()]); setNotice(result?.reassignedCount ? `已刪除分類，並重新整理 ${result.reassignedCount} 筆項目。` : "已刪除分類。"); }, onError: (cause) => setError(cause.message || "無法刪除分類。") }); }
   const filteredItems = items.filter((item) => `${item.label} ${item.username} ${item.notes}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()) && (!categoryFilters.length || (categoryFilters.includes("unclassified") ? item.categoryIds.length === 0 : item.categoryIds.some((id) => categoryFilters.includes(id)))));
   const categoryLabel = (categoryIds: string[]) => categoryIds.map((id) => categories.find((category) => category.id === id)?.name).filter(Boolean).join(" · ") || "未分類";
   const selectCategoryFilter = (next: string | "all" | "unclassified") => setCategoryFilters((current) => next === "all" ? [] : next === "unclassified" ? (current.includes(next) ? [] : [next]) : current.includes(next) ? current.filter((id) => id !== next) : [...current.filter((id) => id !== "unclassified"), next]);

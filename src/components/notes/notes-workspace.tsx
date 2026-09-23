@@ -18,8 +18,9 @@ import {
 } from "@/components/content/cover-image-field";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
-import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
 
@@ -74,13 +75,14 @@ export function NotesWorkspace({
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
   const [view, setView] = useState<CollectionView>("all");
   const [category, setCategory] = useState<CollectionCategory>([]);
   const [folderIds, setFolderIds] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [selected, setSelected] = useState<Note | null>(null);
   const [editing, setEditing] = useState<Note | null>(null);
   const [confirm, setConfirm] = useState<{
@@ -135,86 +137,113 @@ export function NotesWorkspace({
   );
   async function save(event: FormEvent<HTMLFormElement>, note?: Note) {
     event.preventDefault();
-    setPending(true);
     setError(null);
-    try {
-      const form = new FormData(event.currentTarget);
-      const coverTicket = await uploadCover(cover);
-      const body = {
-        ...(note ? { id: note.id } : {}),
-        title: form.get("title"),
-        description: form.get("description"),
-        content: form.get("content"),
-        categoryIds: form.getAll("categoryIds").map(String),
-        folderIds: form.getAll("folderIds").map(String),
-        favorite: form.get("favorite") === "on",
-        pinned: form.get("pinned") === "on",
-        archived: form.get("archived") === "on",
-        coverTicket,
-        tags: [] as string[],
+    const form = new FormData(event.currentTarget);
+    const selectedCover = cover;
+    const categoryIds = form.getAll("categoryIds").map(String);
+    const selectedFolderIds = form.getAll("folderIds").map(String);
+    const body = {
+      ...(note ? { id: note.id } : {}),
+      title: String(form.get("title") ?? "").trim(),
+      description: String(form.get("description") ?? "").trim(),
+      content: String(form.get("content") ?? ""),
+      categoryIds,
+      folderIds: selectedFolderIds,
+      favorite: form.get("favorite") === "on",
+      pinned: form.get("pinned") === "on",
+      archived: form.get("archived") === "on",
+      tags: [] as string[],
+    };
+    if (note) {
+      const optimistic: Note = {
+        ...note,
+        title: body.title,
+        description: body.description || null,
+        content: body.content,
+        favorite: body.favorite,
+        pinned: body.pinned,
+        archived: body.archived,
+        categories: data.categories.filter((item) => categoryIds.includes(item.id)),
+        category: data.categories.find((item) => categoryIds.includes(item.id)) ?? null,
+        folders: data.folders.filter((item) => selectedFolderIds.includes(item.id)),
+        folder: data.folders.find((item) => selectedFolderIds.includes(item.id)) ?? null,
+        updatedAt: new Date().toISOString(),
       };
-      const response = await fetch("/api/notes", {
-        method: note ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok)
-        throw new Error(
-          (await response.json().catch(() => null))?.error ?? "無法儲存筆記。",
-        );
-      if (!note && createMode) {
-        if (createFlow) { createFlow.complete(); return; }
-        router.replace("/notes");
-        router.refresh();
-        return;
-      }
-      setEditing(null);
-      setSelected(null);
-      setCover(null);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存筆記。");
-    } finally {
-      setPending(false);
+      setData((current) => ({ ...current, notes: current.notes.map((item) => item.id === note.id ? optimistic : item) }));
+    }
+    backgroundJobs.enqueue({
+      type: "note",
+      title: note ? "更新筆記" : "新增筆記",
+      operation: note ? "修改筆記" : "新增筆記",
+      page: "/notes",
+      entityKey: note ? `note:${note.id}` : undefined,
+      mergeKey: note ? `note:${note.id}` : undefined,
+      persist: false,
+      execute: async ({ signal, reportProgress }) => {
+        let coverTicket: string | null = null;
+        if (selectedCover) {
+          reportProgress(undefined, "正在上傳封面");
+          coverTicket = await uploadCover(selectedCover);
+        }
+        reportProgress(undefined, "正在儲存筆記");
+        const response = await fetch("/api/notes", {
+          method: note ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...body, coverTicket }),
+          signal,
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error ?? "無法儲存筆記。");
+        return payload;
+      },
+      rollback: () => {
+        if (note) setData((current) => ({ ...current, notes: current.notes.map((item) => item.id === note.id ? note : item) }));
+      },
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法儲存筆記。"),
+    });
+    setEditing(null);
+    setSelected(null);
+    setCover(null);
+    if (!note && createMode) {
+      if (createFlow) createFlow.complete();
+      else router.replace("/notes");
     }
   }
   async function action(note: Note, actionName: "trash" | "restore") {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/notes", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: note.id, action: actionName }),
-      });
-      if (!response.ok) throw new Error();
-      setSelected(null);
-      await load();
-    } catch {
-      setError("無法更新筆記狀態。");
-    } finally {
-      setPending(false);
-    }
+    const changed = { ...note, deletedAt: actionName === "trash" ? new Date().toISOString() : null };
+    setData((current) => ({ ...current, notes: current.notes.map((item) => item.id === note.id ? changed : item) }));
+    setSelected(null);
+    backgroundJobs.enqueue({
+      type: "note",
+      title: actionName === "trash" ? "刪除筆記" : "還原筆記",
+      operation: actionName === "trash" ? "移至垃圾桶" : "還原筆記",
+      page: "/notes",
+      entityKey: `note:${note.id}`,
+      request: { url: "/api/notes", method: "PATCH", body: { id: note.id, action: actionName } },
+      rollback: () => setData((current) => ({ ...current, notes: current.notes.map((item) => item.id === note.id ? note : item) })),
+      onSuccess: () => load(),
+      onError: () => setError("無法更新筆記狀態。"),
+    });
   }
   async function remove() {
     if (!confirm) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/notes", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: confirm.note.id }),
-      });
-      if (!response.ok) throw new Error();
-      setConfirm(null);
-      setSelected(null);
-      await load();
-    } catch {
-      setError("無法永久刪除筆記。");
-    } finally {
-      setPending(false);
-    }
+    const removed = confirm.note;
+    setData((current) => ({ ...current, notes: current.notes.filter((item) => item.id !== removed.id) }));
+    setConfirm(null);
+    setSelected(null);
+    backgroundJobs.enqueue({
+      type: "note",
+      title: "永久刪除筆記",
+      operation: "永久刪除",
+      page: "/notes",
+      entityKey: `note:${removed.id}`,
+      request: { url: "/api/notes", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setData((current) => ({ ...current, notes: current.notes.some((item) => item.id === removed.id) ? current.notes : [removed, ...current.notes] })),
+      onError: () => setError("無法永久刪除筆記，項目已恢復。"),
+    });
   }
   const chosenNotes = notes.filter((note) => chosen.has(note.id));
   const toggleAll = () =>
@@ -224,44 +253,56 @@ export function NotesWorkspace({
         : new Set(notes.map((note) => note.id)),
     );
   async function organizeSelection(change: BulkOrganizeChange) {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/notes", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: chosenNotes.map((note) => note.id),
-          action: "organize",
-          folderIds: change.folderIds,
-          categoryIds: change.categoryIds,
-          relationMode: change.mode,
-        }),
-      });
-      if (!response.ok)
-        throw new Error((await response.json().catch(() => null))?.error);
-      setChosen(new Set());
-      setOrganizeOpen(false);
-      await load();
-    } catch (cause) {
-      setError(
-        cause instanceof Error && cause.message
-          ? cause.message
-          : "無法移動選取的筆記。",
-      );
-    } finally {
-      setPending(false);
-    }
+    const ids = chosenNotes.map((note) => note.id);
+    const previous = data.notes;
+    const merge = <T extends { id: string }>(current: T[], selectedIds: string[], all: T[]) =>
+      change.mode === "replace" ? all.filter((item) => selectedIds.includes(item.id)) :
+      change.mode === "remove" ? current.filter((item) => !selectedIds.includes(item.id)) :
+      [...current, ...all.filter((item) => selectedIds.includes(item.id) && !current.some((existing) => existing.id === item.id))];
+    setData((current) => ({ ...current, notes: current.notes.map((item) => !ids.includes(item.id) ? item : {
+      ...item,
+      folders: merge(item.folders, change.folderIds, current.folders),
+      categories: merge(item.categories, change.categoryIds, current.categories),
+    }) }));
+    setChosen(new Set());
+    setOrganizeOpen(false);
+    backgroundJobs.enqueue({
+      type: "note-batch",
+      title: `批量整理 ${ids.length} 筆筆記`,
+      operation: "批量整理",
+      page: "/notes",
+      execute: async ({ signal, reportProgress }) => {
+        reportProgress(undefined, `正在整理 ${ids.length} 筆`);
+        const response = await fetch("/api/notes", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids, action: "organize", folderIds: change.folderIds, categoryIds: change.categoryIds, relationMode: change.mode }), signal });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error || "無法移動選取的筆記。");
+        return payload;
+      },
+      rollback: () => setData((current) => ({ ...current, notes: previous })),
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法移動選取的筆記。"),
+    });
   }
   async function runBulk() {
     if (!bulkConfirm || !chosenNotes.length) return;
     const ids = chosenNotes.map((note) => note.id);
-    setPending(true);
     setError(null);
-    try {
-      const responses = await Promise.all(
+    const previous = data.notes;
+    setData((current) => ({ ...current, notes: bulkConfirm === "permanent" ? current.notes.filter((item) => !ids.includes(item.id)) : current.notes.map((item) => ids.includes(item.id) ? { ...item, deletedAt: bulkConfirm === "trash" ? new Date().toISOString() : null } : item) }));
+    const operation = bulkConfirm;
+    setChosen(new Set());
+    setBulkConfirm(null);
+    backgroundJobs.enqueue({
+      type: "note-batch",
+      title: `${operation === "permanent" ? "永久刪除" : operation === "restore" ? "還原" : "刪除"} ${ids.length} 筆筆記`,
+      operation: operation === "permanent" ? "批量永久刪除" : operation === "restore" ? "批量還原" : "批量移至垃圾桶",
+      page: "/notes",
+      execute: async ({ reportProgress }) => {
+        reportProgress(undefined, `0 / ${ids.length}`);
+        const responses = await Promise.all(
         ids.map((id) =>
-          bulkConfirm === "permanent"
+          operation === "permanent"
             ? fetch("/api/notes", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
@@ -270,19 +311,18 @@ export function NotesWorkspace({
             : fetch("/api/notes", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action: bulkConfirm }),
+                body: JSON.stringify({ id, action: operation }),
               }),
         ),
       );
       if (responses.some((response) => !response.ok)) throw new Error();
-      setChosen(new Set());
-      setBulkConfirm(null);
-      await load();
-    } catch {
-      setError("無法完成批量操作。請稍後再試。");
-    } finally {
-      setPending(false);
-    }
+        reportProgress(100, `${ids.length} / ${ids.length}`);
+        return { ok: true };
+      },
+      rollback: () => setData((current) => ({ ...current, notes: previous })),
+      onSuccess: () => load(),
+      onError: () => setError("無法完成批量操作，清單已恢復。"),
+    });
   }
   const editor = (note?: Note) => (
     <form className="note-editor" onSubmit={(event) => void save(event, note)}>
@@ -330,7 +370,6 @@ export function NotesWorkspace({
   if (createMode)
     return (
       <section className="notes-workspace create-only">
-        {pending && <OperationStatus label="正在儲存筆記…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -341,7 +380,6 @@ export function NotesWorkspace({
     );
   return (
     <section className={`library-workspace ${mobileStyles.libraryWorkspace}`}>
-      {pending && <OperationStatus label="正在處理筆記…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}

@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { CalendarEvent, CalendarWorkspaceData } from "@/lib/calendar/types";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import mobileStyles from "@/components/calendar/calendar-mobile.module.css";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 
 const colors = ["indigo", "blue", "green", "amber", "rose"] as const;
 type Color = (typeof colors)[number];
@@ -19,13 +20,13 @@ function makeDraft(day = new Date()): Draft { const start = new Date(day); start
 function toDraft(event: CalendarEvent): Draft { return { title: event.title, description: event.description ?? "", startsAt: toInputValue(event.startsAt), endsAt: event.endsAt ? toInputValue(event.endsAt) : "", color: event.color }; }
 
 export function CalendarWorkspace({ initialData }: { initialData: CalendarWorkspaceData }) {
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(() => makeDraft());
   const [editorOpen, setEditorOpen] = useState(false);
-  const [pending, setPending] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -60,34 +61,27 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
     window.addEventListener("personal-vault:new-item", open);
     return () => window.removeEventListener("personal-vault:new-item", open);
   });
-  async function save(formEvent: FormEvent<HTMLFormElement>) {
-    formEvent.preventDefault(); setPending(true); setNotice(null);
+  function save(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault(); setNotice(null);
     const payload = { ...draft, startsAt: new Date(draft.startsAt).toISOString(), endsAt: draft.endsAt ? new Date(draft.endsAt).toISOString() : null };
-    try {
-      const response = await fetch("/api/calendar", { method: selectedId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(selectedId ? { ...payload, id: selectedId } : payload) });
-      const responseData = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(responseData?.error ?? "無法儲存行程。");
-      await load(); setNotice(selectedId ? "行程已更新。" : "行程已新增。");
-      setEditorOpen(false);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "無法儲存行程。"); }
-    finally { setPending(false); }
+    const id = selectedId;
+    backgroundJobs.enqueue({ type: "calendar", title: id ? "更新行程" : "新增行程", operation: id ? "修改行程" : "新增行程", page: "/calendar", entityKey: id ? `calendar:${id}` : undefined, mergeKey: id ? `calendar:${id}` : undefined, request: { url: "/api/calendar", method: id ? "PATCH" : "POST", body: id ? { ...payload, id } : payload }, persist: false, onSuccess: async () => { await load(); setNotice(id ? "行程已更新。" : "行程已新增。"); }, onError: (error) => setNotice(error.message || "無法儲存行程。") });
+    setEditorOpen(false);
   }
 
-  async function remove() {
+  function remove() {
     if (!selectedId) return;
-    setPending(true); setNotice(null);
-    try {
-      const response = await fetch("/api/calendar", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: selectedId }) });
-      const responseData = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(responseData?.error ?? "無法刪除行程。");
-      await load(); setEditorOpen(false); startNew(); setNotice("行程已刪除。");
-    } catch (error) { setNotice(error instanceof Error ? error.message : "無法刪除行程。"); }
-    finally { setPending(false); }
+    const id = selectedId;
+    const previous = data;
+    setNotice(null);
+    setData((current) => ({ ...current, events: current.events.filter((event) => event.id !== id) }));
+    backgroundJobs.enqueue({ type: "calendar", title: "刪除行程", operation: "刪除行程", page: "/calendar", entityKey: `calendar:${id}`, request: { url: "/api/calendar", method: "DELETE", body: { id } }, persist: false, rollback: () => setData(previous), onSuccess: () => setNotice("行程已刪除。"), onError: (error) => setNotice(error.message || "無法刪除行程。") });
+    setEditorOpen(false); startNew();
   }
 
   return <section className={`calendar-workspace ${mobileStyles.calendarWorkspace}`}>
     {notice && <p className="notice" role="status">{notice}</p>}
     <section className="calendar-panel"><div className="calendar-toolbar"><div><p className="eyebrow">PRIVATE CALENDAR</p><h2>{monthLabel}</h2></div><div className="calendar-nav"><button aria-label="上個月" className="secondary-button" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1))} type="button">‹</button><button className="secondary-button" onClick={() => setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))} type="button">今天</button><button aria-label="下個月" className="secondary-button" onClick={() => setMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1))} type="button">›</button></div></div><div className="calendar-weekdays">{["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-grid">{days.map((day) => { const key = dateKey(day); const events = eventsByDay.get(key) ?? []; const inMonth = day.getMonth() === month.getMonth(); const isSelected = key === selectedDay; const isToday = key === dateKey(new Date()); return <button className={`calendar-day${inMonth ? "" : " outside"}${isSelected ? " selected" : ""}${isToday ? " today" : ""}`} key={key} onClick={() => { setSelectedDay(key); startNew(key); }} type="button"><span>{day.getDate()}</span><div>{events.slice(0, 3).map((event) => <i className={`calendar-dot ${event.color}`} key={event.id} title={event.title} />)}{events.length > 3 && <small>+{events.length - 3}</small>}</div></button>; })}</div></section>
-    <aside className="calendar-side"><section className="calendar-day-events"><div className="notes-list-header"><div><p className="eyebrow">SELECTED DAY</p><h2>{dateLabel(selectedDay)}</h2></div><button className="button compact" onClick={() => { startNew(); setEditorOpen(true); }} type="button">＋ 新行程</button></div><div className="calendar-event-list">{selectedEvents.map((event) => <button className={event.id === selectedId ? "calendar-event active" : "calendar-event"} key={event.id} onClick={() => selectEvent(event)} type="button"><i className={`calendar-dot ${event.color}`} /><span><strong>{event.title}</strong><small>{timeLabel(event.startsAt)}{event.endsAt ? ` — ${timeLabel(event.endsAt)}` : ""}</small></span></button>)}{selectedEvents.length === 0 && <p className="lead">這一天還沒有行程。</p>}</div></section><CreateItemModal open={editorOpen} pending={pending} title={selectedId ? "編輯行程" : "新增行程"} onClose={() => setEditorOpen(false)}><form className="calendar-form" onSubmit={save}>{notice && <p role="alert" className="notice">{notice}</p>}<div className="note-editor-heading"><div><p className="eyebrow">{selectedId ? "EDIT EVENT" : "CREATE EVENT"}</p><h2>{selectedId ? "編輯行程" : "新增行程"}</h2></div></div><input aria-label="行程標題" maxLength={300} onChange={(event) => update("title", event.target.value)} placeholder="行程標題" required value={draft.title} /><textarea aria-label="行程說明" maxLength={2000} onChange={(event) => update("description", event.target.value)} placeholder="說明（避免放入密碼、API Key 等敏感資料）" rows={3} value={draft.description} /><label>開始時間<input aria-label="開始時間" onChange={(event) => update("startsAt", event.target.value)} required type="datetime-local" value={draft.startsAt} /></label><label>結束時間（選填）<input aria-label="結束時間" min={draft.startsAt} onChange={(event) => update("endsAt", event.target.value)} type="datetime-local" value={draft.endsAt} /></label><fieldset><legend>顏色</legend><div className="calendar-colors">{colors.map((color) => <button aria-label={`選擇${color}色`} aria-pressed={draft.color === color} className={`color-choice ${color}${draft.color === color ? " active" : ""}`} key={color} onClick={() => update("color", color)} type="button" />)}</div></fieldset><CreateFormActions pending={pending} label={selectedId ? "儲存修改" : "新增行程"} pendingLabel="儲存中…" /><div className="note-editor-actions">{selectedId && <button className="delete-button" disabled={pending} onClick={() => setConfirmDelete(true)} type="button">刪除行程</button>}</div></form></CreateItemModal><ConfirmDialog description="這個行程將永久刪除，無法還原。" error={notice?.includes("無法") ? notice : null} onCancel={() => setConfirmDelete(false)} onConfirm={() => { void remove(); }} open={confirmDelete} pending={pending} title="刪除行程？" /></aside>
+    <aside className="calendar-side"><section className="calendar-day-events"><div className="notes-list-header"><div><p className="eyebrow">SELECTED DAY</p><h2>{dateLabel(selectedDay)}</h2></div><button className="button compact" onClick={() => { startNew(); setEditorOpen(true); }} type="button">＋ 新行程</button></div><div className="calendar-event-list">{selectedEvents.map((event) => <button className={event.id === selectedId ? "calendar-event active" : "calendar-event"} key={event.id} onClick={() => selectEvent(event)} type="button"><i className={`calendar-dot ${event.color}`} /><span><strong>{event.title}</strong><small>{timeLabel(event.startsAt)}{event.endsAt ? ` — ${timeLabel(event.endsAt)}` : ""}</small></span></button>)}{selectedEvents.length === 0 && <p className="lead">這一天還沒有行程。</p>}</div></section><CreateItemModal open={editorOpen} pending={false} title={selectedId ? "編輯行程" : "新增行程"} onClose={() => setEditorOpen(false)}><form className="calendar-form" onSubmit={save}>{notice && <p role="alert" className="notice">{notice}</p>}<div className="note-editor-heading"><div><p className="eyebrow">{selectedId ? "EDIT EVENT" : "CREATE EVENT"}</p><h2>{selectedId ? "編輯行程" : "新增行程"}</h2></div></div><input aria-label="行程標題" maxLength={300} onChange={(event) => update("title", event.target.value)} placeholder="行程標題" required value={draft.title} /><textarea aria-label="行程說明" maxLength={2000} onChange={(event) => update("description", event.target.value)} placeholder="說明（避免放入密碼、API Key 等敏感資料）" rows={3} value={draft.description} /><label>開始時間<input aria-label="開始時間" onChange={(event) => update("startsAt", event.target.value)} required type="datetime-local" value={draft.startsAt} /></label><label>結束時間（選填）<input aria-label="結束時間" min={draft.startsAt} onChange={(event) => update("endsAt", event.target.value)} type="datetime-local" value={draft.endsAt} /></label><fieldset><legend>顏色</legend><div className="calendar-colors">{colors.map((color) => <button aria-label={`選擇${color}色`} aria-pressed={draft.color === color} className={`color-choice ${color}${draft.color === color ? " active" : ""}`} key={color} onClick={() => update("color", color)} type="button" />)}</div></fieldset><CreateFormActions pending={false} label={selectedId ? "儲存修改" : "新增行程"} pendingLabel="儲存中…" /><div className="note-editor-actions">{selectedId && <button className="delete-button" onClick={() => setConfirmDelete(true)} type="button">刪除行程</button>}</div></form></CreateItemModal><ConfirmDialog description="這個行程將永久刪除，無法還原。" error={notice?.includes("無法") ? notice : null} onCancel={() => setConfirmDelete(false)} onConfirm={remove} open={confirmDelete} pending={false} title="刪除行程？" /></aside>
   </section>;
 }

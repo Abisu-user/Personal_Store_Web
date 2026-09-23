@@ -8,7 +8,7 @@ export type BackgroundSaveStatus =
 
 export type BackgroundSaveRequest = {
   url: string;
-  method: "POST" | "PATCH" | "PUT";
+  method: "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   headers?: Record<string, string>;
 };

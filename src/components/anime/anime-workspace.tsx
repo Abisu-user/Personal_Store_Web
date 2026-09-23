@@ -199,12 +199,13 @@ function AnimeFolderNavigation({
   trashCount?: number;
   trashSelected?: boolean;
 }) {
+  const backgroundJobs = useBackgroundSave();
   const [adding, setAdding] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [error, setError] = useState<string | null>(null);
   const [draftFolders, setDraftFolders] = useState<AnimeWorkspaceData["folders"]>([]);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
@@ -224,26 +225,26 @@ function AnimeFolderNavigation({
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!name.trim()) return;
-    setPending(true);
     setError(null);
-    try {
-      const result = await api<{
-        folder: AnimeWorkspaceData["folders"][number];
-      }>("/api/anime/folders", {
-        method: "POST",
-        body: JSON.stringify({ name: name.trim(), scope }),
-      });
-      onFoldersChange(sortedFolders([...folders, result.folder]));
-      // A new folder becomes the current context straight away. This also
-      // ensures the one selected chip is the folder, not the prior status.
-      onChange([result.folder.id]);
-      setName("");
-      setAdding(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法新增資料夾。");
-    } finally {
-      setPending(false);
-    }
+    const optimistic = { id: `optimistic-${crypto.randomUUID()}`, name: name.trim(), scope, sortOrder: folders.length, isVisible: true };
+    onFoldersChange(sortedFolders([...folders, optimistic]));
+    onChange([optimistic.id]);
+    setName("");
+    setAdding(false);
+    backgroundJobs.enqueue({
+      type: "anime-folder",
+      title: scope === "adult" ? "新增成人動漫資料夾" : "新增動漫資料夾",
+      operation: "新增資料夾",
+      page: "/anime",
+      request: { url: "/api/anime/folders", method: "POST", body: { name: optimistic.name, scope } },
+      rollback: () => { onFoldersChange(folders); onChange([]); },
+      onSuccess: (result) => {
+        const folder = (result as { folder: AnimeWorkspaceData["folders"][number] }).folder;
+        onFoldersChange(sortedFolders([...folders, folder]));
+        onChange([folder.id]);
+      },
+      onError: (cause) => setError(cause.message || "無法新增資料夾。"),
+    });
   };
   const updateDraftName = () => {
     if (!rename?.value.trim()) return;
@@ -276,9 +277,17 @@ function AnimeFolderNavigation({
     const original = sortedFolders(folders);
     const changed = original.length !== draftFolders.length || original.some((folder, index) => folder.id !== draftFolders[index]?.id || folder.name !== draftFolders[index]?.name) || removedIds.length > 0;
     if (!changed) { setManaging(false); return; }
-    setPending(true);
     setError(null);
-    try {
+    const nextFolders = draftFolders.map((folder, sortOrder) => ({ ...folder, sortOrder }));
+    if (removedIds.some((id) => selectedIds.includes(id))) onChange(selectedIds.filter((id) => !removedIds.includes(id)));
+    onFoldersChange(nextFolders);
+    setManaging(false);
+    backgroundJobs.enqueue({
+      type: "anime-folder",
+      title: scope === "adult" ? "整理成人動漫資料夾" : "整理動漫資料夾",
+      operation: "更新資料夾",
+      page: "/anime",
+      execute: async () => {
       for (const [sortOrder, folder] of draftFolders.entries()) {
         const previous = original.find((item) => item.id === folder.id);
         if (!previous || previous.name !== folder.name || previous.sortOrder !== sortOrder) {
@@ -286,14 +295,11 @@ function AnimeFolderNavigation({
         }
       }
       for (const id of removedIds) await api("/api/anime/folders", { method: "DELETE", body: JSON.stringify({ id }) });
-      if (removedIds.some((id) => selectedIds.includes(id))) onChange(selectedIds.filter((id) => !removedIds.includes(id)));
-      onFoldersChange(draftFolders.map((folder, sortOrder) => ({ ...folder, sortOrder })));
-      setManaging(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存資料夾整理結果。");
-    } finally {
-      setPending(false);
-    }
+        return { ok: true };
+      },
+      rollback: () => onFoldersChange(original),
+      onError: (cause) => setError(cause.message || "無法儲存資料夾整理結果，排序已恢復。"),
+    });
   };
   return (
     <section
@@ -455,12 +461,13 @@ function AnimeCategoryManager({
   scope: CategoryScope;
   tags: AnimeTag[];
 }) {
+  const backgroundJobs = useBackgroundSave();
   const initialTags = tags.filter((tag) => tag.folderId === folderId).sort((left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "zh-TW"));
   const [draftTags, setDraftTags] = useState<AnimeTag[]>(initialTags);
   const [removedIds, setRemovedIds] = useState<string[]>([]);
   const [rename, setRename] = useState<{ id: string; value: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [error, setError] = useState<string | null>(null);
   const longPressTimer = useRef<number | null>(null);
   const inFolder = initialTags;
@@ -495,9 +502,14 @@ function AnimeCategoryManager({
   const commit = async () => {
     const changed = inFolder.length !== draftTags.length || inFolder.some((tag, index) => tag.id !== draftTags[index]?.id || tag.name !== draftTags[index]?.name) || removedIds.length > 0;
     if (!changed) { onClose(); return; }
-    setPending(true);
     setError(null);
-    try {
+    onClose();
+    backgroundJobs.enqueue({
+      type: "anime-category",
+      title: scope === "adult" ? "整理成人動漫類別" : "整理動漫類別",
+      operation: "更新類別",
+      page: "/anime",
+      execute: async () => {
       for (const [sortOrder, tag] of draftTags.entries()) {
         const previous = inFolder.find((item) => item.id === tag.id);
         if (!previous || previous.name !== tag.name || previous.sortOrder !== sortOrder) {
@@ -505,13 +517,11 @@ function AnimeCategoryManager({
         }
       }
       for (const id of removedIds) await api("/api/anime/tags", { method: "DELETE", body: JSON.stringify({ id }) });
-      onChange([...tags.filter((tag) => tag.folderId !== folderId), ...draftTags.map((tag, sortOrder) => ({ ...tag, sortOrder }))], removedIds);
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存類別整理結果。");
-    } finally {
-      setPending(false);
-    }
+        return { ok: true };
+      },
+      onSuccess: () => onChange([...tags.filter((tag) => tag.folderId !== folderId), ...draftTags.map((tag, sortOrder) => ({ ...tag, sortOrder }))], removedIds),
+      onError: (cause) => setError(cause.message || "無法儲存類別整理結果。"),
+    });
   };
   return <>
     <ModalDialog className="mobile-sheet-dialog" onClose={() => void commit()} open={open} pending={pending} title={scope === "adult" ? "修改成人動漫類別" : "修改動漫類別"}>
@@ -551,17 +561,20 @@ function AnimeCollectionList({
   scope: CategoryScope;
   trashed?: boolean;
 }) {
+  const backgroundJobs = useBackgroundSave();
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [organizeOpen, setOrganizeOpen] = useState(false);
   const [folderIds, setFolderIds] = useState<string[]>([]);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [confirmPermanent, setConfirmPermanent] = useState(false);
-  const [pending, setPending] = useState(false);
+  const pending = false;
+  const [hiddenIds, setHiddenIds] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const visibleItems = items.filter((item) => !hiddenIds.includes(item.id));
   const selected = new Set(selectedIds);
-  const allSelected = items.length > 0 && selectedIds.length === items.length;
+  const allSelected = visibleItems.length > 0 && selectedIds.length === visibleItems.length;
   useEffect(() => {
     if (!onGridColumnsChange || !gridRef.current) return;
     const grid = gridRef.current;
@@ -591,34 +604,40 @@ function AnimeCollectionList({
     action: "trash" | "restore" | "permanent" | "organize",
   ) => {
     if (!selectedIds.length) return;
-    setPending(true);
     setMessage(null);
-    try {
-      await api("/api/anime/library", {
+    const ids = [...selectedIds];
+    if (action !== "organize") setHiddenIds((current) => [...new Set([...current, ...ids])]);
+    setSelectedIds([]);
+    setSelecting(false);
+    setOrganizeOpen(false);
+    setConfirmPermanent(false);
+    backgroundJobs.enqueue({
+      type: adult ? "anime-adult-batch" : "anime-batch",
+      title: `${action === "organize" ? "批量整理" : action === "restore" ? "批量還原" : action === "permanent" ? "批量永久刪除" : "批量刪除"} ${ids.length} 筆動漫`,
+      operation: action === "organize" ? "批量整理" : action === "restore" ? "批量還原" : action === "permanent" ? "批量永久刪除" : "批量移至垃圾桶",
+      page: "/anime",
+      request: {
+        url: "/api/anime/library",
         method: "PATCH",
-        body: JSON.stringify({
+        body: {
           action,
-          ids: selectedIds,
+          ids,
           scope,
           ...(action === "organize"
             ? { folderIds, categoryIds }
             : {}),
-        }),
-      });
-      await onMutated();
-      setSelectedIds([]);
-      setSelecting(false);
-      setOrganizeOpen(false);
-      setConfirmPermanent(false);
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "無法完成批量操作。");
-    } finally {
-      setPending(false);
-    }
+        },
+      },
+      rollback: () => setHiddenIds((current) => current.filter((id) => !ids.includes(id))),
+      onSuccess: () => {
+        setHiddenIds((current) => current.filter((id) => !ids.includes(id)));
+        void onMutated().catch((cause) => setMessage(cause instanceof Error ? cause.message : "背景同步完成，但重新整理清單失敗。"));
+      },
+      onError: (cause) => setMessage(cause.message || "無法完成批量操作。"),
+    });
   };
   return (
     <>
-      {pending && <OperationStatus label="正在處理選取的動漫…" />}
       <div className="anime-bulk-toolbar">
         {!selecting && <button
           className="secondary-button compact"
@@ -631,7 +650,7 @@ function AnimeCollectionList({
           選取
         </button>}
         {selecting && (
-          <label><input checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : items.map((anime) => anime.id))} type="checkbox" />全選目前清單</label>
+          <label><input checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : visibleItems.map((anime) => anime.id))} type="checkbox" />全選目前清單</label>
         )}
       </div>
       <BatchActionBar count={selectedIds.length} onCancel={() => { setSelectedIds([]); setSelecting(false); }}>
@@ -645,7 +664,7 @@ function AnimeCollectionList({
       </BatchActionBar>
       {message && <p className="notice error">{message}</p>}
       <div className="anime-grid" ref={gridRef}>
-        {items.map((anime) => (
+        {visibleItems.map((anime) => (
           <article
             className={`anime-card${adult ? " anime-adult-card" : ""}`}
             key={anime.id}
@@ -761,6 +780,7 @@ export function AnimeWorkspace({
   initialData?: AnimeWorkspaceData;
   initialAdultOpen?: boolean;
 }) {
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData ?? empty);
   const hasAdultAccess = data.adultPermissions?.adultContentAccess === true;
   const initialAdultHandled = useRef(false);
@@ -1068,35 +1088,37 @@ export function AnimeWorkspace({
   const createCategory = async (scope: CategoryScope) => {
     const name = categoryName.trim();
     if (!name) return;
-    setPending("category");
-    try {
-      const folderId = scope === "adult" ? (adultFolderFilters[0] ?? null) : (folderFilters[0] ?? null);
-      const answer = await api<{ tag: AnimeTag }>("/api/anime/tags", {
-        method: "POST",
-        body: JSON.stringify({ name, scope, folderId }),
-      });
-      const putTag = (current: AnimeWorkspaceData) =>
-        current.tags.some((category) => category.id === answer.tag.id)
+    const folderId = scope === "adult" ? (adultFolderFilters[0] ?? null) : (folderFilters[0] ?? null);
+    const optimistic: AnimeTag = { id: `optimistic-${crypto.randomUUID()}`, name, color: null, folderId, sortOrder: scope === "adult" ? (adultData?.tags.length ?? 0) : data.tags.length };
+    const putTag = (tag: AnimeTag) => (current: AnimeWorkspaceData) =>
+        current.tags.some((category) => category.id === tag.id)
           ? current
           : {
               ...current,
-              tags: [...current.tags, answer.tag].sort((a, b) =>
+              tags: [...current.tags, tag].sort((a, b) =>
                 a.folderId === b.folderId
                   ? a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "zh-TW")
                   : (a.folderId ?? "").localeCompare(b.folderId ?? ""),
               ),
             };
-      if (scope === "adult")
-        setAdultData((current) => (current ? putTag(current) : current));
-      else setData(putTag);
-      setCategoryName("");
-      setCategoryAddOpen(false);
-      setNotice("已新增類別。");
-    } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "無法新增類別。");
-    } finally {
-      setPending(null);
-    }
+    if (scope === "adult") setAdultData((current) => current ? putTag(optimistic)(current) : current);
+    else setData(putTag(optimistic));
+    setCategoryName("");
+    setCategoryAddOpen(false);
+    backgroundJobs.enqueue({
+      type: "anime-category",
+      title: scope === "adult" ? "新增成人動漫類別" : "新增動漫類別",
+      operation: "新增類別",
+      page: "/anime",
+      request: { url: "/api/anime/tags", method: "POST", body: { name, scope, folderId } },
+      rollback: () => replaceScopeTags(scope, (tags) => tags.filter((tag) => tag.id !== optimistic.id)),
+      onSuccess: (result) => {
+        const tag = (result as { tag: AnimeTag }).tag;
+        replaceScopeTags(scope, (tags) => tags.map((item) => item.id === optimistic.id ? tag : item));
+        setNotice("已新增類別。");
+      },
+      onError: (cause) => setNotice(cause.message || "無法新增類別。"),
+    });
   };
   const replaceScopeTags = (
     scope: CategoryScope,
@@ -1112,37 +1134,25 @@ export function AnimeWorkspace({
   };
   const remove = async () => {
     if (!removing) return;
-    setPending("remove");
-    try {
-      await api("/api/anime/library", {
-        method: "DELETE",
-        body: JSON.stringify({ id: removing.id }),
-      });
-      if (removing.isAdult)
-        setAdultData((current) =>
-          current
-            ? {
-                ...current,
-                library: current.library.filter(
-                  (anime) => anime.id !== removing.id,
-                ),
-              }
-            : current,
-        );
-      else
-        setData((current) => ({
-          ...current,
-          library: current.library.filter((anime) => anime.id !== removing.id),
-        }));
-      await refreshTrash(removing.isAdult ? "adult" : "standard");
-      setSelected(null);
-      setRemoving(null);
-      setNotice("已移至垃圾桶。");
-    } catch (cause) {
-      setNotice(cause instanceof Error ? cause.message : "無法移除動漫。");
-    } finally {
-      setPending(null);
-    }
+    const removed = removing;
+    if (removed.isAdult) setAdultData((current) => current ? { ...current, library: current.library.filter((anime) => anime.id !== removed.id) } : current);
+    else setData((current) => ({ ...current, library: current.library.filter((anime) => anime.id !== removed.id) }));
+    setSelected(null);
+    setRemoving(null);
+    backgroundJobs.enqueue({
+      type: removed.isAdult ? "anime-adult" : "anime",
+      title: removed.isAdult ? "刪除成人作品" : "刪除動漫",
+      operation: "移至垃圾桶",
+      page: "/anime",
+      entityKey: `anime:${removed.id}`,
+      request: { url: "/api/anime/library", method: "DELETE", body: { id: removed.id } },
+      rollback: () => {
+        if (removed.isAdult) setAdultData((current) => current ? { ...current, library: current.library.some((anime) => anime.id === removed.id) ? current.library : [removed, ...current.library] } : current);
+        else setData((current) => ({ ...current, library: current.library.some((anime) => anime.id === removed.id) ? current.library : [removed, ...current.library] }));
+      },
+      onSuccess: () => { setNotice("已移至垃圾桶。"); void refreshTrash(removed.isAdult ? "adult" : "standard").catch(() => undefined); },
+      onError: (cause) => setNotice(cause.message || "無法移除動漫，項目已恢復。"),
+    });
   };
   const standardScopedTags = data.tags.filter(
     (item) => !folderFilters.length || item.folderId === null || (item.folderId !== null && folderFilters.includes(item.folderId)),
@@ -1154,15 +1164,7 @@ export function AnimeWorkspace({
     <section className="anime-workspace">
       {pending && (
         <OperationStatus
-          label={
-            pending === "category"
-              ? "正在新增類別…"
-              : pending === "adult-access"
-                ? "正在驗證成人內容存取權…"
-                : pending === "adult-settings"
-                  ? "正在儲存成人內容設定…"
-                  : "正在儲存動漫資料…"
-          }
+          label={pending === "adult-access" ? "正在驗證成人內容存取權…" : "正在更新成人內容安全設定…"}
         />
       )}
       <div className="anime-mobile-heading">
@@ -1903,16 +1905,9 @@ export function AnimeWorkspace({
           onClose={() => setAdding(false)}
           onSaved={async () => {
             setAdding(false);
-            setPending("refresh");
-            try {
-              if (tab === "adult") await refreshAdult();
-              else {
-                await refresh();
-              }
-              setNotice(tab === "adult" ? "已新增成人作品。" : "已新增動漫。");
-            } finally {
-              setPending(null);
-            }
+            if (tab === "adult") await refreshAdult();
+            else await refresh();
+            setNotice(tab === "adult" ? "已新增成人作品。" : "已新增動漫。");
           }}
         />
       )}
@@ -1925,13 +1920,8 @@ export function AnimeWorkspace({
           onClose={() => setPrefill(null)}
           onSaved={async () => {
             setPrefill(null);
-            setPending("refresh");
-            try {
-              await refresh();
-              setNotice("已新增動漫。");
-            } finally {
-              setPending(null);
-            }
+            await refresh();
+            setNotice("已新增動漫。");
           }}
         />
       )}
@@ -1983,18 +1973,13 @@ export function AnimeWorkspace({
           }}
           onSaved={async () => {
             const wasAdult = editing.isAdult;
-            setPending("refresh");
-            try {
-              if (wasAdult) {
-                await refreshAdult();
-                setAdultView("library");
-                setTab("adult");
-              } else await refresh();
-              setEditing(null);
-              setNotice("已儲存動漫資料。");
-            } finally {
-              setPending(null);
-            }
+            if (wasAdult) {
+              await refreshAdult();
+              setAdultView("library");
+              setTab("adult");
+            } else await refresh();
+            setEditing(null);
+            setNotice("已儲存動漫資料。");
           }}
         />
       )}
@@ -2670,7 +2655,7 @@ function AnimeEditor({
             coverTicket = await uploadCover(selectedCover);
             if (!coverTicket) throw new Error("封面上傳沒有回傳有效結果，請重試。");
           }
-          reportProgress(undefined, "正在儲存動漫資料");
+          reportProgress(undefined, "正在同步動漫資料");
           return api("/api/anime/library", { method: anime ? "PATCH" : "POST", body: JSON.stringify({ ...body, coverTicket }), signal });
         },
       });

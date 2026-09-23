@@ -270,18 +270,20 @@ export function applyAppearance(appearance: Appearance) {
   root.style.setProperty("--startup-canvas", root.dataset.theme === "dark" ? "#172137" : normalized.canvasColor);
   try { window.localStorage.setItem(`${appearanceBootstrapStoragePrefix}:${getAppearanceDevice()}`, JSON.stringify(normalized)); } catch { /* The live appearance is still applied when storage is unavailable. */ }
 }
-export function saveAppearance(appearance: Appearance) {
+export function saveAppearance(appearance: Appearance, options: { sync?: boolean } = {}) {
   const normalized = normalizeAppearance(appearance);
   applyAppearance(normalized);
   const key = getAppearanceStorageKey();
   if (key) {
     window.localStorage.setItem(key, JSON.stringify(normalized));
     persistAppearanceBackup(normalized);
-    window.clearTimeout(syncTimer);
-    syncTimer = window.setTimeout(async () => {
-      const response = await fetch("/api/appearance", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device: getAppearanceDevice(), appearance: normalized }) }).catch(() => null);
-      window.dispatchEvent(new CustomEvent(response?.ok ? "personal-vault:appearance-synced" : "personal-vault:appearance-sync-error"));
-    }, 350);
+    if (options.sync !== false) {
+      window.clearTimeout(syncTimer);
+      syncTimer = window.setTimeout(async () => {
+        const response = await fetch("/api/appearance", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ device: getAppearanceDevice(), appearance: normalized }) }).catch(() => null);
+        window.dispatchEvent(new CustomEvent(response?.ok ? "personal-vault:appearance-synced" : "personal-vault:appearance-sync-error"));
+      }, 350);
+    }
   }
   window.dispatchEvent(new Event("personal-vault:appearance"));
 }

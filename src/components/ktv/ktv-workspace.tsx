@@ -8,6 +8,7 @@ import { ModalDialog } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { AppIcon } from "@/components/ui/app-icon";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import type { KtvCategory, KtvSong, KtvWorkspaceData } from "@/lib/ktv/types";
 import styles from "./ktv.module.css";
 
@@ -16,18 +17,6 @@ type SortKey = "songNumber" | "title" | "artist";
 type DuplicateState = { song: KtvSong; draft: Draft } | null;
 
 const emptyDraft = (): Draft => ({ id: null, songNumber: "", title: "", artist: "", categoryId: null });
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  const body = await response.json().catch(() => ({})) as { error?: string } & T;
-  if (!response.ok) {
-    const error = new Error(body.error || "操作未完成，請稍後再試。") as Error & { status?: number; payload?: T };
-    error.status = response.status;
-    error.payload = body;
-    throw error;
-  }
-  return body;
-}
 
 function subscribeDesktop(callback: () => void) {
   const query = window.matchMedia("(min-width: 1280px)");
@@ -41,6 +30,7 @@ function useInlineDesktop() {
 
 export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData }) {
   const inlineDesktop = useInlineDesktop();
+  const backgroundJobs = useBackgroundSave();
   const [songs, setSongs] = useState(initialData.songs);
   const [categories, setCategories] = useState(initialData.categories);
   const [query, setQuery] = useState("");
@@ -49,7 +39,7 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   const [ascending, setAscending] = useState(true);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editorClosing, setEditorClosing] = useState(false);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<DuplicateState>(null);
@@ -126,32 +116,60 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
     const normalized = { ...draft, songNumber: draft.songNumber.trim(), title: draft.title.trim(), artist: draft.artist.trim() };
     if (!/^[0-9]{5}$/.test(normalized.songNumber)) { setError("點歌號碼必須是剛好 5 位數字。"); return; }
     if (!normalized.title || !normalized.artist) { setError("請填寫歌曲名稱與歌手。"); return; }
-    setPending(true); setError(null);
-    try {
-      const response = await request<{ song: KtvSong; duplicate?: KtvSong }>("/api/ktv", {
-        method: normalized.id ? "PATCH" : "POST",
-        body: JSON.stringify(normalized),
-      });
-      setSongs((current) => normalized.id ? current.map((song) => song.id === response.song.id ? response.song : song) : [response.song, ...current]);
-      setNotice(normalized.id ? "歌曲資料已更新。" : "歌曲已加入 KTV 收藏。");
-      setDraft(null);
-    } catch (cause) {
+    setError(null);
+    const previous = normalized.id ? songs.find((song) => song.id === normalized.id) ?? null : null;
+    const optimisticId = normalized.id ?? `optimistic-${crypto.randomUUID()}`;
+    const optimistic: KtvSong = {
+      id: optimisticId,
+      songNumber: normalized.songNumber,
+      title: normalized.title,
+      artist: normalized.artist,
+      category: categories.find((item) => item.id === normalized.categoryId) ?? null,
+      createdAt: previous?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setSongs((current) => normalized.id ? current.map((song) => song.id === normalized.id ? optimistic : song) : [optimistic, ...current]);
+    setDraft(null);
+    backgroundJobs.enqueue({
+      type: "ktv",
+      title: normalized.id ? "更新 KTV 歌曲" : "新增 KTV 歌曲",
+      operation: normalized.id ? "修改歌曲" : "新增歌曲",
+      page: "/ktv",
+      entityKey: normalized.id ? `ktv:${normalized.id}` : `ktv:${optimisticId}`,
+      mergeKey: normalized.id ? `ktv:${normalized.id}` : undefined,
+      request: { url: "/api/ktv", method: normalized.id ? "PATCH" : "POST", body: normalized },
+      rollback: () => setSongs((current) => previous ? current.map((song) => song.id === previous.id ? previous : song) : current.filter((song) => song.id !== optimisticId)),
+      onSuccess: (result) => {
+        const response = result as { song: KtvSong };
+        setSongs((current) => current.map((song) => song.id === optimisticId ? response.song : song));
+        setNotice(normalized.id ? "歌曲資料已更新。" : "歌曲已加入 KTV 收藏。");
+      },
+      onError: (cause) => {
       const typed = cause as Error & { status?: number; payload?: { duplicate?: KtvSong } };
       if (typed.status === 409 && typed.payload?.duplicate) setDuplicate({ song: typed.payload.duplicate, draft: normalized });
       else setError(typed.message);
-    } finally { setPending(false); }
+      },
+    });
   }
 
   async function removeSong() {
     if (!deleteSong) return;
-    setPending(true); setError(null);
-    try {
-      await request("/api/ktv", { method: "DELETE", body: JSON.stringify({ id: deleteSong.id }) });
-      setSongs((current) => current.filter((song) => song.id !== deleteSong.id));
-      if (draft?.id === deleteSong.id) setDraft(null);
-      setDeleteSong(null); setNotice("歌曲已刪除。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法刪除歌曲。"); }
-    finally { setPending(false); }
+    setError(null);
+    const removed = deleteSong;
+    setSongs((current) => current.filter((song) => song.id !== removed.id));
+    if (draft?.id === removed.id) setDraft(null);
+    setDeleteSong(null);
+    backgroundJobs.enqueue({
+      type: "ktv",
+      title: "刪除 KTV 歌曲",
+      operation: "刪除歌曲",
+      page: "/ktv",
+      entityKey: `ktv:${removed.id}`,
+      request: { url: "/api/ktv", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setSongs((current) => current.some((song) => song.id === removed.id) ? current : [removed, ...current]),
+      onSuccess: () => setNotice("歌曲已刪除。"),
+      onError: (cause) => setError(cause.message || "無法刪除歌曲，歌曲已恢復。"),
+    });
   }
 
   function toggleSongSelection(songId: string) {
@@ -182,33 +200,47 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   async function categorizeSelectedSongs() {
     const ids = [...selectedSongIds];
     if (!ids.length) return;
-    setPending(true); setError(null);
-    try {
-      const { affectedIds, category } = await request<{ affectedIds: string[]; category: Pick<KtvCategory, "id" | "name"> | null }>("/api/ktv", {
-        method: "PATCH",
-        body: JSON.stringify({ action: "categorize", ids, categoryId: batchCategoryId }),
-      });
-      const affected = new Set(affectedIds);
-      setSongs((current) => current.map((song) => affected.has(song.id) ? { ...song, category } : song));
-      setNotice(`已將 ${affected.size} 首歌曲分類到「${category?.name ?? "未分類"}」。`);
-      closeSelectionMode();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法批量分類歌曲。");
-    } finally { setPending(false); }
+    setError(null);
+    const previous = songs;
+    const category = categories.find((item) => item.id === batchCategoryId) ?? null;
+    setSongs((current) => current.map((song) => ids.includes(song.id) ? { ...song, category } : song));
+    closeSelectionMode();
+    backgroundJobs.enqueue({
+      type: "ktv-batch",
+      title: `批量分類 ${ids.length} 首歌曲`,
+      operation: "批量分類",
+      page: "/ktv",
+      request: { url: "/api/ktv", method: "PATCH", body: { action: "categorize", ids, categoryId: batchCategoryId } },
+      rollback: () => setSongs(previous),
+      onSuccess: () => setNotice(`已將 ${ids.length} 首歌曲分類到「${category?.name ?? "未分類"}」。`),
+      onError: (cause) => setError(cause.message || "無法批量分類歌曲，分類已恢復。"),
+    });
   }
 
   async function addCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newCategory.trim();
     if (!name) return;
-    setPending(true); setError(null);
-    try {
-      const { category } = await request<{ category: KtvCategory }>("/api/ktv/categories", { method: "POST", body: JSON.stringify({ name }) });
-      setCategories((current) => [...current, category]);
-      setCategoryDrafts((current) => [...current, category]);
-      setNewCategory(""); setNotice("分類已新增。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法新增分類。"); }
-    finally { setPending(false); }
+    setError(null);
+    const optimistic: KtvCategory = { id: `optimistic-${crypto.randomUUID()}`, name, sortOrder: categories.length };
+    setCategories((current) => [...current, optimistic]);
+    setCategoryDrafts((current) => [...current, optimistic]);
+    setNewCategory("");
+    backgroundJobs.enqueue({
+      type: "ktv-category",
+      title: "新增 KTV 分類",
+      operation: "新增分類",
+      page: "/ktv",
+      request: { url: "/api/ktv/categories", method: "POST", body: { name } },
+      rollback: () => { setCategories((current) => current.filter((item) => item.id !== optimistic.id)); setCategoryDrafts((current) => current.filter((item) => item.id !== optimistic.id)); },
+      onSuccess: (result) => {
+        const category = (result as { category: KtvCategory }).category;
+        setCategories((current) => current.map((item) => item.id === optimistic.id ? category : item));
+        setCategoryDrafts((current) => current.map((item) => item.id === optimistic.id ? category : item));
+        setNotice("分類已新增。");
+      },
+      onError: (cause) => setError(cause.message || "無法新增分類。"),
+    });
   }
 
   function moveCategory(index: number, offset: -1 | 1) {
@@ -222,31 +254,48 @@ export function KtvWorkspace({ initialData }: { initialData: KtvWorkspaceData })
   }
 
   async function saveCategories() {
-    setPending(true); setError(null);
-    try {
-      const { categories: saved } = await request<{ categories: KtvCategory[] }>("/api/ktv/categories", {
-        method: "PATCH",
-        body: JSON.stringify({ categories: categoryDrafts.map(({ id, name }) => ({ id, name: name.trim() })) }),
-      });
-      setCategories(saved);
-      setSongs((current) => current.map((song) => song.category ? { ...song, category: { ...song.category, name: saved.find((item) => item.id === song.category?.id)?.name ?? song.category.name } } : song));
-      setCategoryManagerOpen(false); setNotice("分類設定已儲存。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法儲存分類。"); }
-    finally { setPending(false); }
+    setError(null);
+    const previous = categories;
+    const next = categoryDrafts.map((item, sortOrder) => ({ ...item, name: item.name.trim(), sortOrder }));
+    setCategories(next);
+    setSongs((current) => current.map((song) => song.category ? { ...song, category: { ...song.category, name: next.find((item) => item.id === song.category?.id)?.name ?? song.category.name } } : song));
+    setCategoryManagerOpen(false);
+    backgroundJobs.enqueue({
+      type: "ktv-category",
+      title: "整理 KTV 分類",
+      operation: "更新分類",
+      page: "/ktv",
+      request: { url: "/api/ktv/categories", method: "PATCH", body: { categories: next.map(({ id, name }) => ({ id, name })) } },
+      rollback: () => setCategories(previous),
+      onSuccess: (result) => {
+        const saved = (result as { categories: KtvCategory[] }).categories;
+        setCategories(saved);
+        setNotice("分類設定已儲存。");
+      },
+      onError: (cause) => setError(cause.message || "無法儲存分類，排序已恢復。"),
+    });
   }
 
   async function removeCategory() {
     if (!deleteCategory) return;
-    setPending(true); setError(null);
-    try {
-      await request("/api/ktv/categories", { method: "DELETE", body: JSON.stringify({ id: deleteCategory.id }) });
-      setCategories((current) => current.filter((item) => item.id !== deleteCategory.id));
-      setCategoryDrafts((current) => current.filter((item) => item.id !== deleteCategory.id));
-      setSongs((current) => current.map((song) => song.category?.id === deleteCategory.id ? { ...song, category: null } : song));
-      if (categoryId === deleteCategory.id) setCategoryId("all");
-      setDeleteCategory(null); setNotice("分類已刪除；原歌曲已移至未分類。");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "無法刪除分類。"); }
-    finally { setPending(false); }
+    setError(null);
+    const removed = deleteCategory;
+    const previousSongs = songs;
+    setCategories((current) => current.filter((item) => item.id !== removed.id));
+    setCategoryDrafts((current) => current.filter((item) => item.id !== removed.id));
+    setSongs((current) => current.map((song) => song.category?.id === removed.id ? { ...song, category: null } : song));
+    if (categoryId === removed.id) setCategoryId("all");
+    setDeleteCategory(null);
+    backgroundJobs.enqueue({
+      type: "ktv-category",
+      title: "刪除 KTV 分類",
+      operation: "刪除分類",
+      page: "/ktv",
+      request: { url: "/api/ktv/categories", method: "DELETE", body: { id: removed.id } },
+      rollback: () => { setCategories((current) => [...current, removed].sort((a, b) => a.sortOrder - b.sortOrder)); setSongs(previousSongs); },
+      onSuccess: () => setNotice("分類已刪除；原歌曲已移至未分類。"),
+      onError: (cause) => setError(cause.message || "無法刪除分類，分類已恢復。"),
+    });
   }
 
   const editor = draft ? <SongEditor categories={categories} draft={draft} error={error} pending={pending} onClose={closeEditor} onSave={saveSong} update={updateDraft} /> : null;

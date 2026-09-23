@@ -25,8 +25,9 @@ import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/conten
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
-import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
+import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { CodeSnippet, CodeWorkspaceData } from "@/lib/code/types";
 
@@ -79,10 +80,11 @@ export function CodeWorkspace({
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
+  const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [selected, setSelected] = useState<CodeSnippet | null>(null);
   const [editing, setEditing] = useState<CodeSnippet | null>(null);
   const [deleting, setDeleting] = useState<CodeSnippet | null>(null);
@@ -140,84 +142,91 @@ export function CodeWorkspace({
     snippet?: CodeSnippet,
   ) {
     event.preventDefault();
-    setPending(true);
     setError(null);
-    try {
-      const form = new FormData(event.currentTarget);
-      const coverTicket = await uploadCover(cover);
-      const response = await fetch("/api/code", {
-        method: snippet ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+    const form = new FormData(event.currentTarget);
+    const selectedCover = cover;
+    const body = {
           ...(snippet ? { id: snippet.id } : {}),
-          title: form.get("title"),
-          description: form.get("description"),
-          language: form.get("language"),
-          sourceCode: form.get("sourceCode"),
+          title: String(form.get("title") ?? "").trim(),
+          description: String(form.get("description") ?? "").trim(),
+          language: String(form.get("language") ?? "").trim(),
+          sourceCode: String(form.get("sourceCode") ?? ""),
           categoryIds: form.getAll("categoryIds").map(String),
           folderIds: form.getAll("folderIds").map(String),
           favorite: form.get("favorite") === "on",
           pinned: form.get("pinned") === "on",
           archived: form.get("archived") === "on",
-          coverTicket,
           tags: [],
-        }),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error ?? "無法儲存程式碼。");
-      if (!snippet && createMode) {
-        if (createFlow) { createFlow.complete(); return; }
-        router.replace("/code");
-        router.refresh();
-        return;
-      }
-      setEditing(null);
-      setSelected(null);
-      setCover(null);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法儲存程式碼。");
-    } finally {
-      setPending(false);
+    };
+    if (snippet) {
+      const optimistic: CodeSnippet = { ...snippet, title: body.title, description: body.description || null, language: body.language, sourceCode: body.sourceCode, favorite: body.favorite, pinned: body.pinned, archived: body.archived, categories: data.categories.filter((item) => body.categoryIds.includes(item.id)), category: data.categories.find((item) => body.categoryIds.includes(item.id)) ?? null, folders: data.folders.filter((item) => body.folderIds.includes(item.id)), folder: data.folders.find((item) => body.folderIds.includes(item.id)) ?? null, updatedAt: new Date().toISOString() };
+      setData((current) => ({ ...current, snippets: current.snippets.map((item) => item.id === snippet.id ? optimistic : item) }));
+    }
+    backgroundJobs.enqueue({
+      type: "code",
+      title: snippet ? "更新程式碼" : "新增程式碼",
+      operation: snippet ? "修改程式碼" : "新增程式碼",
+      page: "/code",
+      entityKey: snippet ? `code:${snippet.id}` : undefined,
+      mergeKey: snippet ? `code:${snippet.id}` : undefined,
+      persist: false,
+      execute: async ({ signal, reportProgress }) => {
+        let coverTicket: string | null = null;
+        if (selectedCover) {
+          reportProgress(undefined, "正在上傳封面");
+          coverTicket = await uploadCover(selectedCover);
+        }
+        const response = await fetch("/api/code", { method: snippet ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, coverTicket }), signal });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.error ?? "無法儲存程式碼。");
+        return payload;
+      },
+      rollback: () => { if (snippet) setData((current) => ({ ...current, snippets: current.snippets.map((item) => item.id === snippet.id ? snippet : item) })); },
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法儲存程式碼。"),
+    });
+    setEditing(null);
+    setSelected(null);
+    setCover(null);
+    if (!snippet && createMode) {
+      if (createFlow) createFlow.complete();
+      else router.replace("/code");
     }
   }
   async function remove() {
     if (!deleting) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/code", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: deleting.id }),
-      });
-      if (!response.ok) throw new Error();
-      setSelected(null);
-      setDeleting(null);
-      await load();
-    } catch {
-      setError("無法永久刪除程式碼。");
-    } finally {
-      setPending(false);
-    }
+    const removed = deleting;
+    setData((current) => ({ ...current, snippets: current.snippets.filter((item) => item.id !== removed.id) }));
+    setSelected(null);
+    setDeleting(null);
+    backgroundJobs.enqueue({
+      type: "code",
+      title: "永久刪除程式碼",
+      operation: "永久刪除",
+      page: "/code",
+      entityKey: `code:${removed.id}`,
+      request: { url: "/api/code", method: "DELETE", body: { id: removed.id } },
+      rollback: () => setData((current) => ({ ...current, snippets: current.snippets.some((item) => item.id === removed.id) ? current.snippets : [removed, ...current.snippets] })),
+      onError: () => setError("無法永久刪除程式碼，項目已恢復。"),
+    });
   }
   async function itemAction(item: CodeSnippet, action: "trash" | "restore") {
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/code", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: item.id, action }),
-      });
-      if (!response.ok) throw new Error();
-      setSelected(null);
-      await load();
-    } catch {
-      setError("無法更新程式碼狀態。");
-    } finally {
-      setPending(false);
-    }
+    const optimistic = { ...item, deletedAt: action === "trash" ? new Date().toISOString() : null };
+    setData((current) => ({ ...current, snippets: current.snippets.map((value) => value.id === item.id ? optimistic : value) }));
+    setSelected(null);
+    backgroundJobs.enqueue({
+      type: "code",
+      title: action === "trash" ? "刪除程式碼" : "還原程式碼",
+      operation: action === "trash" ? "移至垃圾桶" : "還原程式碼",
+      page: "/code",
+      entityKey: `code:${item.id}`,
+      request: { url: "/api/code", method: "PATCH", body: { id: item.id, action } },
+      rollback: () => setData((current) => ({ ...current, snippets: current.snippets.map((value) => value.id === item.id ? item : value) })),
+      onSuccess: () => load(),
+      onError: () => setError("無法更新程式碼狀態，項目已恢復。"),
+    });
   }
   const chosenItems = list.filter((item) => chosen.has(item.id));
   const toggleAll = () =>
@@ -228,43 +237,41 @@ export function CodeWorkspace({
     );
   async function organizeSelection(change: BulkOrganizeChange) {
     if (!chosenItems.length) return;
-    setPending(true);
     setError(null);
-    try {
-      const response = await fetch("/api/code", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: chosenItems.map((item) => item.id),
-          action: "organize",
-          folderIds: change.folderIds,
-          categoryIds: change.categoryIds,
-          relationMode: change.mode,
-        }),
-      });
-      if (!response.ok)
-        throw new Error(
-          (await response.json().catch(() => null))?.error ??
-            "無法整理程式碼。",
-        );
-      setChosen(new Set());
-      setOrganizeOpen(false);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "無法整理程式碼。");
-    } finally {
-      setPending(false);
-    }
+    const ids = chosenItems.map((item) => item.id);
+    const previous = data.snippets;
+    setChosen(new Set());
+    setOrganizeOpen(false);
+    backgroundJobs.enqueue({
+      type: "code-batch",
+      title: `批量整理 ${ids.length} 筆程式碼`,
+      operation: "批量整理",
+      page: "/code",
+      request: { url: "/api/code", method: "PATCH", body: { ids, action: "organize", folderIds: change.folderIds, categoryIds: change.categoryIds, relationMode: change.mode } },
+      rollback: () => setData((current) => ({ ...current, snippets: previous })),
+      onSuccess: () => load(),
+      onError: (cause) => setError(cause.message || "無法整理程式碼。"),
+    });
   }
   async function runBulk() {
     if (!bulkConfirm || !chosenItems.length) return;
     const ids = chosenItems.map((item) => item.id);
-    setPending(true);
     setError(null);
-    try {
-      const responses = await Promise.all(
+    const previous = data.snippets;
+    const operation = bulkConfirm;
+    setData((current) => ({ ...current, snippets: operation === "permanent" ? current.snippets.filter((item) => !ids.includes(item.id)) : current.snippets.map((item) => ids.includes(item.id) ? { ...item, deletedAt: operation === "trash" ? new Date().toISOString() : null } : item) }));
+    setChosen(new Set());
+    setBulkConfirm(null);
+    backgroundJobs.enqueue({
+      type: "code-batch",
+      title: `${operation === "permanent" ? "永久刪除" : operation === "restore" ? "還原" : "刪除"} ${ids.length} 筆程式碼`,
+      operation: operation === "permanent" ? "批量永久刪除" : operation === "restore" ? "批量還原" : "批量移至垃圾桶",
+      page: "/code",
+      execute: async ({ reportProgress }) => {
+        reportProgress(undefined, `0 / ${ids.length}`);
+        const responses = await Promise.all(
         ids.map((id) =>
-          bulkConfirm === "permanent"
+          operation === "permanent"
             ? fetch("/api/code", {
                 method: "DELETE",
                 headers: { "Content-Type": "application/json" },
@@ -273,19 +280,18 @@ export function CodeWorkspace({
             : fetch("/api/code", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id, action: bulkConfirm }),
+                body: JSON.stringify({ id, action: operation }),
               }),
         ),
       );
       if (responses.some((response) => !response.ok)) throw new Error();
-      setChosen(new Set());
-      setBulkConfirm(null);
-      await load();
-    } catch {
-      setError("無法完成批量操作。請稍後再試。");
-    } finally {
-      setPending(false);
-    }
+        reportProgress(100, `${ids.length} / ${ids.length}`);
+        return { ok: true };
+      },
+      rollback: () => setData((current) => ({ ...current, snippets: previous })),
+      onSuccess: () => load(),
+      onError: () => setError("無法完成批量操作，清單已恢復。"),
+    });
   }
   const editor = (snippet?: CodeSnippet) => (
     <form
@@ -375,7 +381,6 @@ export function CodeWorkspace({
   if (createMode)
     return (
       <section className="code-workspace create-only">
-        {pending && <OperationStatus label="正在儲存程式碼…" />}
         {error && (
           <p className="notice error" role="alert">
             {error}
@@ -386,7 +391,6 @@ export function CodeWorkspace({
     );
   return (
     <section className={`library-workspace ${mobileStyles.libraryWorkspace}`}>
-      {pending && <OperationStatus label="正在處理程式碼…" />}
       {error && (
         <p className="notice error" role="alert">
           {error}
