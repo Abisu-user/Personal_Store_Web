@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import { MobileBottomSheet } from "@/components/ui/mobile-bottom-sheet";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
@@ -25,7 +34,26 @@ type NavigationItem = {
 
 const holdDurationMs = 300;
 const holdMovementThreshold = 12;
+const snapDurationMs = 190;
+const moreRevealDelayMs = 80;
 const moreExitDurationMs = 320;
+
+type NavigationGeometry = {
+  centers: number[];
+  navLeft: number;
+  minCenter: number;
+  maxCenter: number;
+};
+
+type NavigationPointer = {
+  id: number;
+  itemIndex: number;
+  lastClientX: number;
+  startX: number;
+  startY: number;
+};
+
+type NavigationMotion = "idle" | "scrubbing" | "snapping";
 
 const compactMoreLabels: Partial<Record<Destination["id"], string>> = {
   bookmarks: "網站收藏",
@@ -64,15 +92,20 @@ export function MobileAppNavigation() {
   const [signingOut, setSigningOut] = useState(false);
   const [pendingTransition, setPendingTransition] = useState<{ from: string; target: string } | null>(null);
   const [navigation, setNavigation] = useState<MobileNavigationPreferences>(mobileNavigationDefaults);
-  const [scrubbing, setScrubbing] = useState(false);
-  const [scrubTarget, setScrubTarget] = useState<number | null>(null);
-  const [indicatorCenter, setIndicatorCenter] = useState<number | null>(null);
+  const [motion, setMotion] = useState<NavigationMotion>("idle");
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const navRef = useRef<HTMLElement>(null);
+  const geometryRef = useRef<NavigationGeometry | null>(null);
   const moreCloseTimerRef = useRef<number | null>(null);
   const holdTimerRef = useRef<number | null>(null);
-  const pointerRef = useRef<{ id: number; startX: number; startY: number; itemIndex: number } | null>(null);
+  const snapTimerRef = useRef<number | null>(null);
+  const pointerFrameRef = useRef<number | null>(null);
+  const pointerRef = useRef<NavigationPointer | null>(null);
+  const motionRef = useRef<NavigationMotion>("idle");
   const scrubbingRef = useRef(false);
-  const scrubTargetRef = useRef<number | null>(null);
+  const previewIndexRef = useRef<number | null>(null);
+  const committedIndexRef = useRef(0);
+  const measuredOnceRef = useRef(false);
   const suppressClickUntilRef = useRef(0);
   const currentPath = pendingTransition && pathname === pendingTransition.from ? pendingTransition.target : pathname;
 
@@ -148,8 +181,91 @@ export function MobileAppNavigation() {
       .sort((left, right) => (right.item.href?.length ?? 0) - (left.item.href?.length ?? 0))[0];
     return matched?.index ?? items.length - 1;
   }, [currentPath, items, moreOpen]);
-  const visualIndex = scrubTarget ?? activeIndex;
-  const navigationTheme = useMemo(() => mobileNavigationThemeVariables(navigation), [navigation.backgroundColor, navigation.opacity]);
+  const visualIndex = previewIndex ?? activeIndex;
+  const navigationTheme = useMemo(() => mobileNavigationThemeVariables(navigation), [navigation]);
+
+  const setMotionState = useCallback((nextMotion: NavigationMotion) => {
+    motionRef.current = nextMotion;
+    setMotion(nextMotion);
+    if (navRef.current) navRef.current.dataset.mobileNavMotion = nextMotion === "scrubbing" ? "drag" : nextMotion === "snapping" ? "snap" : "idle";
+  }, []);
+
+  const measureNavigation = useCallback(() => {
+    const nav = navRef.current;
+    if (!nav) return null;
+    const navBounds = nav.getBoundingClientRect();
+    const centers = Array.from(nav.querySelectorAll<HTMLElement>("[data-mobile-nav-index]"))
+      .map((item) => {
+        const bounds = item.getBoundingClientRect();
+        return bounds.left - navBounds.left + bounds.width / 2;
+      });
+    if (!centers.length) return null;
+    const geometry = {
+      centers,
+      navLeft: navBounds.left,
+      minCenter: centers[0],
+      maxCenter: centers[centers.length - 1],
+    } satisfies NavigationGeometry;
+    geometryRef.current = geometry;
+    return geometry;
+  }, []);
+
+  const writeBubbleCenter = useCallback((center: number, nextMotion: "drag" | "instant" | "snap") => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.dataset.mobileNavMotion = nextMotion;
+    nav.style.setProperty("--mobile-nav-active-x", `${center}px`);
+  }, []);
+
+  const placeBubbleAtIndex = useCallback((index: number, nextMotion: "instant" | "snap" = "snap") => {
+    const geometry = geometryRef.current ?? measureNavigation();
+    const center = geometry?.centers[index];
+    if (center === undefined) return;
+    writeBubbleCenter(center, nextMotion);
+  }, [measureNavigation, writeBubbleCenter]);
+
+  const updatePreviewIndex = useCallback((index: number, withHaptic = true) => {
+    if (previewIndexRef.current === index) return;
+    previewIndexRef.current = index;
+    setPreviewIndex(index);
+    if (withHaptic) haptic(7);
+  }, []);
+
+  const resolvePointerPosition = useCallback((clientX: number) => {
+    const geometry = geometryRef.current;
+    if (!geometry) return null;
+    const localX = clientX - geometry.navLeft;
+    const center = Math.min(geometry.maxCenter, Math.max(geometry.minCenter, localX));
+    let index = 0;
+    let distance = Number.POSITIVE_INFINITY;
+    geometry.centers.forEach((itemCenter, itemIndex) => {
+      const nextDistance = Math.abs(center - itemCenter);
+      if (nextDistance < distance) {
+        index = itemIndex;
+        distance = nextDistance;
+      }
+    });
+    return { center, index };
+  }, []);
+
+  const flushPointerPosition = useCallback((clientX: number) => {
+    const resolved = resolvePointerPosition(clientX);
+    if (!resolved) return null;
+    writeBubbleCenter(resolved.center, "drag");
+    updatePreviewIndex(resolved.index);
+    return resolved;
+  }, [resolvePointerPosition, updatePreviewIndex, writeBubbleCenter]);
+
+  const schedulePointerPosition = useCallback((clientX: number) => {
+    if (pointerRef.current) pointerRef.current.lastClientX = clientX;
+    if (pointerFrameRef.current !== null) return;
+    pointerFrameRef.current = window.requestAnimationFrame(() => {
+      pointerFrameRef.current = null;
+      const pointer = pointerRef.current;
+      if (!pointer || !scrubbingRef.current) return;
+      flushPointerPosition(pointer.lastClientX);
+    });
+  }, [flushPointerPosition]);
 
   useLayoutEffect(() => {
     const nav = navRef.current;
@@ -160,12 +276,12 @@ export function MobileAppNavigation() {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         if (!active) return;
-        const item = nav.querySelector<HTMLElement>(`[data-mobile-nav-index="${visualIndex}"]`);
-        if (!item) return;
-        const navRect = nav.getBoundingClientRect();
-        const itemRect = item.getBoundingClientRect();
-        const center = itemRect.left - navRect.left + itemRect.width / 2;
-        setIndicatorCenter((current) => current !== null && Math.abs(current - center) < .1 ? current : center);
+        const geometry = measureNavigation();
+        if (!geometry || motionRef.current === "scrubbing") return;
+        const index = previewIndexRef.current ?? committedIndexRef.current;
+        const nextMotion = measuredOnceRef.current ? "snap" : "instant";
+        measuredOnceRef.current = true;
+        placeBubbleAtIndex(index, nextMotion);
       });
     };
     update();
@@ -180,7 +296,12 @@ export function MobileAppNavigation() {
       observer?.disconnect();
       window.removeEventListener("orientationchange", update);
     };
-  }, [items.length, visualIndex]);
+  }, [items.length, measureNavigation, placeBubbleAtIndex]);
+
+  useLayoutEffect(() => {
+    committedIndexRef.current = activeIndex;
+    if (motionRef.current === "idle" && previewIndexRef.current === null) placeBubbleAtIndex(activeIndex, measuredOnceRef.current ? "snap" : "instant");
+  }, [activeIndex, placeBubbleAtIndex]);
 
   const openMore = useCallback(() => {
     if (moreCloseTimerRef.current !== null) window.clearTimeout(moreCloseTimerRef.current);
@@ -200,6 +321,9 @@ export function MobileAppNavigation() {
 
   useEffect(() => () => {
     if (moreCloseTimerRef.current !== null) window.clearTimeout(moreCloseTimerRef.current);
+    if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+    if (snapTimerRef.current !== null) window.clearTimeout(snapTimerRef.current);
+    if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
   }, []);
 
   const prefetch = useCallback((href: string | undefined) => {
@@ -244,44 +368,77 @@ export function MobileAppNavigation() {
     }
   }, []);
 
-  const previewScrubTarget = useCallback((index: number) => {
-    if (scrubTargetRef.current === index) return;
-    scrubTargetRef.current = index;
-    setScrubTarget(index);
-    haptic(8);
+  const clearSnap = useCallback(() => {
+    if (snapTimerRef.current !== null) {
+      window.clearTimeout(snapTimerRef.current);
+      snapTimerRef.current = null;
+    }
   }, []);
 
-  const finishScrub = useCallback((commit: boolean) => {
+  const resetPreview = useCallback(() => {
+    previewIndexRef.current = null;
+    setPreviewIndex(null);
+  }, []);
+
+  const commitIndex = useCallback((index: number) => {
+    const item = items[index];
+    if (!item) return;
+    clearSnap();
+    updatePreviewIndex(index, false);
+    setMotionState("snapping");
+    placeBubbleAtIndex(index, "snap");
+    const commitDelay = item.kind === "more" ? moreRevealDelayMs : snapDurationMs;
+    snapTimerRef.current = window.setTimeout(() => {
+      snapTimerRef.current = null;
+      runItem(item);
+      resetPreview();
+      setMotionState("idle");
+      const restingIndex = item.kind === "create" ? committedIndexRef.current : index;
+      window.requestAnimationFrame(() => placeBubbleAtIndex(restingIndex, "snap"));
+    }, commitDelay);
+  }, [clearSnap, items, placeBubbleAtIndex, resetPreview, runItem, setMotionState, updatePreviewIndex]);
+
+  const cancelGesture = useCallback(() => {
+    clearHold();
+    clearSnap();
+    if (pointerFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerFrameRef.current);
+      pointerFrameRef.current = null;
+    }
+    const wasScrubbing = scrubbingRef.current;
+    scrubbingRef.current = false;
+    pointerRef.current = null;
+    resetPreview();
+    if (!wasScrubbing) {
+      setMotionState("idle");
+      return;
+    }
+    suppressClickUntilRef.current = performance.now() + 450;
+    setMotionState("snapping");
+    placeBubbleAtIndex(committedIndexRef.current, "snap");
+    snapTimerRef.current = window.setTimeout(() => {
+      snapTimerRef.current = null;
+      setMotionState("idle");
+    }, snapDurationMs);
+  }, [clearHold, clearSnap, placeBubbleAtIndex, resetPreview, setMotionState]);
+
+  const finishScrub = useCallback((clientX: number) => {
     clearHold();
     if (!scrubbingRef.current) {
       pointerRef.current = null;
       return;
     }
-    const target = scrubTargetRef.current;
+    if (pointerFrameRef.current !== null) {
+      window.cancelAnimationFrame(pointerFrameRef.current);
+      pointerFrameRef.current = null;
+    }
+    const finalPosition = flushPointerPosition(clientX);
     scrubbingRef.current = false;
-    scrubTargetRef.current = null;
     pointerRef.current = null;
-    setScrubbing(false);
-    setScrubTarget(null);
     suppressClickUntilRef.current = performance.now() + 450;
-    if (commit && target !== null) runItem(items[target]);
-  }, [clearHold, items, runItem]);
-
-  function nearestItemIndex(clientX: number) {
-    const buttons = navRef.current?.querySelectorAll<HTMLElement>("[data-mobile-nav-index]");
-    if (!buttons?.length) return 0;
-    let nearest = 0;
-    let distance = Number.POSITIVE_INFINITY;
-    buttons.forEach((button, index) => {
-      const bounds = button.getBoundingClientRect();
-      const nextDistance = Math.abs(clientX - (bounds.left + bounds.width / 2));
-      if (nextDistance < distance) {
-        nearest = index;
-        distance = nextDistance;
-      }
-    });
-    return nearest;
-  }
+    if (finalPosition) commitIndex(finalPosition.index);
+    else cancelGesture();
+  }, [cancelGesture, clearHold, commitIndex, flushPointerPosition]);
 
   function handlePointerDown(event: ReactPointerEvent<HTMLElement>) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -290,39 +447,49 @@ export function MobileAppNavigation() {
     const index = Number(button.dataset.mobileNavIndex);
     prefetch(items[index]?.href);
     if (index !== activeIndex) return;
-    pointerRef.current = { id: event.pointerId, startX: event.clientX, startY: event.clientY, itemIndex: index };
+    measureNavigation();
+    pointerRef.current = {
+      id: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastClientX: event.clientX,
+      itemIndex: index,
+    };
     try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* Pointer capture is unavailable in some embedded browsers. */ }
     clearHold();
     holdTimerRef.current = window.setTimeout(() => {
       holdTimerRef.current = null;
       if (!pointerRef.current || pointerRef.current.itemIndex !== activeIndex) return;
       scrubbingRef.current = true;
-      setScrubbing(true);
-      previewScrubTarget(activeIndex);
-      haptic(18);
+      updatePreviewIndex(activeIndex, false);
+      setMotionState("scrubbing");
+      schedulePointerPosition(pointerRef.current.lastClientX);
+      haptic(16);
     }, holdDurationMs);
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLElement>) {
     const pointer = pointerRef.current;
     if (!pointer || pointer.id !== event.pointerId) return;
+    pointer.lastClientX = event.clientX;
     if (!scrubbingRef.current) {
       if (Math.hypot(event.clientX - pointer.startX, event.clientY - pointer.startY) > holdMovementThreshold) {
         clearHold();
         pointerRef.current = null;
         suppressClickUntilRef.current = performance.now() + 350;
+        try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* Capture may already be released. */ }
       }
       return;
     }
     event.preventDefault();
-    previewScrubTarget(nearestItemIndex(event.clientX));
+    schedulePointerPosition(event.clientX);
   }
 
   function handlePointerUp(event: ReactPointerEvent<HTMLElement>) {
     if (pointerRef.current?.id !== event.pointerId) return;
     if (scrubbingRef.current) {
       event.preventDefault();
-      finishScrub(true);
+      finishScrub(event.clientX);
       return;
     }
     clearHold();
@@ -341,27 +508,33 @@ export function MobileAppNavigation() {
   const navStyle = {
     ...navigationTheme,
     "--mobile-navigation-count": items.length,
-    "--mobile-nav-active-x": indicatorCenter === null
-      ? `calc((100% - 10px) / ${items.length} * ${visualIndex + .5} + 5px)`
-      : `${indicatorCenter}px`,
+    "--mobile-nav-active-x": `calc((100% - 10px) / ${items.length} * ${activeIndex + .5} + 5px)`,
   } as CSSProperties;
 
   return <>
     <div className="mobile-bottom-nav-wrap">
       <nav
         aria-label="手機主要導覽"
-        className={`mobile-bottom-nav${scrubbing ? " is-scrubbing" : ""}`}
+        className={`mobile-bottom-nav${motion === "scrubbing" ? " is-scrubbing" : ""}`}
         data-mobile-nav-count={items.length}
+        data-mobile-nav-motion={motion === "scrubbing" ? "drag" : motion === "snapping" ? "snap" : "idle"}
         onContextMenu={(event) => event.preventDefault()}
-        onLostPointerCapture={() => { if (scrubbingRef.current) finishScrub(true); }}
-        onPointerCancel={(event) => { if (pointerRef.current?.id === event.pointerId) finishScrub(false); }}
+        onLostPointerCapture={(event) => { if (pointerRef.current?.id === event.pointerId) cancelGesture(); }}
+        onPointerCancel={(event) => { if (pointerRef.current?.id === event.pointerId) cancelGesture(); }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         ref={navRef}
         style={navStyle}
       >
-        <span aria-hidden="true" className="mobile-nav-active-indicator"><span /></span>
+        <span aria-hidden="true" className="mobile-nav-active-indicator">
+          <span>
+            <span className="mobile-nav-indicator-content" key={items[visualIndex]?.id}>
+              <i><AppIcon name={items[visualIndex]?.icon ?? "home"} /></i>
+              <span>{items[visualIndex]?.label ?? "首頁"}</span>
+            </span>
+          </span>
+        </span>
         {items.map((item, index) => {
           const selected = visualIndex === index;
           return <button
@@ -374,7 +547,7 @@ export function MobileAppNavigation() {
             key={item.id}
             onClick={() => {
               if (performance.now() < suppressClickUntilRef.current) return;
-              runItem(item);
+              commitIndex(index);
             }}
             onFocus={() => prefetch(item.href)}
             onMouseEnter={() => prefetch(item.href)}
@@ -386,7 +559,7 @@ export function MobileAppNavigation() {
         })}
       </nav>
     </div>
-    <div aria-live="polite" className={`mobile-nav-scrub-tip${scrubbing ? " show" : ""}`} role="status">左右滑動選擇頁面，放手切換</div>
+    <div aria-live="polite" className={`mobile-nav-scrub-tip${motion === "scrubbing" ? " show" : ""}`} role="status">左右滑動選擇頁面，放手切換</div>
     {moreMounted && <div className="mobile-navigation-theme-host" style={navigationTheme as CSSProperties}><MobileBottomSheet className={`mobile-navigation-sheet${moreOpen ? " is-open" : " is-closing"}`} open title="更多功能" eyebrow="" onClose={closeMore}><nav className="mobile-navigation-more-grid">{moreItems.map(item => <Link aria-current={routeMatches(pathname, item.href) ? "page" : undefined} className={routeMatches(pathname, item.href) ? "active" : ""} href={item.href} key={item.href} onClick={() => { closeMore(); setPendingTransition({ from: pathname, target: item.href }); }} onFocus={() => prefetch(item.href)} onMouseEnter={() => prefetch(item.href)} prefetch={false}><i><AppIcon name={item.icon} /></i><span>{compactMoreLabels[item.id] ?? item.label}</span></Link>)}</nav><button className="mobile-sheet-logout" disabled={signingOut} onClick={() => void signOut()} type="button"><i><AppIcon name="logout" /></i>{signingOut ? "登出中…" : "登出"}</button></MobileBottomSheet></div>}
   </>;
 }

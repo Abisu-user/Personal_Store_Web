@@ -146,9 +146,10 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
     backdrop-filter: blur(26px) saturate(150%);
     -webkit-backdrop-filter: blur(26px) saturate(150%);
     pointer-events: auto;
-    touch-action: manipulation;
+    touch-action: pan-y;
     user-select: none;
     -webkit-user-select: none;
+    -webkit-touch-callout: none;
     transform: none;
   }
   .mobile-nav-item,
@@ -179,7 +180,7 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
     transition: color 240ms ease, transform 240ms ease;
   }
   .mobile-nav-item:active { transform: scale(.94); }
-  .mobile-nav-item i { position: relative; z-index: 2; display: grid; min-width: 22px; min-height: 22px; place-items: center; color: currentColor; font-style: normal; transition: transform 300ms cubic-bezier(.22, .9, .27, 1.2); }
+  .mobile-nav-item i { position: relative; z-index: 2; display: grid; min-width: 22px; min-height: 22px; place-items: center; color: currentColor; font-style: normal; transition: opacity 110ms ease, transform 300ms cubic-bezier(.22, .9, .27, 1.2); }
   .mobile-nav-item i .app-icon { width: 19px; height: 19px; }
   .mobile-nav-item.mobile-create,
   .mobile-bottom-nav > .mobile-nav-item.mobile-create {
@@ -215,6 +216,8 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
   .mobile-nav-item.is-active { color: var(--mobile-nav-active-text, #f8f9ff); }
   .mobile-nav-item.is-active i { transform: translateY(-13px) scale(1.04); }
   .mobile-nav-item.is-active > span { max-height: 20px; opacity: 1; transform: translateY(-12px); }
+  .mobile-nav-item.is-active > i,
+  .mobile-nav-item.is-active > span { opacity: 0; }
   .mobile-nav-active-indicator {
     position: absolute;
     z-index: 1;
@@ -226,9 +229,11 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
     place-items: center;
     pointer-events: none;
     transform: translate3d(calc(var(--mobile-nav-active-x, 25px) - 25px), -13px, 0);
-    transition: transform 300ms cubic-bezier(.22, .9, .27, 1.2);
+    will-change: transform;
+    transition: transform 190ms cubic-bezier(.22, .9, .27, 1);
   }
   .mobile-nav-active-indicator > span {
+    position: relative;
     display: block;
     width: 50px;
     height: 50px;
@@ -236,9 +241,39 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
     border-radius: 50%;
     background: radial-gradient(circle at 34% 18%, var(--mobile-nav-active-highlight, rgba(255, 255, 255, .16)), transparent 27%), var(--mobile-nav-active-surface, rgba(11, 12, 17, .99));
     box-shadow: 0 14px 34px var(--mobile-nav-active-shadow, rgba(0, 0, 0, .42)), inset 0 1px 0 var(--mobile-nav-active-highlight, rgba(255, 255, 255, .14));
+    transform: translateZ(0) scale(1);
+    transition: transform 180ms cubic-bezier(.22, .9, .27, 1), box-shadow 180ms ease;
+  }
+  .mobile-nav-indicator-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--mobile-nav-active-text, #f8f9ff);
+    line-height: 1;
+    animation: mobile-nav-indicator-content-in 120ms ease both;
+  }
+  .mobile-nav-indicator-content i { display: grid; width: 22px; height: 22px; place-items: center; color: currentColor; font-style: normal; }
+  .mobile-nav-indicator-content i .app-icon { width: 19px; height: 19px; }
+  .mobile-nav-indicator-content > span { max-width: 45px; overflow: hidden; font-size: 8.5px; font-weight: 750; letter-spacing: .02em; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-bottom-nav[data-mobile-nav-count="7"] .mobile-nav-indicator-content > span { font-size: 8px; }
+  .mobile-bottom-nav[data-mobile-nav-count="9"] .mobile-nav-indicator-content > span { font-size: 7.25px; letter-spacing: 0; }
+  @keyframes mobile-nav-indicator-content-in {
+    from { opacity: .55; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
   }
   .mobile-bottom-nav.is-scrubbing { touch-action: none; }
-  .mobile-bottom-nav.is-scrubbing .mobile-nav-active-indicator { transition-duration: 110ms; transition-timing-function: ease-out; }
+  .mobile-bottom-nav[data-mobile-nav-motion="drag"] .mobile-nav-active-indicator,
+  .mobile-bottom-nav[data-mobile-nav-motion="instant"] .mobile-nav-active-indicator { transition: none; }
+  .mobile-bottom-nav[data-mobile-nav-motion="snap"] .mobile-nav-active-indicator { transition: transform 190ms cubic-bezier(.22, .9, .27, 1); }
+  .mobile-bottom-nav.is-scrubbing .mobile-nav-active-indicator > span {
+    box-shadow: 0 18px 38px var(--mobile-nav-active-shadow, rgba(0, 0, 0, .46)), inset 0 1px 0 var(--mobile-nav-active-highlight, rgba(255, 255, 255, .18));
+    transform: translateZ(0) scale(1.055);
+  }
+  .mobile-bottom-nav.is-scrubbing .mobile-nav-item:active { transform: none; }
   .mobile-bottom-nav.is-scrubbing .mobile-nav-item,
   .mobile-bottom-nav.is-scrubbing .mobile-nav-item i,
   .mobile-bottom-nav.is-scrubbing .mobile-nav-item > span { transition-duration: 110ms; }
@@ -485,7 +520,7 @@ body:has(.confirm-dialog-backdrop) .batch-action-bar { opacity: 0; pointer-event
 
 @media (max-width: 700px) and (prefers-reduced-motion: reduce) {
   :root { --mobile-motion-fast: 0ms; }
-  .mobile-chip, .mobile-bottom-nav, .mobile-nav-item, .mobile-nav-item i, .mobile-nav-item > span, .mobile-nav-active-indicator, .mobile-nav-scrub-tip, .batch-action-bar, .modal-dialog-backdrop:has(.mobile-navigation-sheet), .modal-dialog.mobile-bottom-sheet.mobile-navigation-sheet { animation-duration: .01ms; transition-duration: .01ms; }
+  .mobile-chip, .mobile-bottom-nav, .mobile-nav-item, .mobile-nav-item i, .mobile-nav-item > span, .mobile-nav-active-indicator, .mobile-nav-indicator-content, .mobile-nav-scrub-tip, .batch-action-bar, .modal-dialog-backdrop:has(.mobile-navigation-sheet), .modal-dialog.mobile-bottom-sheet.mobile-navigation-sheet { animation-duration: .01ms; transition-duration: .01ms; }
   .mobile-nav-item.is-active i { transform: translateY(-8px); }
   .mobile-nav-item.is-active > span { transform: translateY(-7px); }
   .mobile-nav-active-indicator { transform: translate3d(calc(var(--mobile-nav-active-x, 25px) - 25px), -8px, 0); }
