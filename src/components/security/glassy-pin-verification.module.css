@@ -110,6 +110,12 @@
   animation: stageIn 320ms ease both;
 }
 
+.pinStage:focus-visible {
+  border-radius: 24px;
+  outline: 2px solid color-mix(in srgb, var(--pin-gold) 52%, transparent);
+  outline-offset: 4px;
+}
+
 .pinStage6 {
   --pin-box-width: clamp(40px, 11vw, 50px);
   --pin-box-height: 68px;
@@ -166,23 +172,16 @@
   height: 100%;
 }
 
-.digitInput {
+.pinDigit {
+  display: grid;
   width: 100%;
   height: 100%;
-  padding: 0;
-  border: 0;
-  outline: 0;
+  place-items: center;
   color: #fff;
-  background: transparent;
   text-align: center;
   font: 800 clamp(1.3rem, 5vw, 1.65rem) / 1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  -webkit-text-security: disc;
-  caret-color: var(--pin-gold);
-}
-
-.digitInput:disabled {
-  opacity: 1;
-  -webkit-text-fill-color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 12px rgba(255, 255, 255, 0.16);
 }
 
 .digitOrder {
@@ -208,6 +207,10 @@
 .stateVerifying .digitContent {
   transform: rotate(var(--pin-counter-angle));
   animation: orbitContent 1.18s linear 540ms infinite;
+}
+
+.stateError .digitContent {
+  transform: rotate(var(--pin-counter-angle));
 }
 
 .stateVerifying .digitFrame {
@@ -236,6 +239,57 @@
   border-color: var(--pin-red);
   background: color-mix(in srgb, var(--pin-red) 14%, rgba(17, 13, 14, 0.88));
   box-shadow: 0 0 24px color-mix(in srgb, var(--pin-red) 24%, transparent);
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 294px);
+  min-height: 216px;
+  margin: 4px auto 6px;
+  transition: opacity 200ms ease, transform 200ms ease, visibility 200ms ease;
+}
+
+.keypadKey {
+  display: grid;
+  min-width: 0;
+  min-height: 48px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--pin-gold) 30%, rgba(255, 255, 255, 0.12));
+  border-radius: 16px;
+  color: #fff;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.025)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 7px 16px rgba(0, 0, 0, 0.12);
+  font: 760 1.15rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.keypadKey:hover,
+.keypadKey:focus-visible {
+  border-color: color-mix(in srgb, var(--pin-gold) 72%, transparent);
+  background: color-mix(in srgb, var(--pin-gold) 13%, rgba(255, 255, 255, 0.05));
+  outline: none;
+}
+
+.keypadKey:active { transform: scale(0.95); }
+.keypadKey:disabled { cursor: default; }
+.keypadSpacer { min-height: 48px; }
+.backspaceKey { color: var(--pin-gold); font-family: inherit; font-size: 1.25rem; }
+
+.shell[data-state="verifying"] .keypad,
+.shell[data-state="success"] .keypad,
+.shell[data-state="error"] .keypad {
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(9px);
+  pointer-events: none;
 }
 
 .statusArea {
@@ -283,7 +337,7 @@
   background: var(--pin-green);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--pin-green) 32%, transparent);
   transform: translate(-50%, -50%);
-  animation: successPop 560ms cubic-bezier(0.2, 1.4, 0.35, 1) both, successRipple 1s ease-out 120ms both;
+  animation: successPop 560ms cubic-bezier(0.2, 1.4, 0.35, 1) 380ms both, successRipple 1s ease-out 500ms both;
 }
 
 .successMark span {
@@ -372,6 +426,16 @@
     margin-top: 18px;
   }
 
+  .keypad {
+    width: min(100%, 280px);
+    min-height: 204px;
+    gap: 7px;
+  }
+
+  .keypadKey {
+    min-height: 46px;
+  }
+
   .secondaryActions {
     grid-template-columns: 1fr;
   }
@@ -393,7 +457,8 @@
   .digitContent,
   .successMark,
   .pinStage,
-  .stateError {
+  .stateError,
+  .keypad {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;

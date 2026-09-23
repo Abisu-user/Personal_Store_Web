@@ -1,15 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppIcon } from "@/components/ui/app-icon";
 
 import { PinDigitInput, type PinVerificationState } from "./pin-digit-input";
+import { GlassyNumericKeypad } from "./glassy-numeric-keypad";
 import styles from "./glassy-pin-verification.module.css";
 
 const VERIFYING_MINIMUM_MS = 1_050;
-const SUCCESS_HOLD_MS = 720;
+const SUCCESS_HOLD_MS = 1_050;
 const ERROR_HOLD_MS = 900;
 
 export class PinVerificationError extends Error {
@@ -138,9 +139,31 @@ export function GlassyPinVerification({
 
   const busy = state === "verifying" || state === "success";
   const visibleMessage = message || (state === "input" ? externalMessage : "");
+  const enterDigit = useCallback((digit: string) => {
+    if (state !== "input" || requestLock.current || !/^[0-9]$/.test(digit) || pin.length >= length) return;
+    const next = `${pin}${digit}`;
+    setPin(next);
+    if (message) setMessage("");
+    if (next.length === length) window.setTimeout(() => void submit(next), 130);
+  }, [length, message, pin, state, submit]);
+  const removeLastDigit = useCallback(() => {
+    if (state !== "input" || requestLock.current) return;
+    setPin((current) => current.slice(0, -1));
+    if (message) setMessage("");
+  }, [message, state]);
+  const handleScopeKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented || state !== "input") return;
+    if (/^[0-9]$/.test(event.key)) {
+      event.preventDefault();
+      enterDigit(event.key);
+    } else if (event.key === "Backspace" || event.key === "Delete") {
+      event.preventDefault();
+      removeLastDigit();
+    }
+  };
 
   return (
-    <section className={`${styles.shell} ${embedded ? styles.embedded : ""}`} data-state={state}>
+    <section className={`${styles.shell} ${embedded ? styles.embedded : ""}`} data-state={state} onKeyDown={handleScopeKeyDown}>
       <div className={styles.aurora} aria-hidden="true" />
       <div className={styles.heading}>
         <span className={`${styles.stateIcon} ${styles[`stateIcon${state[0].toUpperCase()}${state.slice(1)}`]}`}>
@@ -157,18 +180,17 @@ export function GlassyPinVerification({
         length={length}
         value={pin}
         state={state}
-        onChange={(next) => {
-          setPin(next);
-          if (message) setMessage("");
-        }}
-        onComplete={submit}
+        onDigit={enterDigit}
+        onBackspace={removeLastDigit}
         focusSignal={focusSignal}
       />
 
-      <div className={styles.statusArea} aria-live="polite" aria-atomic="true">
+      <GlassyNumericKeypad disabled={state !== "input"} onDigit={enterDigit} onBackspace={removeLastDigit} />
+
+      {state !== "input" || visibleMessage ? <div className={styles.statusArea} aria-live="polite" aria-atomic="true">
         <strong>{copy.title}</strong>
         <span>{visibleMessage || copy.detail}</span>
-      </div>
+      </div> : null}
 
       {state === "success" ? (
         <div className={styles.successMark} aria-hidden="true">
