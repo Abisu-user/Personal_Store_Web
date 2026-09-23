@@ -1727,3 +1727,20 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .modal-dialog.mobile-bottom-sheet,
   .modal-dialog.mobile-sheet-dialog { animation: none; }
 }
+/* Anime source availability is progressively enriched after AniList results. */
+.anime-source-availability { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-height: 29px; padding: 5px 8px; border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line)); border-radius: 9px; color: var(--brand); background: color-mix(in srgb, var(--brand-soft) 72%, var(--surface)); font-size: .68rem; font-weight: 850; }
+.anime-source-availability a { color: inherit; text-decoration: none; white-space: nowrap; }
+.anime-source-availability a:hover { text-decoration: underline; }
+.anime-source-availability > div { display: grid; gap: 2px; min-width: 0; }
+.anime-source-availability small { overflow: hidden; color: var(--muted); font-size: .7rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.anime-source-availability.muted { border-color: var(--line); color: var(--muted); background: color-mix(in srgb, var(--surface) 86%, var(--canvas)); }
+.anime-source-availability.detail { min-height: 42px; padding: 9px 11px; font-size: .78rem; }
+.anime-search-load-more { display: flex; justify-content: center; }
+.anime-search-load-more .secondary-button { min-width: 150px; }
+.anime-catalogue-skeleton { min-height: 178px; border-color: transparent; background: linear-gradient(100deg, color-mix(in srgb, var(--surface) 78%, var(--canvas)) 30%, color-mix(in srgb, var(--brand-soft) 45%, var(--surface)) 50%, color-mix(in srgb, var(--surface) 78%, var(--canvas)) 70%); background-size: 220% 100%; animation: anime-catalogue-shimmer 1.2s linear infinite; }
+@keyframes anime-catalogue-shimmer { to { background-position-x: -220%; } }
+@media (max-width: 700px) {
+  .anime-source-availability { align-items: flex-start; flex-direction: column; min-height: 42px; gap: 2px; }
+  .anime-source-availability.muted { justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) { .anime-catalogue-skeleton { animation: none; } }

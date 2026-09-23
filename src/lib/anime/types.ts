@@ -6,6 +6,17 @@ export type AnimePersonalRank = "normal" | "like" | "love" | "masterpiece";
 export type AnimeFolder = { id: string; name: string; scope: "standard" | "adult"; sortOrder: number; isVisible: boolean };
 export type AnimeTag = { id: string; name: string; color: string | null; folderId: string | null; sortOrder: number };
 export type AnimeRelation = { relation: string; malId: number; title: string; type: string | null };
+export type AnimeSourceAvailabilityStatus = "available" | "not_found" | "unknown" | "source_unavailable";
+export type AnimeSourceAvailability = {
+  source: "anime1";
+  status: AnimeSourceAvailabilityStatus;
+  title: string | null;
+  url: string | null;
+  episodeText: string | null;
+  year: number | null;
+  seasonText: string | null;
+  subtitleGroup: string | null;
+};
 
 export type AnimeLibraryItem = {
   id: string; externalId: string; externalSource: "jikan" | "anilist" | "bangumi" | "manual"; title: string; titleJapanese: string | null; titleEnglish: string | null; titleChinese: string | null;
@@ -33,6 +44,11 @@ export type ExternalAnime = {
   sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];
   isAdult: boolean; contentRating: string | null; externalUrl: string | null;
   nextAiringEpisode?: { episode: number; airingAt: number; timeUntilAiring: number } | null;
+  malId?: number | null;
+  titleUserPreferred?: string | null;
+  synonyms?: string[];
+  popularity?: number | null;
+  sourceAvailability?: AnimeSourceAvailability;
 };
 
 export const animeStatusLabels: Record<AnimeWatchStatus, string> = { planning: "想看", watching: "正在觀看", completed: "已看完", paused: "暫停", dropped: "棄番" };

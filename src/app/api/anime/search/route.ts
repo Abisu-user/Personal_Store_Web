@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { AnimeSearchError, searchAnime } from "@/lib/anime/jikan-service";
+import { AnimeSearchError, searchAnimePage } from "@/lib/anime/jikan-service";
 import { getSecurityContext } from "@/lib/security/activity";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 const querySchema = z.string().trim().min(2).max(100);
+const pageSchema = z.coerce.number().int().min(1).max(250).catch(1);
 const messageFor = (code: AnimeSearchError["code"]) => ({
   rate_limited: "搜尋太頻繁，請稍後再試",
   forbidden: "動漫資料服務拒絕這次請求，請稍後再試",
@@ -20,10 +21,11 @@ export async function GET(request: NextRequest) {
   if (!(await getSecurityContext())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = querySchema.safeParse(request.nextUrl.searchParams.get("q") ?? "");
   if (!parsed.success) return NextResponse.json({ error: "請至少輸入 2 個字搜尋動漫。" }, { status: 400 });
+  const page = pageSchema.parse(request.nextUrl.searchParams.get("page") ?? "1");
   try {
-    const results = (await searchAnime(parsed.data, request.signal)).filter((anime) => !anime.isAdult);
-    console.info("[api/anime/search] catalogue lookup succeeded", { queryLength: parsed.data.length, resultCount: results.length });
-    return NextResponse.json({ results }, { headers: { "Cache-Control": "private, no-store" } });
+    const result = await searchAnimePage(parsed.data, page, 18, request.signal);
+    console.info("[api/anime/search] AniList lookup succeeded", { queryLength: parsed.data.length, page: result.page, resultCount: result.items.length });
+    return NextResponse.json({ results: result.items, page: result.page, hasNextPage: result.hasNextPage, total: result.total }, { headers: { "Cache-Control": "private, no-store" } });
   }
   catch (caught) {
     if (request.signal.aborted) return new NextResponse(null, { status: 499 });

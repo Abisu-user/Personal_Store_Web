@@ -119,7 +119,7 @@ function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: bool
     createdAt: now,
     updatedAt: now,
     tags: [],
-    sourceUrl: null,
+    sourceUrl: anime.sourceAvailability?.status === "available" ? anime.sourceAvailability.url : null,
     isAdult: adult,
     contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
     adultSource: adult ? anime.source : null,
@@ -1006,7 +1006,7 @@ export function AnimeWorkspace({
           method: "POST",
           body: {
             title: externalDisplayTitle(anime),
-            sourceUrl: null,
+            sourceUrl: anime.sourceAvailability?.status === "available" ? anime.sourceAvailability.url : null,
             coverUrl: anime.coverUrl,
             watchStatus: "planning",
             categoryIds: [],
