@@ -21,6 +21,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 import { MobileSectionActions } from "@/components/ui/mobile-section-actions";
 import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
@@ -456,6 +457,7 @@ export function BookmarksWorkspace({
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
+  const backgroundSave = useBackgroundSave();
   const previewRequest = useRef<AbortController | null>(null);
   const pendingRelock = useRef<{ folderId: string; timer: number } | null>(null);
   const [data, setData] = useState(initialData ?? emptyBookmarks);
@@ -744,116 +746,164 @@ export function BookmarksWorkspace({
       if (previewRequest.current === controller) previewRequest.current = null;
     }
   }
-  async function prepareBookmarkCover(
-    selection: CoverSelection,
-    currentTicket: string | null,
-    setTicket: (value: string | null) => void,
-    setStatus: (value: BookmarkCoverStatus) => void,
-    setCoverError: (value: string | null) => void,
-  ) {
-    if (!selection) return null;
-    if (currentTicket) return currentTicket;
-    setStatus("uploading");
-    setCoverError(null);
-    try {
-      const ticket = await uploadCover(selection);
-      if (!ticket) throw new CoverUploadError("upload", "封面上傳沒有回傳有效結果，請重試。");
-      setTicket(ticket);
-      setStatus("uploaded");
-      return ticket;
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "圖片讀取成功，但上傳失敗，請稍後再試。";
-      setStatus("error");
-      setCoverError(message);
-      throw cause;
-    }
-  }
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    setPending(true);
     setError(null);
     setSuccess(null);
-    let submittedCoverTicket = createCoverTicket;
+    const url = draftUrl.trim();
+    const title = draftTitle.trim();
     try {
-    submittedCoverTicket = await prepareBookmarkCover(createCover, createCoverTicket, setCreateCoverTicket, setCreateCoverStatus, setCreateCoverError);
-    const response = await fetch("/api/bookmarks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        url: draftUrl,
-        title: draftTitle,
-        description: draftDescription,
-        categoryIds: form.getAll("categoryIds").map(String),
-        folderIds: form.getAll("folderIds").map(String),
-        coverTicket: submittedCoverTicket,
-        favorite: form.get("favorite") === "on",
-        pinned: form.get("pinned") === "on",
-        archived: form.get("archived") === "on",
-      }),
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error ?? "無法儲存網站收藏。");
+      const parsedUrl = new URL(url);
+      if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error();
+    } catch {
+      setError("網址必須以 http:// 或 https:// 開頭。");
+      return;
     }
-    setSuccess("網站收藏已儲存，正在開啟網站收藏清單…");
+    if (!title) {
+      setError("請輸入網站標題。");
+      return;
+    }
+
+    const payload = {
+      url,
+      title,
+      description: draftDescription,
+      categoryIds: form.getAll("categoryIds").map(String),
+      folderIds: form.getAll("folderIds").map(String),
+      favorite: form.get("favorite") === "on",
+      pinned: form.get("pinned") === "on",
+      archived: form.get("archived") === "on",
+    };
+    const selectedCover = createCover;
+    let submittedCoverTicket = createCoverTicket;
+    backgroundSave.enqueue({
+      type: "bookmark",
+      title: `新增網站收藏：${title}`,
+      description: selectedCover ? "包含自訂封面" : url,
+      operation: "新增網站收藏",
+      page: "/bookmarks",
+      persist: false,
+      maxRetries: 2,
+      execute: async ({ signal, reportProgress }) => {
+        if (selectedCover && !submittedCoverTicket) {
+          reportProgress(undefined, "正在上傳封面");
+          submittedCoverTicket = await uploadCover(selectedCover);
+          if (!submittedCoverTicket) throw new CoverUploadError("upload", "封面上傳沒有回傳有效結果，請重試。");
+        }
+        reportProgress(undefined, "正在儲存網站收藏");
+        const response = await fetch("/api/bookmarks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...payload, coverTicket: submittedCoverTicket }),
+          signal,
+        });
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error ?? "無法儲存網站收藏。");
+        return body;
+      },
+      onSuccess: () => {
+        window.dispatchEvent(new CustomEvent("personal-vault:item-created", { detail: "bookmark" }));
+      },
+      onError: (cause) => setError(cause.message || "無法儲存網站收藏。"),
+    });
+
     setCreateCover(null);
     setCreateCoverTicket(null);
     setCreateCoverStatus("idle");
     setCreateCoverError(null);
-    if (createFlow) { createFlow.complete(); return; }
+    if (createFlow) { createFlow.dismiss(); return; }
     router.replace("/bookmarks");
-    router.refresh();
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "無法儲存網站收藏。";
-      setError(submittedCoverTicket && !(cause instanceof CoverUploadError) ? `圖片已上傳，但網站收藏資料儲存失敗：${message}` : message);
-    } finally { setPending(false); }
   }
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editing) return;
     const form = new FormData(event.currentTarget);
-    setPending(true);
     setError(null);
     setSuccess(null);
-    const url = String(form.get("url") ?? "");
-    const title = String(form.get("title") ?? "");
+    const url = String(form.get("url") ?? "").trim();
+    const title = String(form.get("title") ?? "").trim();
     const description = String(form.get("description") ?? "");
+    try {
+      const parsedUrl = new URL(url);
+      if (!/^https?:$/.test(parsedUrl.protocol)) throw new Error();
+    } catch {
+      setError("網址必須以 http:// 或 https:// 開頭。");
+      return;
+    }
+    if (!title) {
+      setError("請輸入網站標題。");
+      return;
+    }
     const categoryIds = form.getAll("categoryIds").map(String);
     const folderIds = form.getAll("folderIds").map(String);
     const favorite = form.get("favorite") === "on";
     const archived = form.get("archived") === "on";
     const pinned = form.get("pinned") === "on" && !archived;
+    const previous = editing;
+    const selectedCover = editCover;
     let submittedCoverTicket = editCoverTicket;
-    try {
-    submittedCoverTicket = await prepareBookmarkCover(editCover, editCoverTicket, setEditCoverTicket, setEditCoverStatus, setEditCoverError);
-    const response = await fetch("/api/bookmarks", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: editing.id,
-        url,
+    const payload = { id: editing.id, url, title, description, categoryIds, folderIds, coverTicket: submittedCoverTicket, favorite, pinned, archived };
+    const nextCategories = data.categories.filter((item) => categoryIds.includes(item.id)).map(({ id, name }) => ({ id, name }));
+    const nextFolders = data.folders.filter((item) => folderIds.includes(item.id)).map(({ id, name, is_visible }) => ({ id, name, is_visible }));
+    setData((current) => ({
+      ...current,
+      bookmarks: current.bookmarks.map((item) => item.id === previous.id ? {
+        ...item,
         title,
-        description,
-        categoryIds,
-        folderIds,
-        coverTicket: submittedCoverTicket,
+        description: description || null,
         favorite,
         pinned,
         archived,
-      }),
-    });
-    if (!response.ok) {
-      const body = await response.json().catch(() => null);
-      throw new Error(body?.error ?? "無法儲存修改。");
+        updatedAt: new Date().toISOString(),
+        category: nextCategories[0] ?? null,
+        folder: nextFolders[0] ?? null,
+        categories: nextCategories,
+        folders: nextFolders,
+        detail: item.detail ? { ...item.detail, url, notes: description || null } : { url, favicon_url: null, site_title: null, notes: description || null },
+      } : item),
+    }));
+    const callbacks = {
+      onSuccess: async () => {
+        await load(unlockedFolderScopeId ?? undefined);
+        setSuccess("網站收藏已更新。");
+      },
+      onError: (cause: Error) => setError(cause.message || "無法儲存修改。"),
+      rollback: () => setData((current) => ({ ...current, bookmarks: current.bookmarks.map((item) => item.id === previous.id ? previous : item) })),
+    };
+    if (selectedCover) {
+      backgroundSave.enqueue({
+        type: "bookmark", title: `更新網站收藏：${title}`, description: "包含自訂封面",
+        operation: "修改網站收藏", page: "/bookmarks", entityKey: `bookmark:${editing.id}`,
+        mergeKey: `bookmark:${editing.id}`, persist: false, maxRetries: 2,
+        execute: async ({ signal, reportProgress }) => {
+          if (!submittedCoverTicket) {
+            reportProgress(undefined, "正在上傳封面");
+            submittedCoverTicket = await uploadCover(selectedCover);
+            if (!submittedCoverTicket) throw new CoverUploadError("upload", "封面上傳沒有回傳有效結果，請重試。");
+          }
+          reportProgress(undefined, "正在儲存修改");
+          const response = await fetch("/api/bookmarks", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, coverTicket: submittedCoverTicket }), signal });
+          const body = await response.json().catch(() => null);
+          if (!response.ok) throw new Error(body?.error ?? "無法儲存修改。");
+          return body;
+        },
+        ...callbacks,
+      });
+    } else {
+      backgroundSave.enqueue({
+        type: "bookmark", title: `更新網站收藏：${title}`, description: url,
+        operation: "修改網站收藏", page: "/bookmarks", entityKey: `bookmark:${editing.id}`,
+        mergeKey: `bookmark:${editing.id}`, persist: false,
+        request: { url: "/api/bookmarks", method: "PATCH", body: payload },
+        ...callbacks,
+      });
     }
-    await load();
     setEditing(null);
-    setSuccess("網站收藏已更新。");
-    } catch (cause) {
-      const message = cause instanceof Error && cause.message !== "Failed to fetch" ? cause.message : "目前無法連線並儲存修改，請稍後再試。";
-      setError(submittedCoverTicket && !(cause instanceof CoverUploadError) ? `圖片已上傳，但網站收藏資料儲存失敗：${message}` : message);
-    } finally { setPending(false); }
+    setEditCover(null);
+    setEditCoverTicket(null);
+    setEditCoverStatus("idle");
+    setEditCoverError(null);
   }
   async function update(id: string, action: "trash" | "restore") {
     setPending(true);

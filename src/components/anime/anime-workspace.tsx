@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import {
   GlassyPinVerification,
@@ -1973,6 +1974,13 @@ export function AnimeWorkspace({
             setRemoving(editing);
             setEditing(null);
           }}
+          onOptimisticChange={(next) => {
+            if (next.isAdult) {
+              setAdultData((current) => current ? { ...current, library: current.library.map((item) => item.id === next.id ? next : item) } : current);
+            } else {
+              setData((current) => ({ ...current, library: current.library.map((item) => item.id === next.id ? next : item) }));
+            }
+          }}
           onSaved={async () => {
             const wasAdult = editing.isAdult;
             setPending("refresh");
@@ -2549,6 +2557,7 @@ function AnimeEditor({
   onClose,
   onSaved,
   onRemove,
+  onOptimisticChange,
 }: {
   anime?: AnimeLibraryItem;
   prefill?: ExternalAnime;
@@ -2559,7 +2568,9 @@ function AnimeEditor({
   onClose: () => void;
   onSaved: () => Promise<void>;
   onRemove?: () => void;
+  onOptimisticChange?: (next: AnimeLibraryItem) => void;
 }) {
+  const backgroundSave = useBackgroundSave();
   const [title, setTitle] = useState(
     anime?.title ?? prefill?.titleChinese ?? prefill?.title ?? "",
   );
@@ -2576,7 +2587,7 @@ function AnimeEditor({
     anime?.folderIds ?? (anime?.folderId ? [anime.folderId] : defaultFolderId ? [defaultFolderId] : []),
   );
   const [cover, setCover] = useState<CoverSelection>(null);
-  const [pending, setPending] = useState(false);
+  const pending = false;
   const [message, setMessage] = useState<string | null>(null);
   const isAdult = adult || Boolean(anime?.isAdult) || Boolean(prefill?.isAdult);
   const [contentRating, setContentRating] = useState(
@@ -2588,43 +2599,88 @@ function AnimeEditor({
     anime?.adultSource ?? "manual",
   );
   const save = async () => {
-    if (!title.trim()) {
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
       setMessage("請輸入動漫名稱。");
       return;
     }
-    setPending(true);
     setMessage(null);
-    try {
-      const coverTicket = await uploadCover(cover);
-      const body = {
-        ...(anime ? { id: anime.id } : {}),
-        title,
+    const selectedCover = cover;
+    let coverTicket: string | null = null;
+    const body = {
+      ...(anime ? { id: anime.id } : {}),
+      title: normalizedTitle,
+      sourceUrl: sourceUrl.trim() || null,
+      externalUrl: isAdult ? sourceUrl.trim() || null : undefined,
+      isAdult,
+      contentRating: isAdult ? contentRating.trim() || "成人內容" : null,
+      adultSource: isAdult ? adultSource.trim() || "manual" : null,
+      coverUrl: !selectedCover && !anime ? (prefill?.coverUrl ?? null) : undefined,
+      metadata: !anime && prefill ? prefill : undefined,
+      externalId: !anime && prefill ? prefill.id : undefined,
+      externalSource: !anime && prefill ? prefill.source : undefined,
+      coverTicket,
+      watchStatus,
+      rating,
+      notes,
+      folderIds,
+      categoryIds,
+    };
+    if (anime) {
+      onOptimisticChange?.({
+        ...anime,
+        title: normalizedTitle,
         sourceUrl: sourceUrl.trim() || null,
-        externalUrl: isAdult ? sourceUrl.trim() || null : undefined,
+        externalUrl: isAdult ? sourceUrl.trim() || null : anime.externalUrl,
         isAdult,
         contentRating: isAdult ? contentRating.trim() || "成人內容" : null,
         adultSource: isAdult ? adultSource.trim() || "manual" : null,
-        coverUrl: !cover && !anime ? (prefill?.coverUrl ?? null) : undefined,
-        metadata: !anime && prefill ? prefill : undefined,
-        externalId: !anime && prefill ? prefill.id : undefined,
-        externalSource: !anime && prefill ? prefill.source : undefined,
-        coverTicket,
         watchStatus,
         rating,
-        notes,
+        notes: notes || null,
+        folderId: folderIds[0] ?? null,
         folderIds,
-        categoryIds,
-      };
-      await api("/api/anime/library", {
-        method: anime ? "PATCH" : "POST",
-        body: JSON.stringify(body),
+        tags: categories.filter((category) => categoryIds.includes(category.id)),
+        updatedAt: new Date().toISOString(),
       });
-      await onSaved();
-    } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "無法儲存動漫。");
-    } finally {
-      setPending(false);
     }
+    const callbacks = {
+      onSuccess: () => onSaved(),
+      onError: (cause: Error) => setMessage(cause.message || "無法儲存動漫。"),
+      rollback: () => { if (anime) onOptimisticChange?.(anime); },
+    };
+    const common = {
+      type: isAdult ? "anime-adult" : "anime",
+      title: `${anime ? "更新" : "新增"}動漫：${normalizedTitle}`,
+      description: selectedCover ? "包含自訂封面" : animeStatusLabels[watchStatus],
+      operation: anime ? "修改動漫" : "新增動漫",
+      page: "/anime",
+      entityKey: anime ? `anime:${anime.id}` : undefined,
+      mergeKey: anime ? `anime:${anime.id}` : undefined,
+      persist: false,
+      maxRetries: 2,
+      ...callbacks,
+    };
+    if (selectedCover) {
+      backgroundSave.enqueue({
+        ...common,
+        execute: async ({ signal, reportProgress }) => {
+          if (!coverTicket) {
+            reportProgress(undefined, "正在上傳封面");
+            coverTicket = await uploadCover(selectedCover);
+            if (!coverTicket) throw new Error("封面上傳沒有回傳有效結果，請重試。");
+          }
+          reportProgress(undefined, "正在儲存動漫資料");
+          return api("/api/anime/library", { method: anime ? "PATCH" : "POST", body: JSON.stringify({ ...body, coverTicket }), signal });
+        },
+      });
+    } else {
+      backgroundSave.enqueue({
+        ...common,
+        request: { url: "/api/anime/library", method: anime ? "PATCH" : "POST", body },
+      });
+    }
+    onClose();
   };
   const currentCover = anime ? coverUrl(anime) : (prefill?.coverUrl ?? null);
   return (

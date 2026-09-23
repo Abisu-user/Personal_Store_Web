@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { ModalDialog } from "./modal-dialog";
 import { ConfirmDialog } from "./confirm-dialog";
 
-type CreateFlow = { close: () => void; complete: () => void; setPending: (pending: boolean) => void; footer: HTMLDivElement | null };
+type CreateFlow = { close: () => void; dismiss: () => void; complete: () => void; setPending: (pending: boolean) => void; footer: HTMLDivElement | null };
 const CreateFlowContext = createContext<CreateFlow | null>(null);
 export const useCreateFlow = () => useContext(CreateFlowContext);
 type CreateItemModalProps = { title: string; open: boolean; onClose: () => void; onSaved?: () => void; pending?: boolean; className?: string; children: ReactNode };
@@ -17,7 +17,7 @@ function CreateItemModalBody({ title, open, onClose, onSaved = onClose, children
   const [footer, setFooter] = useState<HTMLDivElement | null>(null);
   const dirty = useRef(false);
   const close = () => { if (!pending && !confirm) { if (dirty.current) setConfirm(true); else onClose(); } };
-  return <CreateFlowContext.Provider value={{ close, complete: onSaved, setPending, footer }}>
+  return <CreateFlowContext.Provider value={{ close, dismiss: onClose, complete: onSaved, setPending, footer }}>
     <ModalDialog className={`create-item-dialog ${className}`} eyebrow="CREATE PRIVATE ITEM" title={title} open={open} onClose={close} pending={pending || confirm} footer={<div className="create-item-footer" ref={setFooter} />}>
       <div className="create-item-fields" onInputCapture={() => { dirty.current = true; }} onChangeCapture={() => { dirty.current = true; }}>{children}</div>
     </ModalDialog>
