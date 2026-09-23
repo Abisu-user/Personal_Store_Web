@@ -32,6 +32,7 @@ const mediaFields = `
   id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false)
   format status episodes duration season seasonYear startDate { year month day } endDate { year month day }
   averageScore genres studios { nodes { name } } source isAdult siteUrl
+  nextAiringEpisode { episode airingAt timeUntilAiring }
 `;
 
 /**
@@ -84,6 +85,9 @@ function mapAnime(row: any): ExternalAnime {
     publicScore: asNumber(row?.averageScore) === null ? null : (asNumber(row?.averageScore) ?? 0) / 10,
     genres: Array.isArray(row?.genres) ? row.genres.filter((item: unknown): item is string => typeof item === "string") : [],
     studios: Array.isArray(row?.studios?.nodes) ? row.studios.nodes.map((item: any) => asText(item?.name)).filter(Boolean) : [], relations: [], isAdult: Boolean(row?.isAdult), contentRating: row?.isAdult ? "成人內容" : null, externalUrl: asText(row?.siteUrl),
+    nextAiringEpisode: row?.nextAiringEpisode && asNumber(row.nextAiringEpisode.episode) !== null && asNumber(row.nextAiringEpisode.airingAt) !== null
+      ? { episode: Number(row.nextAiringEpisode.episode), airingAt: Number(row.nextAiringEpisode.airingAt), timeUntilAiring: Number(row.nextAiringEpisode.timeUntilAiring ?? 0) }
+      : null,
   };
 }
 
@@ -149,7 +153,7 @@ export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
 export async function getDiscoveryHome(): Promise<DiscoveryHome> {
   const current = currentSeason(); const upcoming = nextSeason();
   const jobs = await Promise.allSettled([
-    getCatalogue({ season: current.season, seasonYear: current.year, sort: "POPULARITY_DESC", perPage: 12 }),
+    getCatalogue({ season: current.season, seasonYear: current.year, sort: "NEXT_AIRING_EPISODE_DESC", perPage: 20 }),
     getCatalogue({ season: upcoming.season, seasonYear: upcoming.year, sort: "POPULARITY_DESC", perPage: 12 }),
     getCatalogue({ sort: "POPULARITY_DESC", perPage: 12 }),
     getCatalogue({ sort: "SCORE_DESC", perPage: 12 }),

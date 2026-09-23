@@ -12,6 +12,7 @@ import {
   uploadCover,
 } from "@/components/content/cover-image-field";
 import { AnimeDiscovery } from "@/components/anime/anime-discovery";
+import { AnimeHome } from "@/components/anime/anime-home";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
@@ -36,7 +37,7 @@ import {
   writeClientResource,
 } from "@/lib/pwa/client-resource-cache";
 
-type Tab = "discover" | "library" | "stats" | "adult";
+type Tab = "home" | "discover" | "library" | "stats" | "adult";
 type AdultView = "library" | "discover";
 type CategoryScope = "standard" | "adult";
 type Filter = "all" | AnimeWatchStatus;
@@ -75,6 +76,58 @@ const empty: AnimeWorkspaceData = {
 const displayTitle = (
   anime: Pick<AnimeLibraryItem, "title" | "titleChinese" | "titleJapanese">,
 ) => anime.title || anime.titleChinese || anime.titleJapanese || "未命名動漫";
+const externalDisplayTitle = (anime: ExternalAnime) =>
+  anime.titleChinese || anime.titleJapanese || anime.title || "未命名動漫";
+
+function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: boolean): AnimeLibraryItem {
+  const now = new Date().toISOString();
+  return {
+    id: optimisticId,
+    externalId: anime.id,
+    externalSource: anime.source,
+    title: externalDisplayTitle(anime),
+    titleJapanese: anime.titleJapanese,
+    titleEnglish: anime.titleEnglish,
+    titleChinese: anime.titleChinese,
+    originalTitle: anime.originalTitle,
+    coverUrl: anime.coverUrl,
+    bannerUrl: anime.bannerUrl,
+    synopsis: anime.synopsis,
+    animeType: anime.animeType,
+    broadcastStatus: anime.broadcastStatus,
+    episodes: anime.episodes,
+    episodeDuration: anime.episodeDuration,
+    releaseYear: anime.releaseYear,
+    season: anime.season,
+    startDate: anime.startDate,
+    endDate: anime.endDate,
+    ageRating: anime.ageRating,
+    sourceMaterial: anime.sourceMaterial,
+    publicScore: anime.publicScore,
+    genres: anime.genres,
+    studios: anime.studios,
+    relations: anime.relations,
+    watchStatus: "planning",
+    watchedEpisodes: 0,
+    rating: null,
+    favorite: false,
+    personalRank: null,
+    notes: null,
+    startedWatchingAt: null,
+    completedAt: null,
+    lastWatchedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    tags: [],
+    sourceUrl: null,
+    isAdult: adult,
+    contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
+    adultSource: adult ? anime.source : null,
+    externalUrl: anime.externalUrl,
+    folderId: null,
+    folderIds: [],
+  };
+}
 async function api<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -182,6 +235,7 @@ function AnimeFolderNavigation({
   inline = false,
   collectionLayout = false,
   compactOnMobile = false,
+  manageSignal = 0,
   trashCount = 0,
   trashSelected = false,
 }: {
@@ -196,6 +250,8 @@ function AnimeFolderNavigation({
   collectionLayout?: boolean;
   /** The standard library shares its rail with watch-status shortcuts. */
   compactOnMobile?: boolean;
+  /** Allows the mobile filter sheet to open the existing manager without duplicating it. */
+  manageSignal?: number;
   trashCount?: number;
   trashSelected?: boolean;
 }) {
@@ -222,6 +278,14 @@ function AnimeFolderNavigation({
     setError(null);
     setManaging(true);
   };
+  const previousManageSignal = useRef(manageSignal);
+  useEffect(() => {
+    if (manageSignal === previousManageSignal.current) return;
+    previousManageSignal.current = manageSignal;
+    openManager();
+  // `openManager` intentionally captures the latest folders whenever the signal changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manageSignal]);
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!name.trim()) return;
@@ -305,6 +369,7 @@ function AnimeFolderNavigation({
     <section
       className={`${inline ? "anime-folder-bar anime-folder-bar-inline" : "anime-folder-bar"}${collectionLayout ? " collection-navigation-section anime-folder-navigation" : ""}`}
       aria-label="動漫資料夾"
+      data-anime-scope={scope}
       data-chip-overflow-container={collectionLayout || undefined}
     >
       {collectionLayout && (
@@ -547,6 +612,7 @@ function AnimeCollectionList({
   onGridColumnsChange,
   onMutated,
   onOpen,
+  onStatusChange,
   scope,
   trashed = false,
 }: {
@@ -558,6 +624,7 @@ function AnimeCollectionList({
   onGridColumnsChange?: (columns: number | null) => void;
   onMutated: () => Promise<void>;
   onOpen: (anime: AnimeLibraryItem) => void;
+  onStatusChange?: (anime: AnimeLibraryItem, status: Exclude<AnimeWatchStatus, "paused">) => void;
   scope: CategoryScope;
   trashed?: boolean;
 }) {
@@ -702,7 +769,7 @@ function AnimeCollectionList({
                 </p>
                 {!adult && (
                   <div className={styles.episodeProgress}>
-                    <span><span>已看 {anime.watchedEpisodes} 集</span><span>{anime.episodes && anime.episodes > 0 ? `共 ${anime.episodes} 集` : "集數未定"}</span></span>
+                    <span><span>{anime.watchedEpisodes > 0 ? `已看 ${anime.watchedEpisodes} 集` : "尚未開始"}</span><span>{anime.episodes && anime.episodes > 0 ? `共 ${anime.episodes} 集` : "集數未定"}</span></span>
                     {anime.episodes && anime.episodes > 0 ? <i aria-hidden="true"><b style={{ width: `${Math.min(100, Math.max(0, anime.watchedEpisodes / anime.episodes * 100))}%` }} /></i> : null}
                   </div>
                 )}
@@ -713,6 +780,7 @@ function AnimeCollectionList({
                 )}
               </div>
             </button>
+            {!trashed && onStatusChange && <div className="anime-card-quick-status"><label><span>觀看狀態</span><select aria-label={`更新 ${displayTitle(anime)} 的觀看狀態`} onChange={(event) => onStatusChange(anime, event.target.value as Exclude<AnimeWatchStatus, "paused">)} value={anime.watchStatus === "paused" ? "planning" : anime.watchStatus}>{statuses.map((status) => <option key={status} value={status}>{animeStatusLabels[status]}</option>)}</select></label></div>}
           </article>
         ))}
       </div>
@@ -785,7 +853,8 @@ export function AnimeWorkspace({
   const hasAdultAccess = data.adultPermissions?.adultContentAccess === true;
   const initialAdultHandled = useRef(false);
   const [loaded, setLoaded] = useState(Boolean(initialData));
-  const [tab, setTab] = useState<Tab>("library");
+  const [tab, setTab] = useState<Tab>("home");
+  const [discoveryView, setDiscoveryView] = useState<"season" | "updates" | "schedule">("season");
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [folderFilters, setFolderFilters] = useState<string[]>([]);
@@ -805,6 +874,12 @@ export function AnimeWorkspace({
   const [categoryName, setCategoryName] = useState("");
   const [categoryQuery, setCategoryQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [folderManageSignal, setFolderManageSignal] = useState(0);
+  const [libraryFilterDraft, setLibraryFilterDraft] = useState<{
+    status: Filter;
+    folderIds: string[];
+    categoryIds: string[];
+  }>({ status: "all", folderIds: [], categoryIds: [] });
   const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
   const [categoryManageScope, setCategoryManageScope] =
@@ -824,6 +899,7 @@ export function AnimeWorkspace({
   const [adultUnlocked, setAdultUnlocked] = useState(false);
   const [adultView, setAdultView] = useState<AdultView>("library");
   const [adultPinPrompt, setAdultPinPrompt] = useState(false);
+  const quickAddLocks = useRef(new Set<string>());
   const [preferences, setPreferences] = useState(
     initialData?.preferences ?? defaultPreferences,
   );
@@ -904,6 +980,107 @@ export function AnimeWorkspace({
     );
     if (document.visibilityState === "visible") setAdultData(next);
   };
+  const quickAddExternal = async (anime: ExternalAnime, adult = false) => {
+    const key = `${adult ? "adult" : "standard"}:${anime.source}:${anime.id}`;
+    if (quickAddLocks.current.has(key)) return;
+    const currentLibrary = adult ? (adultData?.library ?? []) : data.library;
+    if (currentLibrary.some((item) => item.externalSource === anime.source && item.externalId === anime.id)) {
+      setNotice("這部作品已在收藏中。");
+      return;
+    }
+    quickAddLocks.current.add(key);
+    const optimisticId = `optimistic-${crypto.randomUUID()}`;
+    const optimistic = optimisticAnime(anime, optimisticId, adult);
+    if (adult) setAdultData((current) => current ? { ...current, library: [optimistic, ...current.library] } : current);
+    else setData((current) => ({ ...current, library: [optimistic, ...current.library] }));
+
+    return new Promise<void>((resolve, reject) => {
+      backgroundJobs.enqueue({
+        type: adult ? "anime-adult" : "anime",
+        title: `加入收藏：${externalDisplayTitle(anime)}`,
+        operation: "加入收藏",
+        page: "/anime",
+        entityKey: `anime-external:${key}`,
+        request: {
+          url: "/api/anime/library",
+          method: "POST",
+          body: {
+            title: externalDisplayTitle(anime),
+            sourceUrl: null,
+            coverUrl: anime.coverUrl,
+            watchStatus: "planning",
+            categoryIds: [],
+            folderIds: [],
+            isAdult: adult,
+            contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
+            adultSource: adult ? anime.source : null,
+            externalUrl: anime.externalUrl,
+            externalId: anime.id,
+            externalSource: anime.source,
+            metadata: {
+              titleJapanese: anime.titleJapanese,
+              titleEnglish: anime.titleEnglish,
+              titleChinese: anime.titleChinese,
+              originalTitle: anime.originalTitle,
+              synopsis: anime.synopsis,
+              animeType: anime.animeType,
+              broadcastStatus: anime.broadcastStatus,
+              episodes: anime.episodes,
+              episodeDuration: anime.episodeDuration,
+              releaseYear: anime.releaseYear,
+              season: anime.season,
+              startDate: anime.startDate,
+              endDate: anime.endDate,
+              ageRating: anime.ageRating,
+              sourceMaterial: anime.sourceMaterial,
+              publicScore: anime.publicScore,
+              genres: anime.genres,
+              studios: anime.studios,
+              relations: anime.relations,
+            },
+          },
+        },
+        rollback: () => {
+          if (adult) setAdultData((current) => current ? { ...current, library: current.library.filter((item) => item.id !== optimisticId) } : current);
+          else setData((current) => ({ ...current, library: current.library.filter((item) => item.id !== optimisticId) }));
+        },
+        onSuccess: (result) => {
+          const savedId = (result as { id?: string } | null)?.id;
+          const replace = (items: AnimeLibraryItem[]) => items.map((item) => item.id === optimisticId ? { ...item, id: savedId ?? item.id } : item);
+          if (adult) setAdultData((current) => current ? { ...current, library: replace(current.library) } : current);
+          else setData((current) => ({ ...current, library: replace(current.library) }));
+          quickAddLocks.current.delete(key);
+          setNotice("已加入收藏。");
+          resolve();
+        },
+        onError: (cause) => {
+          quickAddLocks.current.delete(key);
+          setNotice(cause.message || "無法加入收藏。");
+          reject(cause);
+        },
+      });
+    });
+  };
+  const updateWatchStatus = (anime: AnimeLibraryItem, watchStatus: Exclude<AnimeWatchStatus, "paused">) => {
+    const adult = anime.isAdult;
+    const replace = (items: AnimeLibraryItem[]) => items.map((item) => item.id === anime.id ? { ...item, watchStatus, updatedAt: new Date().toISOString() } : item);
+    if (adult) setAdultData((current) => current ? { ...current, library: replace(current.library) } : current);
+    else setData((current) => ({ ...current, library: replace(current.library) }));
+    backgroundJobs.enqueue({
+      type: adult ? "anime-adult" : "anime",
+      title: `更新觀看狀態：${displayTitle(anime)}`,
+      operation: "更新觀看狀態",
+      page: "/anime",
+      entityKey: `anime:${anime.id}`,
+      request: { url: "/api/anime/library", method: "PATCH", body: { id: anime.id, watchStatus } },
+      rollback: () => {
+        if (adult) setAdultData((current) => current ? { ...current, library: current.library.map((item) => item.id === anime.id ? anime : item) } : current);
+        else setData((current) => ({ ...current, library: current.library.map((item) => item.id === anime.id ? anime : item) }));
+      },
+      onSuccess: () => setNotice("觀看狀態已更新。"),
+      onError: (cause) => setNotice(cause.message || "無法更新觀看狀態。"),
+    });
+  };
   const refreshTrash = async (scope: CategoryScope) => {
     const next = await api<AnimeWorkspaceData>(
       `/api/anime/library?scope=${scope}&view=trash`,
@@ -936,6 +1113,17 @@ export function AnimeWorkspace({
     setCategoryFilters([]);
     setLibraryView("library");
     setFilter(value);
+  };
+  const openLibraryFilters = () => {
+    setLibraryFilterDraft({ status: filter, folderIds: folderFilters, categoryIds: categoryFilters });
+    setFilterOpen(true);
+  };
+  const applyLibraryFilters = () => {
+    setLibraryView("library");
+    setFilter(libraryFilterDraft.status);
+    setFolderFilters(libraryFilterDraft.folderIds);
+    setCategoryFilters(libraryFilterDraft.categoryIds);
+    setFilterOpen(false);
   };
   const updateAdultPreferences = async (changes: Partial<AnimePreferences>) => {
     setPending("adult-settings");
@@ -1171,7 +1359,7 @@ export function AnimeWorkspace({
         <h1>動漫收藏</h1>
         <div className={styles.headingActions}>
         {tab === "library" && <button className="mobile-icon-button" aria-label="搜尋自己的動漫" onClick={() => librarySearch.current?.focus()} type="button"><AppIcon name="search" /></button>}
-        {tab !== "adult" && (
+        {(tab !== "adult" || adultUnlocked) && (
           <button
             className="button compact page-create-button anime-mobile-create-button"
             onClick={() => setAdding(true)}
@@ -1183,13 +1371,20 @@ export function AnimeWorkspace({
         </div>
       </div>
       <div className="anime-toolbar">
-        <div className="anime-tabs bookmark-view-tabs" role="tablist" aria-label="動漫功能">
+        <div className={`anime-tabs bookmark-view-tabs${hasAdultAccess ? " has-adult" : ""}`} role="tablist" aria-label="動漫功能">
+          <button
+            className={tab === "home" ? "active" : ""}
+            onClick={() => setTab("home")}
+            type="button"
+          >
+            首頁
+          </button>
           <button
             className={tab === "library" ? "active" : ""}
             onClick={() => setTab("library")}
             type="button"
           >
-            我的動漫
+            我的收藏
           </button>
           <button
             className={tab === "discover" ? "active" : ""}
@@ -1216,13 +1411,13 @@ export function AnimeWorkspace({
           )}
         </div>
         <div className="anime-toolbar-actions">
-          {tab !== "adult" && (
+          {(tab !== "adult" || adultUnlocked) && (
             <button
               className="button compact page-create-button anime-create-button"
               onClick={() => setAdding(true)}
               type="button"
             >
-              ＋ 新增動漫
+              ＋ {tab === "adult" ? "新增成人作品" : "新增動漫"}
             </button>
           )}
         </div>
@@ -1239,25 +1434,19 @@ export function AnimeWorkspace({
           </button>
         </div>
       )}
+      {tab === "home" && (
+        <AnimeHome
+          library={data.library}
+          onAdd={(anime) => quickAddExternal(anime)}
+          onOpenSchedule={() => { setDiscoveryView("schedule"); setTab("discover"); }}
+          onOpenSeason={() => { setDiscoveryView("season"); setTab("discover"); }}
+        />
+      )}
       {tab === "discover" && (
-        <AnimeDiscovery library={data.library} onAdd={setPrefill} />
+        <AnimeDiscovery initialView={discoveryView} key={discoveryView} library={data.library} onAdd={(anime) => quickAddExternal(anime)} />
       )}
       {tab === "adult" && adultUnlocked && adultData && (
         <section className="anime-adult-workspace">
-          <div className="anime-adult-heading">
-            <div>
-              <p className="eyebrow">成人內容</p>
-              <h2>我的成人動漫</h2>
-              <p>類別與一般動漫完全分開；離開 App 時此區會立即重新隱藏。</p>
-            </div>
-            <button
-              className="button compact"
-              onClick={() => setAdding(true)}
-              type="button"
-            >
-              ＋ 新增成人作品
-            </button>
-          </div>
           <div className="anime-filter-bar anime-adult-filter-bar">
             <div className="anime-filter-scroll">
               <div
@@ -1282,7 +1471,7 @@ export function AnimeWorkspace({
                   }}
                   type="button"
                 >
-                  我的動漫
+                  我的收藏
                 </button>
                 <button
                   className={adultView === "discover" ? "active" : ""}
@@ -1294,7 +1483,7 @@ export function AnimeWorkspace({
                   }}
                   type="button"
                 >
-                  搜尋／探索
+                  探索
                 </button>
               </div>
             </div>
@@ -1339,6 +1528,7 @@ export function AnimeWorkspace({
                   <section
                     className="anime-category-bar anime-adult-category-bar collection-navigation-section"
                     aria-label="成人動漫類別"
+                    data-anime-scope="adult"
                     data-chip-overflow-container
                   >
                     <header>
@@ -1402,6 +1592,7 @@ export function AnimeWorkspace({
                       setSelectedReadOnly(false);
                       setSelected(anime);
                     }}
+                    onStatusChange={updateWatchStatus}
                     scope="adult"
                   />
                 </>
@@ -1434,7 +1625,7 @@ export function AnimeWorkspace({
             <AnimeDiscovery
               adultMode
               library={adultData.library}
-              onAdd={setAdultPrefill}
+              onAdd={(anime) => quickAddExternal(anime, true)}
             />
           )}
         </section>
@@ -1571,7 +1762,7 @@ export function AnimeWorkspace({
             <button
               aria-expanded={filterOpen}
               className="secondary-button compact anime-mobile-filter"
-              onClick={() => setFilterOpen(true)}
+              onClick={openLibraryFilters}
               type="button"
             >
               篩選{filter === "all" ? "" : `：${animeStatusLabels[filter]}`}
@@ -1589,6 +1780,7 @@ export function AnimeWorkspace({
             onFoldersChange={(folders) =>
               setData((current) => ({ ...current, folders }))
             }
+            manageSignal={folderManageSignal}
             onTrash={() => {
               setFilter("all");
               setFolderFilters([]);
@@ -1602,7 +1794,7 @@ export function AnimeWorkspace({
           />
           {libraryView === "library" ? (
             <>
-              <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別" data-chip-overflow-container>
+              <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別" data-anime-scope="standard" data-chip-overflow-container>
                 <header>
                   <strong>類別</strong>
                   <div data-chip-overflow-actions>
@@ -1652,6 +1844,7 @@ export function AnimeWorkspace({
                     setSelectedReadOnly(false);
                     setSelected(anime);
                   }}
+                  onStatusChange={updateWatchStatus}
                   scope="standard"
                 />
               )}
@@ -1762,28 +1955,39 @@ export function AnimeWorkspace({
             title="篩選我的動漫"
           >
             <div className="anime-mobile-filter-panel">
-              <p>觀看狀態</p>
-              <div>
+              <section>
+                <header><div><strong>觀看狀態</strong><span>可與資料夾、類別一起篩選</span></div><button onClick={() => setLibraryFilterDraft((current) => ({ ...current, status: "all" }))} type="button">清除</button></header>
+                <div className="anime-mobile-filter-options">
                 {visibleFilters.map((value) => (
                   <button
-                    className={
-                      libraryView === "library" &&
-                      !folderFilters.length &&
-                      filter === value
-                        ? "active"
-                        : ""
-                    }
+                    className={libraryFilterDraft.status === value ? "active" : ""}
                     key={value}
-                    onClick={() => {
-                      selectLibraryStatus(value);
-                      setFilterOpen(false);
-                    }}
+                    onClick={() => setLibraryFilterDraft((current) => ({ ...current, status: value }))}
                     type="button"
                   >
                     {value === "all" ? "全部" : animeStatusLabels[value]}
                   </button>
                 ))}
-              </div>
+                </div>
+              </section>
+              <section>
+                <header><div><strong>資料夾（可複選）</strong><span>符合任一選取資料夾時顯示</span></div><button onClick={() => setLibraryFilterDraft((current) => ({ ...current, folderIds: [] }))} type="button">清除</button></header>
+                <div className="anime-mobile-filter-options">
+                  {data.folders.filter((folder) => folder.isVisible).map((folder) => <button className={libraryFilterDraft.folderIds.includes(folder.id) ? "active" : ""} key={folder.id} onClick={() => setLibraryFilterDraft((current) => { const folderIds = toggledFolderIds(current.folderIds, folder.id); return { ...current, folderIds, categoryIds: current.categoryIds.filter((categoryId) => { const category = data.tags.find((item) => item.id === categoryId); return !category?.folderId || folderIds.includes(category.folderId); }) }; })} type="button">{libraryFilterDraft.folderIds.includes(folder.id) ? "✓ " : ""}{folder.name}</button>)}
+                  {!data.folders.length && <span className="anime-mobile-filter-empty">尚未建立資料夾</span>}
+                </div>
+                <button className="anime-mobile-filter-manage" onClick={() => { setFilterOpen(false); setFolderManageSignal((value) => value + 1); }} type="button">管理資料夾</button>
+              </section>
+              <section>
+                <header><div><strong>類別（可複選）</strong><span>只顯示目前資料夾可用的類別</span></div><button onClick={() => setLibraryFilterDraft((current) => ({ ...current, categoryIds: [] }))} type="button">清除</button></header>
+                <div className="anime-mobile-filter-options">
+                  {data.tags.filter((category) => !libraryFilterDraft.folderIds.length || category.folderId === null || (category.folderId && libraryFilterDraft.folderIds.includes(category.folderId))).map((category) => <button className={libraryFilterDraft.categoryIds.includes(category.id) ? "active" : ""} key={category.id} onClick={() => setLibraryFilterDraft((current) => ({ ...current, categoryIds: current.categoryIds.includes(category.id) ? current.categoryIds.filter((id) => id !== category.id) : [...current.categoryIds, category.id] }))} type="button">{libraryFilterDraft.categoryIds.includes(category.id) ? "✓ " : ""}{category.name}</button>)}
+                  {!data.tags.length && <span className="anime-mobile-filter-empty">尚未建立類別</span>}
+                </div>
+                <button className="anime-mobile-filter-manage" onClick={() => { setFilterOpen(false); setCategoryManageScope("standard"); }} type="button">管理類別</button>
+              </section>
+              <div className="anime-mobile-filter-summary"><strong>目前選擇</strong><span>{libraryFilterDraft.status === "all" ? "全部狀態" : animeStatusLabels[libraryFilterDraft.status]} · {libraryFilterDraft.folderIds.length ? `${libraryFilterDraft.folderIds.length} 個資料夾` : "全部資料夾"} · {libraryFilterDraft.categoryIds.length ? `${libraryFilterDraft.categoryIds.length} 個類別` : "全部類別"}</span></div>
+              <div className="dialog-actions anime-mobile-filter-actions"><button className="secondary-button" onClick={() => setLibraryFilterDraft({ status: "all", folderIds: [], categoryIds: [] })} type="button">全部清除</button><button className="button" onClick={applyLibraryFilters} type="button">套用篩選</button></div>
             </div>
           </ModalDialog>
           <ModalDialog

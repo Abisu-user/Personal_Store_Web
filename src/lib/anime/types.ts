@@ -32,6 +32,7 @@ export type ExternalAnime = {
   episodeDuration: number | null; releaseYear: number | null; season: string | null; startDate: string | null; endDate: string | null; ageRating: string | null;
   sourceMaterial: string | null; publicScore: number | null; genres: string[]; studios: string[]; relations: AnimeRelation[];
   isAdult: boolean; contentRating: string | null; externalUrl: string | null;
+  nextAiringEpisode?: { episode: number; airingAt: number; timeUntilAiring: number } | null;
 };
 
 export const animeStatusLabels: Record<AnimeWatchStatus, string> = { planning: "想看", watching: "正在觀看", completed: "已看完", paused: "暫停", dropped: "棄番" };
