@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:ui:responsive": "node scripts/tests/ui-foundation-responsive.cjs",
     "vocabulary:import": "node scripts/vocabulary/import-system-datasets.mjs",
     "vocabulary:import:ja": "node scripts/vocabulary/import-system-datasets.mjs --language=ja",
     "vocabulary:import:en": "node scripts/vocabulary/import-system-datasets.mjs --language=en",
