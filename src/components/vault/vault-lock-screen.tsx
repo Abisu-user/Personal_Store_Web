@@ -86,6 +86,26 @@ function VaultSafe({ interiorRef, phase }: { interiorRef: RefObject<HTMLDivEleme
   </div>;
 }
 
+const VAULT_STATUS: Record<VaultAnimationState, { label: string; detail: string }> = {
+  locked: { label: "LOCKED", detail: "等待安全驗證" },
+  verifying: { label: "VERIFYING", detail: "正在驗證 Vault 密碼" },
+  error: { label: "SECURITY ALERT", detail: "驗證失敗，請重新輸入" },
+  unlocking: { label: "UNLOCKING", detail: "正在解除機械鎖" },
+  opening: { label: "UNLOCKING", detail: "正在開啟安全空間" },
+  entering: { label: "UNLOCKED", detail: "正在進入私密空間" },
+  unlocked: { label: "UNLOCKED", detail: "私密空間已安全解鎖" },
+  locking: { label: "LOCKING", detail: "正在安全鎖定" },
+  closing: { label: "LOCKING", detail: "正在關閉機械鎖" },
+};
+
+function VaultStatus({ phase }: { phase: VaultAnimationState }) {
+  const status = VAULT_STATUS[phase];
+  return <div className={styles.statusRow} data-status={phase} role="status">
+    <span className={styles.statusDot} aria-hidden="true" />
+    <span><strong>{status.label}</strong><small>{status.detail}</small></span>
+  </div>;
+}
+
 export function VaultLockScreen({ creating, error, interiorRef, onInput, onSubmit, pending, phase }: VaultLockScreenProps) {
   const [showPassword, setShowPassword] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -107,20 +127,32 @@ export function VaultLockScreen({ creating, error, interiorRef, onInput, onSubmi
 
   return <section className={`${styles.lockScreen} vault-lock-screen`} data-phase={phase}>
     <div className={styles.lockPanel}>
-      <header className={styles.header}>
-        <span className={styles.headerIcon}><AppIcon name="lock" /></span>
-        <div>
-          <p>PERSONAL STORE · PRIVATE VAULT</p>
-          <h2>{creating ? "建立你的私密保管庫" : "私密保管庫"}</h2>
-          <span>{creating ? "設定一組只有你知道的完整密碼，建立零知識加密空間。" : "輸入 Vault 密碼，開啟只在這台裝置記憶體中存在的解鎖金鑰。"}</span>
-        </div>
-      </header>
+      <section className={styles.visualColumn}>
+        <header className={styles.header}>
+          <span className={styles.headerIcon}><AppIcon name="lock" /></span>
+          <div>
+            <p>PERSONAL STORE · PRIVATE VAULT</p>
+            <h2>{creating ? "建立你的私密保管庫" : "私密保管庫"}</h2>
+            <span>{creating ? "設定一組只有你知道的完整密碼，建立零知識加密空間。" : "輸入 Vault 密碼，開啟只在這台裝置記憶體中存在的解鎖金鑰。"}</span>
+          </div>
+        </header>
 
-      <VaultSafe interiorRef={interiorRef} phase={phase} />
+        <VaultSafe interiorRef={interiorRef} phase={phase} />
+        <VaultStatus phase={phase} />
+      </section>
 
       <form aria-busy={pending || transitioning} className={styles.authCard} onSubmit={submit}>
+        <div className={styles.consoleHeading}>
+          <span className={styles.consoleIcon}><AppIcon name="security" /></span>
+          <div>
+            <p>SECURITY CONSOLE</p>
+            <h3>{creating ? "建立安全金鑰" : "安全身分驗證"}</h3>
+            <span>{creating ? "建立後，敏感內容只會在你的瀏覽器中解密。" : "通過驗證後才會在本機記憶體建立暫時金鑰。"}</span>
+          </div>
+        </div>
+
         <div className={styles.authHeading}>
-          <div><strong>{creating ? "建立 Vault 密碼" : phase === "verifying" ? "正在驗證…" : "解鎖保險箱"}</strong><span>{creating ? "至少 11 個字元，支援英文、數字與符號。" : "閒置 10 分鐘後會自動鎖定並清除金鑰。"}</span></div>
+          <div><strong>{creating ? "建立 Vault 密碼" : phase === "verifying" ? "正在驗證…" : "Vault 密碼"}</strong><span>{creating ? "至少 11 個字元，支援英文、數字與符號。" : "輸入完整密碼以解除保險庫鎖定。"}</span></div>
           <span className={styles.securityBadge}><AppIcon name="security" /> AES-256</span>
         </div>
 
@@ -155,6 +187,13 @@ export function VaultLockScreen({ creating, error, interiorRef, onInput, onSubmi
           <span>{phase === "verifying" ? "正在驗證…" : transitioning ? "正在開啟安全空間…" : creating ? "建立加密保管庫" : "解鎖私密保管庫"}</span>
         </button>
         <p className={styles.zeroKnowledge}>密碼與解密後內容不會傳送到伺服器。</p>
+
+        <div className={styles.securityRule} />
+        <div className={styles.securityList} aria-label="保管庫安全資訊">
+          <div><span><AppIcon name="security" /></span><p><strong>AES-256-GCM 瀏覽器端加密</strong><small>敏感內容只在目前裝置解密。</small></p></div>
+          <div><span><AppIcon name="lock" /></span><p><strong>10 分鐘閒置自動鎖定</strong><small>鎖定時立即清除解密後的金鑰。</small></p></div>
+          <div><span><AppIcon name="database" /></span><p><strong>零知識資料保護</strong><small>伺服器不會取得你的 Vault 密碼。</small></p></div>
+        </div>
       </form>
     </div>
   </section>;
