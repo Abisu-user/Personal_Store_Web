@@ -11,6 +11,7 @@ import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
+import { VaultLockScreen, VaultTransitionOverlay, type VaultAnimationState, type VaultRect, type VaultTransition } from "@/components/vault/vault-lock-screen";
 import mobileStyles from "@/components/vault/vault-mobile.module.css";
 
 type VaultStatus = { initialized: boolean; salt?: string; wrappedVaultKey?: string; wrappedKeyNonce?: string; kdfParameters?: { algorithm: "PBKDF2"; hash: "SHA-256"; iterations: number; keyLength: 256 } };
@@ -32,35 +33,88 @@ async function deriveKey(password: string, salt: Uint8Array, count: number) {
   return crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: asArrayBuffer(salt), iterations: count }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
-function VaultGate({ creating, error, pending, onSubmit }: { creating: boolean; error: string | null; pending: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  return <section className="vault-gate">
-    <div className="vault-gate-form">
-      <p className="eyebrow">ZERO-KNOWLEDGE VAULT</p><h2>{creating ? "建立 Vault 密碼" : "解鎖保管庫"}</h2>
-      <p>{creating ? "此密碼只在這台裝置的瀏覽器中使用來解鎖資料；我們無法替你重設，請妥善保管。" : "金鑰只會保存在此頁面的記憶體中，閒置 10 分鐘會自動鎖定。"}</p>
-      {error && <p className="notice error" role="alert">{error}</p>}
-      <form className="form" onSubmit={onSubmit}>
-        <div className="field"><label>Vault 密碼</label><input autoComplete={creating ? "new-password" : "current-password"} minLength={creating ? 11 : undefined} name="password" required type="password" /></div>
-        {creating && <div className="field"><label>再次輸入 Vault 密碼</label><input autoComplete="new-password" minLength={11} name="confirmation" required type="password" /></div>}
-        <button className="button" disabled={pending} type="submit">{pending ? (creating ? "建立中…" : "解鎖中…") : (creating ? "建立加密保管庫" : "解鎖 Vault")}</button>
-      </form>
-    </div>
-    <aside className="vault-gate-security" aria-label="保管庫安全資訊"><strong>你的資料如何被保護</strong><ul><li><b>AES-256-GCM</b><span>敏感內容在瀏覽器端加密。</span></li><li><b>Zero-Knowledge</b><span>伺服器不會取得 Vault 密碼或明文。</span></li><li><b>自動鎖定</b><span>閒置 10 分鐘後清除記憶體中的金鑰。</span></li></ul></aside>
-  </section>;
+const animationPhases = new Set<VaultAnimationState>(["verifying", "unlocking", "opening", "entering", "locking", "closing"]);
+
+function asRect(rect: DOMRect): VaultRect { return { top: rect.top, left: rect.left, width: rect.width, height: rect.height }; }
+function appContentRect(): VaultRect {
+  const content = document.querySelector<HTMLElement>(".desktop-app-main") ?? document.querySelector<HTMLElement>(".app-main");
+  return content ? asRect(content.getBoundingClientRect()) : { top: 0, left: 0, width: window.innerWidth, height: window.innerHeight };
 }
 
 export function VaultWorkspace() {
   const backgroundJobs = useBackgroundSave();
-  const [status, setStatus] = useState<VaultStatus | null>(null); const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null); const [items, setItems] = useState<PlainItem[]>([]); const [categories, setCategories] = useState<VaultCategory[]>([]); const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(() => new Set()); const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(() => new Set()); const [selectionMode, setSelectionMode] = useState(false); const [batchMoveOpen, setBatchMoveOpen] = useState(false); const [batchDeleteOpen, setBatchDeleteOpen] = useState(false); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [pending, setPending] = useState(false); const [deleting, setDeleting] = useState<PlainItem | null>(null); const [editing, setEditing] = useState<PlainItem | null>(null); const [itemDialogOpen, setItemDialogOpen] = useState(false); const [menuItemId, setMenuItemId] = useState<string | null>(null); const [query, setQuery] = useState(""); const [categoryFilters, setCategoryFilters] = useState<string[]>([]); const [categoryMoreOpen, setCategoryMoreOpen] = useState(false); const [categoryAddOpen, setCategoryAddOpen] = useState(false); const [categoryName, setCategoryName] = useState(""); const [categoryManagerOpen, setCategoryManagerOpen] = useState(false); const [categoryDraft, setCategoryDraft] = useState<VaultCategory[]>([]); const [deletingCategory, setDeletingCategory] = useState<VaultCategory | null>(null); const [reassignCategoryId, setReassignCategoryId] = useState<string>("unclassified"); const activityTimer = useRef<number | null>(null);
-  const lock = useCallback(() => { setVaultKey(null); setItems([]); setCategories([]); setVisibleItemIds(new Set()); setSelectedItemIds(new Set()); setSelectionMode(false); setItemDialogOpen(false); setMenuItemId(null); setError(null); setNotice(null); }, []);
+  const [status, setStatus] = useState<VaultStatus | null>(null); const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null); const [items, setItems] = useState<PlainItem[]>([]); const [categories, setCategories] = useState<VaultCategory[]>([]); const [visibleItemIds, setVisibleItemIds] = useState<Set<string>>(() => new Set()); const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(() => new Set()); const [selectionMode, setSelectionMode] = useState(false); const [batchMoveOpen, setBatchMoveOpen] = useState(false); const [batchDeleteOpen, setBatchDeleteOpen] = useState(false); const [error, setError] = useState<string | null>(null); const [notice, setNotice] = useState<string | null>(null); const [pending, setPending] = useState(false); const [deleting, setDeleting] = useState<PlainItem | null>(null); const [editing, setEditing] = useState<PlainItem | null>(null); const [itemDialogOpen, setItemDialogOpen] = useState(false); const [menuItemId, setMenuItemId] = useState<string | null>(null); const [query, setQuery] = useState(""); const [categoryFilters, setCategoryFilters] = useState<string[]>([]); const [categoryMoreOpen, setCategoryMoreOpen] = useState(false); const [categoryAddOpen, setCategoryAddOpen] = useState(false); const [categoryName, setCategoryName] = useState(""); const [categoryManagerOpen, setCategoryManagerOpen] = useState(false); const [categoryDraft, setCategoryDraft] = useState<VaultCategory[]>([]); const [deletingCategory, setDeletingCategory] = useState<VaultCategory | null>(null); const [reassignCategoryId, setReassignCategoryId] = useState<string>("unclassified"); const [animationState, setAnimationState] = useState<VaultAnimationState>("locked"); const [transition, setTransition] = useState<VaultTransition | null>(null); const [contentEntering, setContentEntering] = useState(false); const activityTimer = useRef<number | null>(null); const animationTimers = useRef<number[]>([]); const animationStateRef = useRef<VaultAnimationState>("locked"); const vaultInteriorRef = useRef<HTMLDivElement>(null); const vaultSessionRef = useRef(0);
+  const updateAnimationState = useCallback((next: VaultAnimationState) => { animationStateRef.current = next; setAnimationState(next); }, []);
+  const clearAnimationTimers = useCallback(() => { animationTimers.current.forEach((timer) => window.clearTimeout(timer)); animationTimers.current = []; }, []);
+  const scheduleAnimation = useCallback((callback: () => void, delay: number) => { const timer = window.setTimeout(callback, delay); animationTimers.current.push(timer); return timer; }, []);
+  const clearVaultMemory = useCallback(() => { vaultSessionRef.current += 1; setVaultKey(null); setItems([]); setCategories([]); setVisibleItemIds(new Set()); setSelectedItemIds(new Set()); setSelectionMode(false); setBatchMoveOpen(false); setBatchDeleteOpen(false); setItemDialogOpen(false); setMenuItemId(null); setDeleting(null); setEditing(null); setCategoryFilters([]); setCategoryMoreOpen(false); setCategoryAddOpen(false); setCategoryManagerOpen(false); setCategoryDraft([]); setDeletingCategory(null); setQuery(""); setCategoryName(""); setContentEntering(false); setError(null); setNotice(null); }, []);
   const fetchStatus = useCallback(async () => { const response = await fetch("/api/vault", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取保管庫。"); return data as VaultStatus; }, []);
-  const loadCategories = useCallback(async () => { const response = await fetch("/api/vault/categories", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取分類。"); setCategories(data.categories as VaultCategory[]); }, []);
+  const fetchCategories = useCallback(async () => { const response = await fetch("/api/vault/categories", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取分類。"); return data.categories as VaultCategory[]; }, []);
+  const loadCategories = useCallback(async () => { const session = vaultSessionRef.current; const next = await fetchCategories(); if (session === vaultSessionRef.current && animationStateRef.current === "unlocked") setCategories(next); }, [fetchCategories]);
+  const fetchDecryptedItems = useCallback(async (key: CryptoKey) => { const response = await fetch("/api/vault/items", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取加密項目。"); return Promise.all((data.items as CipherItem[]).map(async (item) => { const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(item.nonce), additionalData: encoder.encode(JSON.stringify(item.aad)) }, key, fromBase64(item.ciphertext)); const categoryIds = item.categoryIds ?? (item.categoryId ? [item.categoryId] : []); return { id: item.id, categoryId: categoryIds[0] ?? null, categoryIds, ...JSON.parse(decoder.decode(plain)) } as PlainItem; })); }, []);
+  const decryptItems = useCallback(async (key: CryptoKey) => { const session = vaultSessionRef.current; const next = await fetchDecryptedItems(key); if (session === vaultSessionRef.current && animationStateRef.current === "unlocked") setItems(next); }, [fetchDecryptedItems]);
+
+  const activateTransition = useCallback((next: VaultTransition) => {
+    setTransition(next);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => setTransition((current) => current ? { ...current, active: true } : current)));
+  }, []);
+
+  const playUnlockAnimation = useCallback((key: CryptoKey, decryptedItems: PlainItem[], loadedCategories: VaultCategory[]) => {
+    clearAnimationTimers();
+    setPending(false);
+    setError(null);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reducedMotion) {
+      setItems(decryptedItems); setCategories(loadedCategories); setVaultKey(key); updateAnimationState("unlocked");
+      return;
+    }
+    updateAnimationState("unlocking");
+    scheduleAnimation(() => updateAnimationState("opening"), 280);
+    scheduleAnimation(() => {
+      const interior = vaultInteriorRef.current;
+      const from = interior ? asRect(interior.getBoundingClientRect()) : { top: window.innerHeight * .4, left: window.innerWidth * .52, width: 180, height: 130 };
+      activateTransition({ mode: "expand", from, to: appContentRect(), active: false });
+      updateAnimationState("entering");
+    }, 690);
+    scheduleAnimation(() => { setItems(decryptedItems); setCategories(loadedCategories); setVaultKey(key); }, 1040);
+    scheduleAnimation(() => { setContentEntering(true); updateAnimationState("unlocked"); }, 1210);
+    scheduleAnimation(() => setTransition((current) => current ? { ...current, fading: true } : current), 1300);
+    scheduleAnimation(() => { setTransition(null); setContentEntering(false); }, 1470);
+  }, [activateTransition, clearAnimationTimers, scheduleAnimation, updateAnimationState]);
+
+  const lock = useCallback(() => {
+    if (!vaultKey || animationStateRef.current !== "unlocked") return;
+    clearAnimationTimers();
+    const from = appContentRect();
+    setTransition({ mode: "contract", from, to: from, active: false });
+    clearVaultMemory();
+    updateAnimationState("locking");
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const interior = vaultInteriorRef.current;
+      const fallbackWidth = Math.min(230, from.width * .38);
+      const fallbackHeight = fallbackWidth / 1.18;
+      const to = interior ? asRect(interior.getBoundingClientRect()) : { top: from.top + (from.height - fallbackHeight) / 2, left: from.left + from.width * .58, width: fallbackWidth, height: fallbackHeight };
+      activateTransition({ mode: "contract", from, to, active: false });
+    }));
+    scheduleAnimation(() => updateAnimationState("closing"), 590);
+    scheduleAnimation(() => setTransition((current) => current ? { ...current, fading: true } : current), 650);
+    scheduleAnimation(() => setTransition(null), 800);
+    scheduleAnimation(() => updateAnimationState("locked"), 1190);
+  }, [activateTransition, clearAnimationTimers, clearVaultMemory, scheduleAnimation, updateAnimationState, vaultKey]);
+
   useEffect(() => { let cancelled = false; void fetchStatus().then((data) => { if (!cancelled) setStatus(data); }).catch((cause) => { if (!cancelled) setError(cause.message); }); return () => { cancelled = true; }; }, [fetchStatus]);
   useEffect(() => { if (!vaultKey) return; const reset = () => { if (activityTimer.current) window.clearTimeout(activityTimer.current); activityTimer.current = window.setTimeout(lock, 10 * 60 * 1000); }; reset(); window.addEventListener("pointerdown", reset); window.addEventListener("keydown", reset); return () => { if (activityTimer.current) window.clearTimeout(activityTimer.current); window.removeEventListener("pointerdown", reset); window.removeEventListener("keydown", reset); }; }, [vaultKey, lock]);
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(null), 3000); return () => window.clearTimeout(timer); }, [notice]);
+  useEffect(() => () => clearAnimationTimers(), [clearAnimationTimers]);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (["unlocking", "opening", "entering", "locking", "closing"].includes(animationState)) root.dataset.vaultTransition = "true";
+    else delete root.dataset.vaultTransition;
+    return () => { delete root.dataset.vaultTransition; };
+  }, [animationState]);
 
-  async function decryptItems(key: CryptoKey) { const response = await fetch("/api/vault/items", { cache: "no-store" }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法讀取加密項目。"); const decrypted = await Promise.all((data.items as CipherItem[]).map(async (item) => { const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(item.nonce), additionalData: encoder.encode(JSON.stringify(item.aad)) }, key, fromBase64(item.ciphertext)); const categoryIds = item.categoryIds ?? (item.categoryId ? [item.categoryId] : []); return { id: item.id, categoryId: categoryIds[0] ?? null, categoryIds, ...JSON.parse(decoder.decode(plain)) } as PlainItem; })); setItems(decrypted); }
-  async function initialize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const password = String(form.get("password") ?? ""); const confirmation = String(form.get("confirmation") ?? ""); if (password.length < 11 || password !== confirmation) { setError("請設定至少 11 字元且兩次相同的 Vault 密碼。"); return; } setPending(true); setError(null); try { const salt = randomBytes(16); const wrappingNonce = randomBytes(12); const wrappingKey = await deriveKey(password, salt, iterations); const generated = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); const rawVaultKey = await crypto.subtle.exportKey("raw", generated); const wrappedVaultKey = await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrappingNonce, additionalData: encoder.encode("personal-vault-key:v1") }, wrappingKey, rawVaultKey); const response = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salt: toBase64(salt), wrappedVaultKey: toBase64(wrappedVaultKey), wrappedKeyNonce: toBase64(wrappingNonce), kdfParameters: { algorithm: "PBKDF2", hash: "SHA-256", iterations, keyLength: 256 } }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法建立保管庫。"); const key = await crypto.subtle.importKey("raw", rawVaultKey, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]); setVaultKey(key); setStatus(await fetchStatus()); await loadCategories(); } catch (cause) { setError(cause instanceof Error ? cause.message : "無法建立保管庫。"); } finally { setPending(false); } }
-  async function unlock(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!status?.initialized || !status.salt || !status.wrappedVaultKey || !status.wrappedKeyNonce || !status.kdfParameters) return; const password = String(new FormData(event.currentTarget).get("password") ?? ""); setPending(true); setError(null); try { const wrappingKey = await deriveKey(password, fromBase64(status.salt), status.kdfParameters.iterations); const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(status.wrappedKeyNonce), additionalData: encoder.encode("personal-vault-key:v1") }, wrappingKey, fromBase64(status.wrappedVaultKey)); const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]); await Promise.all([decryptItems(key), loadCategories()]); setVaultKey(key); } catch { setError("Vault 密碼錯誤，或加密資料無法驗證。"); } finally { setPending(false); } }
+  async function initialize(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (animationPhases.has(animationStateRef.current)) return; const form = new FormData(event.currentTarget); const password = String(form.get("password") ?? ""); const confirmation = String(form.get("confirmation") ?? ""); if (password.length < 11 || password !== confirmation) { setError("請設定至少 11 字元且兩次相同的 Vault 密碼。"); return; } setPending(true); setError(null); updateAnimationState("verifying"); try { const salt = randomBytes(16); const wrappingNonce = randomBytes(12); const wrappingKey = await deriveKey(password, salt, iterations); const generated = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]); const rawVaultKey = await crypto.subtle.exportKey("raw", generated); const wrappedVaultKey = await crypto.subtle.encrypt({ name: "AES-GCM", iv: wrappingNonce, additionalData: encoder.encode("personal-vault-key:v1") }, wrappingKey, rawVaultKey); const response = await fetch("/api/vault", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ salt: toBase64(salt), wrappedVaultKey: toBase64(wrappedVaultKey), wrappedKeyNonce: toBase64(wrappingNonce), kdfParameters: { algorithm: "PBKDF2", hash: "SHA-256", iterations, keyLength: 256 } }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "無法建立保管庫。"); const key = await crypto.subtle.importKey("raw", rawVaultKey, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]); const [nextStatus, loadedCategories] = await Promise.all([fetchStatus(), fetchCategories()]); setStatus(nextStatus); playUnlockAnimation(key, [], loadedCategories); } catch (cause) { setPending(false); updateAnimationState("locked"); setError(cause instanceof Error ? cause.message : "無法建立保管庫。"); } }
+  async function unlock(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (animationPhases.has(animationStateRef.current) || !status?.initialized || !status.salt || !status.wrappedVaultKey || !status.wrappedKeyNonce || !status.kdfParameters) return; const password = String(new FormData(event.currentTarget).get("password") ?? ""); setPending(true); setError(null); updateAnimationState("verifying"); try { const wrappingKey = await deriveKey(password, fromBase64(status.salt), status.kdfParameters.iterations); const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromBase64(status.wrappedKeyNonce), additionalData: encoder.encode("personal-vault-key:v1") }, wrappingKey, fromBase64(status.wrappedVaultKey)); const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]); const [decryptedItems, loadedCategories] = await Promise.all([fetchDecryptedItems(key), fetchCategories()]); playUnlockAnimation(key, decryptedItems, loadedCategories); } catch (cause) { setPending(false); const invalidPassword = cause instanceof DOMException && (cause.name === "OperationError" || cause.name === "DataError"); setError(invalidPassword ? "Vault 密碼錯誤，請重新輸入。" : cause instanceof Error ? cause.message : "目前無法解鎖保管庫，請稍後再試。"); updateAnimationState("error"); try { navigator.vibrate?.([28, 35, 28]); } catch { /* Optional haptic feedback must never block the error state. */ } scheduleAnimation(() => updateAnimationState("locked"), 880); } }
   useEffect(() => { const open = () => { if (vaultKey) { setEditing(null); setItemDialogOpen(true); } else setError("請先解鎖保管庫，再新增項目。"); }; window.addEventListener("personal-vault:new-item", open); return () => window.removeEventListener("personal-vault:new-item", open); }, [vaultKey]);
   function closeItemDialog() { if (!pending) { setItemDialogOpen(false); setEditing(null); } }
   async function saveItem(event: FormEvent<HTMLFormElement>) {
@@ -166,9 +220,12 @@ export function VaultWorkspace() {
   const categoryLabel = (categoryIds: string[]) => categoryIds.map((id) => categories.find((category) => category.id === id)?.name).filter(Boolean).join(" · ") || "未分類";
   const selectCategoryFilter = (next: string | "all" | "unclassified") => setCategoryFilters((current) => next === "all" ? [] : next === "unclassified" ? (current.includes(next) ? [] : [next]) : current.includes(next) ? current.filter((id) => id !== next) : [...current.filter((id) => id !== "unclassified"), next]);
   if (!status) return <p className="lead">正在準備保管庫…</p>;
-  if (!status.initialized) return <VaultGate creating error={error} onSubmit={initialize} pending={pending} />;
-  if (!vaultKey) return <VaultGate creating={false} error={error} onSubmit={unlock} pending={pending} />;
-  return <section className={`vault-workspace ${mobileStyles.vaultWorkspace}`}>
+  if (!status.initialized || !vaultKey || animationState !== "unlocked") return <>
+    <VaultLockScreen creating={!status.initialized} error={error} interiorRef={vaultInteriorRef} onInput={() => { if (error && animationState === "locked") setError(null); }} onSubmit={status.initialized ? unlock : initialize} pending={pending} phase={animationState} />
+    <VaultTransitionOverlay transition={transition} />
+  </>;
+  return <>
+  <section className={`vault-workspace ${mobileStyles.vaultWorkspace}${contentEntering ? " vault-content-entering" : ""}`}>
     <section className="vault-status-panel"><span aria-hidden="true" className="vault-status-icon"><span className={mobileStyles.desktopStatusIcon}>⌑</span><AppIcon className={mobileStyles.mobileStatusIcon} name="lock" /></span><div><strong>保管庫已解鎖</strong><p>所有敏感文字皆在送往伺服器前由瀏覽器加密。</p></div><button className="secondary-button compact" onClick={lock} type="button">立即鎖定</button></section>
     <div className="vault-section-heading"><div><p className="eyebrow">PRIVATE RECORDS</p><h2>保管項目</h2><p>{items.length ? `已安全載入 ${items.length} 個項目。` : "新增第一筆加密保管項目。"}</p></div><button className="button vault-add-button" onClick={() => { setError(null); setEditing(null); setItemDialogOpen(true); }} type="button">＋ 新增保管項目</button></div>
     {error && <p className="notice error" role="alert">{error}</p>}{notice && <p className="notice success" role="status">{notice}</p>}
@@ -185,5 +242,7 @@ export function VaultWorkspace() {
     <BulkOrganizeDialog categories={categories.map((category) => ({ id: category.id, name: category.name, folder_id: null }))} count={selectedItemIds.size} folders={[]} onClose={() => setBatchMoveOpen(false)} onSave={(change) => void runBatch("organize", change)} open={batchMoveOpen} pending={pending} showFolders={false} />
     <ConfirmDialog confirmLabel="刪除已選資料" description={`將永久刪除已選的 ${selectedItemIds.size} 筆保管資料，無法還原。`} error={error} onCancel={() => setBatchDeleteOpen(false)} onConfirm={() => { void runBatch("delete"); }} open={batchDeleteOpen} pending={pending} title="批量刪除保管資料？" />
     <ConfirmDialog description={`「${deleting?.label ?? ""}」將永久刪除，無法還原。`} error={error} onCancel={() => setDeleting(null)} onConfirm={() => { void remove(); }} open={Boolean(deleting)} pending={pending} title="刪除保管庫項目？" />
-  </section>;
+  </section>
+  <VaultTransitionOverlay transition={transition} />
+  </>;
 }

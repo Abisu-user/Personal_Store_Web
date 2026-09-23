@@ -1,0 +1,189 @@
+.lockScreen {
+  --vault-metal-dark: color-mix(in srgb, var(--brand-dark) 30%, #111827);
+  --vault-metal: color-mix(in srgb, var(--brand) 20%, #334155);
+  --vault-metal-light: color-mix(in srgb, var(--brand-soft) 36%, #94a3b8);
+  display: grid;
+  min-height: calc(100dvh - 48px);
+  place-items: center;
+  overflow: hidden;
+  padding: clamp(22px, 4vh, 44px) clamp(16px, 4vw, 42px);
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 50% 20%, color-mix(in srgb, var(--brand) 17%, transparent), transparent 34%),
+    linear-gradient(155deg, color-mix(in srgb, var(--canvas) 91%, transparent), color-mix(in srgb, var(--surface) 82%, transparent));
+  isolation: isolate;
+}
+
+:global(.app-main) :global(.dashboard) > :global(.dashboard-card:has(.vault-lock-screen)) { overflow: hidden; padding: 0; }
+:global(.dashboard-card:has(.vault-lock-screen)) > :global(.eyebrow),
+:global(.dashboard-card:has(.vault-lock-screen)) > h1,
+:global(.dashboard-card:has(.vault-lock-screen)) > h1 + p { display: none; }
+
+.lockPanel { display: grid; width: min(100%, 650px); justify-items: center; gap: clamp(14px, 2.2vh, 22px); }
+.header { display: grid; width: min(100%, 560px); grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 13px; }
+.headerIcon { display: grid; width: 46px; height: 46px; place-items: center; border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line)); border-radius: 15px; color: var(--brand); background: color-mix(in srgb, var(--brand-soft) 70%, var(--surface)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 35%); }
+.headerIcon svg { width: 23px; height: 23px; }
+.header > div { min-width: 0; }
+.header p { margin: 0 0 3px; color: var(--brand); font-size: .66rem; font-weight: 900; letter-spacing: .16em; }
+.header h2 { margin: 0; color: var(--ink); font-size: clamp(1.55rem, 2.5vw, 2rem); letter-spacing: -.035em; line-height: 1.12; }
+.header div > span { display: block; margin-top: 5px; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+
+.safeStage { display: grid; width: min(100%, 600px); place-items: center; padding: 5px 0; perspective: 1000px; }
+.safe { position: relative; width: min(100%, 570px); aspect-ratio: 1.65; overflow: hidden; border: clamp(8px, 1.3vw, 13px) solid var(--vault-metal-dark); border-radius: clamp(22px, 3vw, 34px); background: #070c15; box-shadow: 0 26px 55px rgb(4 12 28 / 32%), inset 0 0 0 2px rgb(255 255 255 / 9%), inset 0 0 45px rgb(0 0 0 / 80%); transform: translateZ(0); }
+.safeDepth { position: absolute; z-index: 0; inset: 0; background: linear-gradient(105deg, #050912 0 42%, color-mix(in srgb, var(--brand-dark) 45%, #07111e) 66%, #04070d 100%); box-shadow: inset 0 0 58px #000; }
+.interior { position: absolute; z-index: 1; inset: 9% 5% 9% 52%; display: grid; place-content: center; justify-items: center; gap: 7px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--brand) 44%, #1e293b); border-radius: 17px; color: #eaf3ff; background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--brand) 30%, transparent), transparent 48%), linear-gradient(160deg, #101c30, #050b14); box-shadow: inset 0 0 38px #000, 0 0 22px color-mix(in srgb, var(--brand) 18%, transparent); text-align: center; }
+.interiorGlow { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 18px, rgb(255 255 255 / 3%) 19px 20px); }
+.interiorLock { display: grid; width: 46px; height: 46px; place-items: center; border: 1px solid color-mix(in srgb, var(--brand) 55%, #fff); border-radius: 50%; color: color-mix(in srgb, var(--brand) 74%, #fff); background: color-mix(in srgb, var(--brand) 18%, transparent); box-shadow: 0 0 25px color-mix(in srgb, var(--brand) 34%, transparent); }
+.interiorLock svg { width: 22px; height: 22px; }
+.interior strong { z-index: 1; font-size: .72rem; letter-spacing: .12em; }
+.interior small { z-index: 1; color: #a8bbd6; font-size: .64rem; }
+
+.door { position: absolute; z-index: 3; inset: 0; overflow: hidden; border-radius: calc(clamp(22px, 3vw, 34px) - 11px); background: linear-gradient(135deg, var(--vault-metal-light), var(--vault-metal) 42%, var(--vault-metal-dark) 76%, #111827); box-shadow: inset 0 0 0 2px rgb(255 255 255 / 12%), inset 0 0 0 9px rgb(3 8 18 / 38%), inset 0 0 48px rgb(0 0 0 / 38%); transition: transform 430ms cubic-bezier(.24, .74, .26, 1); will-change: transform; }
+.doorInset { position: absolute; inset: 8%; border: 2px solid rgb(218 232 255 / 18%); border-radius: 17px; box-shadow: inset 0 0 0 7px rgb(3 8 18 / 18%), 0 0 0 1px rgb(0 0 0 / 28%); }
+.doorRivets { position: absolute; inset: 4.5%; }
+.doorRivets i { position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #172235; box-shadow: inset 0 1px 1px rgb(255 255 255 / 24%), 0 1px 2px #000; }
+.doorRivets i:nth-child(1), .doorRivets i:nth-child(2), .doorRivets i:nth-child(3), .doorRivets i:nth-child(4) { top: 0; }
+.doorRivets i:nth-child(9), .doorRivets i:nth-child(10), .doorRivets i:nth-child(11), .doorRivets i:nth-child(12) { bottom: 0; }
+.doorRivets i:nth-child(1), .doorRivets i:nth-child(5), .doorRivets i:nth-child(9) { left: 0; }
+.doorRivets i:nth-child(2), .doorRivets i:nth-child(10) { left: 34%; }
+.doorRivets i:nth-child(3), .doorRivets i:nth-child(11) { right: 34%; }
+.doorRivets i:nth-child(4), .doorRivets i:nth-child(8), .doorRivets i:nth-child(12) { right: 0; }
+.doorRivets i:nth-child(5), .doorRivets i:nth-child(8) { top: 50%; }
+.doorRivets i:nth-child(6) { top: 24%; left: 0; }
+.doorRivets i:nth-child(7) { right: 0; bottom: 24%; }
+.brandPlate { position: absolute; top: 15%; left: 13%; display: grid; grid-template-columns: 34px auto; grid-template-rows: auto auto; align-items: center; gap: 0 8px; padding: 8px 11px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 10px; color: #dae7fa; background: rgb(5 12 24 / 34%); box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%); }
+.brandPlate i { display: grid; grid-row: 1 / 3; width: 34px; height: 34px; place-items: center; border: 1px solid rgb(255 255 255 / 22%); border-radius: 50%; color: #fff; background: color-mix(in srgb, var(--brand) 70%, #1e293b); font-size: .68rem; font-style: normal; font-weight: 900; }
+.brandPlate b { font-size: .65rem; letter-spacing: .08em; }
+.brandPlate small { color: #a9bad0; font-size: .49rem; letter-spacing: .07em; }
+
+.handle { position: absolute; top: 51%; left: 54%; width: clamp(88px, 17%, 112px); aspect-ratio: 1; transform: translate(-50%, -50%) rotate(0deg); transform-origin: center; transition: transform 420ms cubic-bezier(.2, .78, .24, 1); will-change: transform; }
+.handleRing { position: absolute; inset: 18%; border: clamp(8px, 1vw, 11px) solid #111a28; border-radius: 50%; background: radial-gradient(circle, #71829b 0 17%, #253146 18% 35%, #0e1726 36% 100%); box-shadow: 0 8px 13px rgb(0 0 0 / 42%), inset 0 2px 3px rgb(255 255 255 / 28%); }
+.handleSpoke { position: absolute; top: 46%; left: 50%; width: 45%; height: 9%; border-radius: 999px; background: linear-gradient(#9aabc0, #273347 58%, #111927); box-shadow: 0 2px 4px rgb(0 0 0 / 36%); transform-origin: left center; }
+.handleSpokeTop { transform: rotate(-90deg); }.handleSpokeRight { transform: rotate(0deg); }.handleSpokeBottom { transform: rotate(90deg); }.handleSpokeLeft { transform: rotate(180deg); }
+.handleHub { position: absolute; inset: 40%; border: 2px solid #a5b4c8; border-radius: 50%; background: #1b2638; box-shadow: 0 2px 5px #000; }
+.bolts { position: absolute; z-index: -1; top: 18%; right: -4px; bottom: 18%; display: flex; flex-direction: column; justify-content: space-between; }
+.bolts i { width: clamp(30px, 6vw, 44px); height: clamp(18px, 3.2vw, 26px); border: 2px solid #101827; border-radius: 0 10px 10px 0; background: linear-gradient(#a9b7ca, #39475c 55%, #172133); box-shadow: inset 0 2px 2px rgb(255 255 255 / 25%), 4px 4px 9px rgb(0 0 0 / 35%); transition: transform 190ms ease; }
+
+.safe[data-phase="unlocking"] .handle,
+.safe[data-phase="opening"] .handle,
+.safe[data-phase="entering"] .handle,
+.safe[data-phase="locking"] .handle { transform: translate(-50%, -50%) rotate(145deg); }
+.safe[data-phase="unlocking"] .bolts i,
+.safe[data-phase="opening"] .bolts i,
+.safe[data-phase="entering"] .bolts i,
+.safe[data-phase="locking"] .bolts i { transform: translateX(-34px); }
+.safe[data-phase="unlocking"] .bolts i:nth-child(2) { transition-delay: 40ms; }
+.safe[data-phase="unlocking"] .bolts i:nth-child(3) { transition-delay: 80ms; }
+.safe[data-phase="opening"] .door,
+.safe[data-phase="entering"] .door,
+.safe[data-phase="locking"] .door { transform: translateX(-48%); }
+.safe[data-phase="closing"] .door { transition-duration: 430ms; }
+.safe[data-phase="closing"] .handle { transition-delay: 470ms; }
+.safe[data-phase="closing"] .bolts i { transition-delay: 420ms; }
+.safe[data-phase="closing"] .bolts i:nth-child(2) { transition-delay: 460ms; }
+.safe[data-phase="closing"] .bolts i:nth-child(3) { transition-delay: 500ms; }
+
+.alarmGlow, .lasers { position: absolute; z-index: 8; inset: 0; opacity: 0; pointer-events: none; }
+.alarmGlow { background: radial-gradient(circle at center, transparent 25%, rgb(244 63 94 / 25%) 70%, rgb(127 29 29 / 55%)); mix-blend-mode: screen; }
+.lasers { overflow: hidden; }
+.lasers i, .lasers b { position: absolute; left: -15%; width: 130%; height: 2px; background: #ff294d; box-shadow: 0 0 5px #ff294d, 0 0 15px #ff294d; }
+.lasers i:nth-child(1) { top: 24%; transform: rotate(8deg); }.lasers i:nth-child(2) { top: 52%; transform: rotate(-7deg); }.lasers i:nth-child(3) { top: 76%; transform: rotate(4deg); }
+.lasers b { top: -8%; height: 3px; }
+.safe[data-phase="error"] { animation: vault-shake 520ms ease both; }
+.safe[data-phase="error"] .alarmGlow { animation: alarm-pulse 880ms ease-out both; }
+.safe[data-phase="error"] .lasers { animation: laser-field 820ms ease both; }
+.safe[data-phase="error"] .lasers i { animation: laser-slash 650ms ease-out both; }
+.safe[data-phase="error"] .lasers i:nth-child(2) { animation-delay: 70ms; }.safe[data-phase="error"] .lasers i:nth-child(3) { animation-delay: 130ms; }
+.safe[data-phase="error"] .lasers b { animation: laser-scan 760ms cubic-bezier(.2, .7, .3, 1) both; }
+
+.authCard { display: grid; width: min(100%, 430px); gap: 12px; padding: 16px; border: 1px solid color-mix(in srgb, var(--line) 84%, transparent); border-radius: 18px; background: color-mix(in srgb, var(--surface) 84%, transparent); box-shadow: 0 18px 38px rgb(15 34 68 / 12%), inset 0 1px 0 rgb(255 255 255 / 35%); backdrop-filter: blur(22px) saturate(125%); transition: opacity 220ms ease, transform 260ms ease; }
+.lockScreen[data-phase="unlocking"] .authCard,
+.lockScreen[data-phase="opening"] .authCard,
+.lockScreen[data-phase="entering"] .authCard,
+.lockScreen[data-phase="locking"] .authCard,
+.lockScreen[data-phase="closing"] .authCard { opacity: 0; pointer-events: none; transform: translateY(10px); }
+.authHeading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.authHeading > div { display: grid; gap: 3px; }
+.authHeading strong { color: var(--ink); font-size: .94rem; }
+.authHeading span { color: var(--muted); font-size: .72rem; line-height: 1.45; }
+.securityBadge { display: inline-flex; min-height: 30px; align-items: center; gap: 5px; padding: 0 9px; border-radius: 999px; color: var(--brand) !important; background: color-mix(in srgb, var(--brand-soft) 70%, var(--surface)); font-weight: 850; white-space: nowrap; }
+.securityBadge svg { width: 15px; height: 15px; }
+.passwordField { display: grid; gap: 6px; color: var(--ink); font-size: .79rem; font-weight: 850; }
+.passwordControl { position: relative; display: block; }
+.passwordControl input { width: 100%; min-height: 46px; padding: 0 68px 0 13px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); background: color-mix(in srgb, var(--surface) 94%, transparent); font: inherit; font-size: 16px; outline: 0; transition: border-color 160ms ease, box-shadow 160ms ease; }
+.passwordControl input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent); }
+.passwordControl button { position: absolute; top: 1px; right: 1px; display: grid; min-width: 58px; height: 44px; place-items: center; border: 0; border-radius: 11px; color: var(--brand); background: transparent; font: inherit; font-size: .74rem; font-weight: 850; cursor: pointer; }
+.unlockButton { display: flex; min-height: 47px; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 0; border-radius: 13px; color: #fff; background: linear-gradient(135deg, color-mix(in srgb, var(--brand) 82%, #fff), var(--brand-dark)); box-shadow: 0 10px 22px color-mix(in srgb, var(--brand) 28%, transparent); font: inherit; font-size: .9rem; font-weight: 900; cursor: pointer; transition: transform 170ms ease, box-shadow 170ms ease, opacity 170ms ease; }
+.unlockButton svg { width: 18px; height: 18px; }
+.unlockButton:not(:disabled):active { transform: scale(.985); box-shadow: 0 5px 13px color-mix(in srgb, var(--brand) 24%, transparent); }
+.unlockButton:disabled { cursor: wait; opacity: .68; }
+.zeroKnowledge { margin: -3px 0 0; color: var(--muted); font-size: .68rem; text-align: center; }
+.errorMessage { margin: 0; padding: 9px 11px; border: 1px solid rgb(220 38 38 / 30%); border-radius: 10px; color: #b4232d; background: rgb(239 68 68 / 8%); font-size: .76rem; font-weight: 750; }
+
+.transitionOverlay { position: fixed; z-index: 90; display: grid; place-items: center; overflow: hidden; border: 1px solid color-mix(in srgb, var(--brand) 42%, #334155); color: #eaf3ff; background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--brand) 32%, transparent), transparent 34%), linear-gradient(155deg, #0d192b, #040911); box-shadow: inset 0 0 70px rgb(0 0 0 / 66%), 0 25px 70px rgb(2 8 20 / 35%); transform-origin: top left; transition: transform 620ms cubic-bezier(.2, .76, .22, 1), border-radius 620ms ease, opacity 160ms ease; will-change: transform, opacity; pointer-events: all; }
+.transitionOverlay.expand { border-radius: 22px; }.transitionOverlay.expand[data-active="true"] { border-radius: 0; }
+.transitionOverlay.contract { border-radius: 0; }.transitionOverlay.contract[data-active="true"] { border-radius: 18px; }
+.transitionOverlay.fading { opacity: 0; }
+.transitionMark { display: grid; justify-items: center; gap: 7px; text-align: center; }
+.transitionMark svg { width: 34px; height: 34px; color: color-mix(in srgb, var(--brand) 70%, #fff); filter: drop-shadow(0 0 14px color-mix(in srgb, var(--brand) 50%, transparent)); }
+.transitionMark strong { font-size: clamp(.75rem, 2vw, 1rem); letter-spacing: .16em; }
+.transitionMark small { color: #9eb2cd; font-size: .69rem; }
+:global(.vault-content-entering) { animation: vault-content-enter 210ms ease-out both; }
+:global(html[data-vault-transition="true"]) :global(.mobile-bottom-nav-wrap) { opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+
+@keyframes vault-shake { 0%, 100% { transform: translateX(0); } 18% { transform: translateX(-7px); } 36% { transform: translateX(6px); } 54% { transform: translateX(-4px); } 72% { transform: translateX(3px); } }
+@keyframes alarm-pulse { 0%, 100% { opacity: 0; } 20%, 62% { opacity: 1; } 42%, 82% { opacity: .35; } }
+@keyframes laser-field { 0%, 100% { opacity: 0; } 12%, 76% { opacity: .85; } }
+@keyframes laser-slash { from { transform: translateX(-36%) rotate(8deg); } to { transform: translateX(36%) rotate(8deg); } }
+@keyframes laser-scan { 0% { opacity: 0; transform: translateY(0); } 10% { opacity: 1; } 86% { opacity: 1; } 100% { opacity: 0; transform: translateY(12000%); } }
+@keyframes vault-content-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+html[data-theme="dark"] .authCard { border-color: #3b4a63; background: rgb(22 32 50 / 86%); }
+html[data-theme="dark"] .passwordControl input { border-color: #48566f; background: #172236; }
+html[data-theme="dark"] .errorMessage { color: #ff98a2; background: rgb(127 29 29 / 26%); }
+
+@media (max-width: 700px) {
+  .lockScreen { min-height: calc(var(--app-interactive-height, 100dvh) - 8px); padding: max(14px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(18px, calc(env(safe-area-inset-bottom) + 8px)) max(12px, env(safe-area-inset-left)); border-radius: 0; overflow-y: auto; overscroll-behavior: contain; }
+  :global(.app-main) :global(.dashboard) > :global(.dashboard-card:has(.vault-lock-screen)) { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+  .lockPanel { width: min(100%, 430px); gap: clamp(10px, 1.8vh, 15px); }
+  .header { width: min(100%, 400px); grid-template-columns: 42px minmax(0, 1fr); gap: 10px; }
+  .headerIcon { width: 42px; height: 42px; border-radius: 13px; }
+  .headerIcon svg { width: 20px; height: 20px; }
+  .header p { font-size: .56rem; }
+  .header h2 { font-size: clamp(1.38rem, 6.3vw, 1.65rem); }
+  .header div > span { margin-top: 3px; font-size: .76rem; line-height: 1.4; }
+  .safeStage { width: min(94%, 410px); padding: 1px 0; }
+  .safe { width: 100%; aspect-ratio: 1.58; border-width: 8px; border-radius: 25px; }
+  .door { border-radius: 17px; }
+  .brandPlate { top: 13%; left: 10%; transform: scale(.87); transform-origin: top left; }
+  .handle { width: clamp(78px, 25vw, 96px); }
+  .bolts i { width: clamp(26px, 9vw, 36px); height: clamp(16px, 5vw, 22px); }
+  .authCard { width: min(100%, 400px); gap: 10px; padding: 13px; border-radius: 16px; }
+  .authHeading strong { font-size: .87rem; }
+  .authHeading span { font-size: .67rem; }
+  .securityBadge { min-height: 28px; padding-inline: 7px; }
+  .passwordControl input, .unlockButton { min-height: 46px; }
+  .passwordControl button { min-width: 58px; height: 44px; }
+  .transitionOverlay { z-index: 90; }
+}
+
+@media (max-width: 700px) and (max-height: 720px), (max-width: 700px) and (orientation: landscape) {
+  .lockScreen { align-items: start; }
+  .lockPanel { gap: 8px; }
+  .header div > span, .zeroKnowledge { display: none; }
+  .safeStage { width: min(72vw, 330px); }
+  .authCard { gap: 8px; padding: 11px 13px; }
+}
+
+:global(html[data-mobile-keyboard="open"]) .lockScreen { align-items: start; }
+:global(html[data-mobile-keyboard="open"]) .lockPanel { gap: 7px; }
+:global(html[data-mobile-keyboard="open"]) .header div > span,
+:global(html[data-mobile-keyboard="open"]) .safeStage,
+:global(html[data-mobile-keyboard="open"]) .zeroKnowledge { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .door, .handle, .bolts i, .authCard, .transitionOverlay, .unlockButton { transition-duration: 1ms; }
+  .safe[data-phase="error"] { animation: none; }
+  .safe[data-phase="error"] .alarmGlow { animation-duration: 220ms; }
+  .safe[data-phase="error"] .lasers { display: none; }
+}
