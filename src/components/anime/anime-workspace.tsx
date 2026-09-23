@@ -2013,7 +2013,7 @@ export function AnimeWorkspace({
         title="移除我的動漫"
       />
       <ModalDialog
-        className="mobile-sheet-dialog"
+        className="mobile-sheet-dialog pin-verification-dialog"
         onClose={() => {
           if (!pending) setAdultPinPrompt(false);
         }}
@@ -2029,7 +2029,7 @@ export function AnimeWorkspace({
           verifyPin={verifyAdultPin}
           onVerified={finishAdultPinUnlock}
           onCancel={() => setAdultPinPrompt(false)}
-          onStateChange={(state) => setPending(state === "verifying" || state === "success" ? "adult-access" : null)}
+          onStateChange={(state) => setPending(state === "centering" || state === "verifying" || state === "success" ? "adult-access" : null)}
         />
       </ModalDialog>
     </section>

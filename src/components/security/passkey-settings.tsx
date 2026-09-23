@@ -99,7 +99,7 @@ export function PasskeySettings() {
     <div className="passkey-heading"><div><p className="eyebrow">FACE ID / PASSKEY</p><h2>快速解鎖</h2><p>支援的 iPhone 會由系統使用 Face ID、Touch ID 或裝置密碼完成驗證。</p></div><button className="button compact" disabled={pending} onClick={() => void register()} type="button">{pending ? "處理中…" : "啟用 Face ID / Passkey"}</button></div>
     {message && <p className="notice" role="status">{message}</p>}
     {keys.length > 0 && <div className="passkey-list">{keys.map((key) => <div key={key.id}><span><strong>{key.friendly_name || "此裝置 Passkey"}</strong><small>已設定</small></span><button className="delete-button compact" disabled={pending} onClick={() => void remove(key.id)} type="button">移除</button></div>)}</div>}
-    <ModalDialog onClose={() => { if (!disableBusy) setDisableOpen(false); }} open={disableOpen} pending={disableBusy} title="關閉 App 自動鎖定">{pinConfigured ? <GlassyPinVerification
+    <ModalDialog className="pin-verification-dialog" onClose={() => { if (!disableBusy) setDisableOpen(false); }} open={disableOpen} pending={disableBusy} title="關閉 App 自動鎖定">{pinConfigured ? <GlassyPinVerification
       embedded
       length={pinMode === "pin4" ? 4 : 6}
       title="再次驗證 App PIN"
@@ -107,7 +107,7 @@ export function PasskeySettings() {
       verifyPin={disableAutoLock}
       onVerified={finishDisablingAutoLock}
       onCancel={() => setDisableOpen(false)}
-      onStateChange={(state) => setDisableBusy(state === "verifying" || state === "success")}
+      onStateChange={(state) => setDisableBusy(state === "centering" || state === "verifying" || state === "success")}
     /> : <div className="app-lock-disable-form"><p className="notice error">此帳號尚未設定 App PIN，請先返回設定 PIN。</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setDisableOpen(false)} type="button">返回</button></div></div>}</ModalDialog>
   </section>;
 }

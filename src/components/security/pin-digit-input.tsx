@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import styles from "./glassy-pin-verification.module.css";
 
-export type PinVerificationState = "input" | "verifying" | "success" | "error";
+export type PinVerificationState = "input" | "centering" | "verifying" | "success" | "error";
 
 type PinDigitInputProps = {
   length: 4 | 6;

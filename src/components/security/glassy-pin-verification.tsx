@@ -10,6 +10,7 @@ import { GlassyNumericKeypad } from "./glassy-numeric-keypad";
 import styles from "./glassy-pin-verification.module.css";
 
 const VERIFYING_MINIMUM_MS = 1_050;
+const CENTERING_MS = 520;
 const SUCCESS_HOLD_MS = 1_050;
 const ERROR_HOLD_MS = 900;
 
@@ -53,6 +54,7 @@ function delay(milliseconds: number) {
 }
 
 function stateCopy(state: PinVerificationState, errorStatus: number | null) {
+  if (state === "centering") return { title: "正在驗證…", detail: "正在安全地準備驗證 PIN 碼" };
   if (state === "verifying") return { title: "正在驗證…", detail: "請稍候，正在安全地確認 PIN 碼" };
   if (state === "success") return { title: "驗證成功", detail: "已安全解鎖" };
   if (state === "error") {
@@ -102,27 +104,30 @@ export function GlassyPinVerification({
       requestLock.current = true;
       setMessage("");
       setErrorStatus(null);
-      setState("verifying");
+      setState("centering");
       const startedAt = performance.now();
-      let caught: unknown = null;
-      try {
-        await verifyPin(completedPin);
-      } catch (error) {
-        caught = error;
-      }
+      const verification = verifyPin(completedPin).then(
+        () => ({ ok: true as const }),
+        (error: unknown) => ({ ok: false as const, error }),
+      );
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!reduceMotion) await delay(CENTERING_MS);
+      if (!mounted.current) return;
+      setState("verifying");
+      const result = await verification;
       const elapsed = performance.now() - startedAt;
       if (elapsed < VERIFYING_MINIMUM_MS) await delay(VERIFYING_MINIMUM_MS - elapsed);
       if (!mounted.current) return;
 
-      if (!caught) {
+      if (result.ok) {
         setState("success");
         await delay(SUCCESS_HOLD_MS);
         if (mounted.current) await onVerified();
         return;
       }
 
-      const normalized = caught instanceof PinVerificationError
-        ? caught
+      const normalized = result.error instanceof PinVerificationError
+        ? result.error
         : new PinVerificationError("PIN 驗證暫時無法完成，請稍後再試。", 503);
       setErrorStatus(normalized.status);
       setMessage(normalized.message);
@@ -137,7 +142,7 @@ export function GlassyPinVerification({
     [onVerified, state, verifyPin],
   );
 
-  const busy = state === "verifying" || state === "success";
+  const busy = state === "centering" || state === "verifying" || state === "success";
   const visibleMessage = message || (state === "input" ? externalMessage : "");
   const enterDigit = useCallback((digit: string) => {
     if (state !== "input" || requestLock.current || !/^[0-9]$/.test(digit) || pin.length >= length) return;
@@ -187,10 +192,15 @@ export function GlassyPinVerification({
 
       <GlassyNumericKeypad disabled={state !== "input"} onDigit={enterDigit} onBackspace={removeLastDigit} />
 
-      {state !== "input" || visibleMessage ? <div className={styles.statusArea} aria-live="polite" aria-atomic="true">
+      <div
+        className={`${styles.statusArea} ${state === "input" && !visibleMessage ? styles.statusAreaIdle : ""}`}
+        aria-live="polite"
+        aria-atomic="true"
+        aria-hidden={state === "input" && !visibleMessage}
+      >
         <strong>{copy.title}</strong>
         <span>{visibleMessage || copy.detail}</span>
-      </div> : null}
+      </div>
 
       {state === "success" ? (
         <div className={styles.successMark} aria-hidden="true">
