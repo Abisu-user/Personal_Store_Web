@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
 import { MobileBottomSheet } from "@/components/ui/mobile-bottom-sheet";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { clearAppearanceIdentity, readAppearance } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, mobileNavigationVisibleSlotKeys, normalizeMobileNavigationPreferences, type MobileNavigationPreferences } from "@/lib/layout/mobile-navigation-preferences";
+import { mobileNavigationThemeVariables } from "@/lib/layout/mobile-navigation-theme";
 import { clearClientResources } from "@/lib/pwa/client-resource-cache";
 import { createClient } from "@/lib/supabase/client";
 import { useOpenCreate, type CreateKind } from "./create-item-provider";
@@ -24,6 +25,23 @@ type NavigationItem = {
 
 const holdDurationMs = 300;
 const holdMovementThreshold = 12;
+const moreExitDurationMs = 320;
+
+const compactMoreLabels: Partial<Record<Destination["id"], string>> = {
+  bookmarks: "網站收藏",
+  notes: "備忘錄",
+  photos: "相片",
+  vocabulary: "單字",
+  anime: "動漫收藏",
+  ktv: "KTV",
+  vault: "保管庫",
+  organize: "整理",
+  appearance: "外觀",
+  storage: "儲存空間",
+  security: "安全中心",
+  mfa: "雙重驗證",
+  profile: "帳號",
+};
 
 function routeMatches(pathname: string, href: string) {
   return pathname === href || (href !== "/dashboard" && pathname.startsWith(`${href}/`));
@@ -42,12 +60,15 @@ export function MobileAppNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [moreMounted, setMoreMounted] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [pendingTransition, setPendingTransition] = useState<{ from: string; target: string } | null>(null);
   const [navigation, setNavigation] = useState<MobileNavigationPreferences>(mobileNavigationDefaults);
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubTarget, setScrubTarget] = useState<number | null>(null);
+  const [indicatorCenter, setIndicatorCenter] = useState<number | null>(null);
   const navRef = useRef<HTMLElement>(null);
+  const moreCloseTimerRef = useRef<number | null>(null);
   const holdTimerRef = useRef<number | null>(null);
   const pointerRef = useRef<{ id: number; startX: number; startY: number; itemIndex: number } | null>(null);
   const scrubbingRef = useRef(false);
@@ -128,6 +149,58 @@ export function MobileAppNavigation() {
     return matched?.index ?? items.length - 1;
   }, [currentPath, items, moreOpen]);
   const visualIndex = scrubTarget ?? activeIndex;
+  const navigationTheme = useMemo(() => mobileNavigationThemeVariables(navigation), [navigation.backgroundColor, navigation.opacity]);
+
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    let frame = 0;
+    let active = true;
+    const update = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        if (!active) return;
+        const item = nav.querySelector<HTMLElement>(`[data-mobile-nav-index="${visualIndex}"]`);
+        if (!item) return;
+        const navRect = nav.getBoundingClientRect();
+        const itemRect = item.getBoundingClientRect();
+        const center = itemRect.left - navRect.left + itemRect.width / 2;
+        setIndicatorCenter((current) => current !== null && Math.abs(current - center) < .1 ? current : center);
+      });
+    };
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(nav);
+    nav.querySelectorAll<HTMLElement>("[data-mobile-nav-index]").forEach((item) => observer?.observe(item));
+    window.addEventListener("orientationchange", update);
+    document.fonts?.ready.then(update).catch(() => undefined);
+    return () => {
+      active = false;
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("orientationchange", update);
+    };
+  }, [items.length, visualIndex]);
+
+  const openMore = useCallback(() => {
+    if (moreCloseTimerRef.current !== null) window.clearTimeout(moreCloseTimerRef.current);
+    moreCloseTimerRef.current = null;
+    setMoreMounted(true);
+    setMoreOpen(true);
+  }, []);
+
+  const closeMore = useCallback(() => {
+    setMoreOpen(false);
+    if (moreCloseTimerRef.current !== null) window.clearTimeout(moreCloseTimerRef.current);
+    moreCloseTimerRef.current = window.setTimeout(() => {
+      setMoreMounted(false);
+      moreCloseTimerRef.current = null;
+    }, moreExitDurationMs);
+  }, []);
+
+  useEffect(() => () => {
+    if (moreCloseTimerRef.current !== null) window.clearTimeout(moreCloseTimerRef.current);
+  }, []);
 
   const prefetch = useCallback((href: string | undefined) => {
     if (href && href !== pathname) router.prefetch(href);
@@ -148,7 +221,7 @@ export function MobileAppNavigation() {
       return;
     }
     if (item.kind === "more") {
-      setMoreOpen(true);
+      openMore();
       return;
     }
     if (!item.href) return;
@@ -162,7 +235,7 @@ export function MobileAppNavigation() {
       setPendingTransition({ from: pathname, target: item.href });
       router.push(item.href);
     }
-  }, [pathname, router, startCreate]);
+  }, [openMore, pathname, router, startCreate]);
 
   const clearHold = useCallback(() => {
     if (holdTimerRef.current !== null) {
@@ -266,8 +339,11 @@ export function MobileAppNavigation() {
   }
 
   const navStyle = {
+    ...navigationTheme,
     "--mobile-navigation-count": items.length,
-    "--mobile-nav-visual-index": visualIndex,
+    "--mobile-nav-active-x": indicatorCenter === null
+      ? `calc((100% - 10px) / ${items.length} * ${visualIndex + .5} + 5px)`
+      : `${indicatorCenter}px`,
   } as CSSProperties;
 
   return <>
@@ -275,6 +351,7 @@ export function MobileAppNavigation() {
       <nav
         aria-label="手機主要導覽"
         className={`mobile-bottom-nav${scrubbing ? " is-scrubbing" : ""}`}
+        data-mobile-nav-count={items.length}
         onContextMenu={(event) => event.preventDefault()}
         onLostPointerCapture={() => { if (scrubbingRef.current) finishScrub(true); }}
         onPointerCancel={(event) => { if (pointerRef.current?.id === event.pointerId) finishScrub(false); }}
@@ -310,6 +387,6 @@ export function MobileAppNavigation() {
       </nav>
     </div>
     <div aria-live="polite" className={`mobile-nav-scrub-tip${scrubbing ? " show" : ""}`} role="status">左右滑動選擇頁面，放手切換</div>
-    {moreOpen && <MobileBottomSheet className="mobile-navigation-sheet" open title="更多功能" eyebrow="MORE" onClose={() => setMoreOpen(false)}><nav>{moreItems.map(item => <Link aria-current={routeMatches(pathname, item.href) ? "page" : undefined} className={routeMatches(pathname, item.href) ? "active" : ""} href={item.href} key={item.href} onClick={() => { setMoreOpen(false); setPendingTransition({ from: pathname, target: item.href }); }} onFocus={() => prefetch(item.href)} onMouseEnter={() => prefetch(item.href)} prefetch={false}><i><AppIcon name={item.icon} /></i>{item.label}</Link>)}</nav><button className="mobile-sheet-logout" disabled={signingOut} onClick={() => void signOut()} type="button"><i><AppIcon name="logout" /></i>{signingOut ? "登出中…" : "登出"}</button></MobileBottomSheet>}
+    {moreMounted && <div className="mobile-navigation-theme-host" style={navigationTheme as CSSProperties}><MobileBottomSheet className={`mobile-navigation-sheet${moreOpen ? " is-open" : " is-closing"}`} open title="更多功能" eyebrow="" onClose={closeMore}><nav className="mobile-navigation-more-grid">{moreItems.map(item => <Link aria-current={routeMatches(pathname, item.href) ? "page" : undefined} className={routeMatches(pathname, item.href) ? "active" : ""} href={item.href} key={item.href} onClick={() => { closeMore(); setPendingTransition({ from: pathname, target: item.href }); }} onFocus={() => prefetch(item.href)} onMouseEnter={() => prefetch(item.href)} prefetch={false}><i><AppIcon name={item.icon} /></i><span>{compactMoreLabels[item.id] ?? item.label}</span></Link>)}</nav><button className="mobile-sheet-logout" disabled={signingOut} onClick={() => void signOut()} type="button"><i><AppIcon name="logout" /></i>{signingOut ? "登出中…" : "登出"}</button></MobileBottomSheet></div>}
   </>;
 }

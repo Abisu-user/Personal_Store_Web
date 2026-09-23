@@ -6,6 +6,7 @@ import { BACKGROUND_IMAGE_ACCEPT, BACKGROUND_IMAGE_MAX_BYTES, BackgroundImageErr
 import { prepareBackgroundImage } from "@/lib/appearance/background-image-processing";
 import { Accent, Appearance, Background, BackgroundRotation, BookmarkDisplay, Density, FontFamily, Theme, activeBackground, appearanceDefaults, applyAppearance, getBackgroundImageUrl, loadAccountAppearance, normalizeHexColor, removeBackgroundImage, saveAppearance, storeBackgroundImage } from "@/lib/appearance/preferences";
 import { mobileNavigationDefaults, mobileNavigationDestinations, mobileNavigationVisibleSlotKeys, normalizeMobileNavigationColor, normalizeMobileNavigationPreferences, type MobileNavigationDestination, type MobileNavigationPreferences, type MobileNavigationSideCount, type MobileNavigationSlotKey } from "@/lib/layout/mobile-navigation-preferences";
+import { mobileNavigationThemeVariables } from "@/lib/layout/mobile-navigation-theme";
 
 const options = {
   theme: [["system", "跟隨系統"], ["light", "淺色"], ["dark", "深色"]] as const,
@@ -22,12 +23,14 @@ function rgbToHex(rgb: number[]) { return `#${rgb.map((value) => Math.max(0, Mat
 function navigationDestination(id: MobileNavigationDestination) { return mobileNavigationDestinations.find((item) => item.id === id); }
 function MobileNavigationPreview({ navigation }: { navigation: MobileNavigationPreferences }) {
   const keys = mobileNavigationVisibleSlotKeys(navigation.sideCount);
+  const theme = mobileNavigationThemeVariables(navigation);
   const customItem = (key: MobileNavigationSlotKey) => {
     const item = navigationDestination(navigation.slots[key]);
     return item ? <button aria-label={`${item.label}，可自訂`} className="mobile-navigation-preview-item" key={key} onClick={() => document.getElementById(`mobile-navigation-${key}`)?.focus()} type="button"><AppIcon name={item.icon} /><span>{item.label}</span></button> : null;
   };
-  return <div className="mobile-navigation-live-preview" style={{ "--mobile-navigation-preview-count": navigation.sideCount * 2 + 1, "--mobile-nav-user-color": navigation.backgroundColor, "--mobile-nav-user-opacity": `${navigation.opacity}%` } as CSSProperties}>
-    <button aria-label="首頁，固定" className="mobile-navigation-preview-item fixed" disabled type="button"><AppIcon name="home" /><span>首頁</span><small>固定</small></button>
+  return <div className="mobile-navigation-live-preview" style={{ ...theme, "--mobile-navigation-preview-count": navigation.sideCount * 2 + 1 } as CSSProperties}>
+    <span aria-hidden="true" className="mobile-navigation-preview-indicator"><span /></span>
+    <button aria-label="首頁，固定" className="mobile-navigation-preview-item fixed is-active" disabled type="button"><AppIcon name="home" /><span>首頁</span><small>固定</small></button>
     {keys.left.map(customItem)}
     <button aria-label="新增，固定" className="mobile-navigation-preview-item fixed" disabled type="button"><AppIcon name="plus" /><span>新增</span><small>固定</small></button>
     {keys.right.map(customItem)}
