@@ -386,7 +386,7 @@ export function AnimeDiscovery({
   const [catalogueSearchPage, setCatalogueSearchPage] = useState(1);
   const [catalogueSearchHasMore, setCatalogueSearchHasMore] = useState(false);
   const searchAbort = useRef<AbortController | null>(null);
-  const searchDebounce = useRef<number | null>(null);
+  const searchInFlight = useRef(false);
   const searchRequestId = useRef(0);
   const seen = useRef("");
   const sentinel = useRef<HTMLDivElement>(null);
@@ -577,7 +577,8 @@ export function AnimeDiscovery({
   };
   const runCatalogueSearch = useCallback(
     async (value: string, requestedPage = 1, append = false) => {
-      if (value.length < 2) return;
+      if (value.length < 2 || searchInFlight.current) return;
+      searchInFlight.current = true;
       const requestId = ++searchRequestId.current;
       searchAbort.current?.abort();
       const controller = new AbortController();
@@ -617,39 +618,35 @@ export function AnimeDiscovery({
             cause instanceof Error ? cause.message : "搜尋失敗，請稍後再試。",
           );
       } finally {
-        if (requestId === searchRequestId.current) setCatalogueSearching(false);
+        if (requestId === searchRequestId.current) {
+          searchInFlight.current = false;
+          setCatalogueSearching(false);
+        }
       }
     },
     [adultMode],
   );
   const submitCatalogueSearch = () => {
     const value = catalogueSearchInput.trim();
+    if (!value) {
+      searchAbort.current?.abort();
+      searchRequestId.current += 1;
+      searchInFlight.current = false;
+      setCatalogueSearching(false);
+      setCatalogueSearch("");
+      setCatalogueSearchResults([]);
+      setCatalogueSearchHasMore(false);
+      setError(null);
+      return;
+    }
     if (value.length < 2) {
       setError("請至少輸入 2 個字再搜尋。");
       return;
     }
-    if (searchDebounce.current !== null)
-      window.clearTimeout(searchDebounce.current);
     void runCatalogueSearch(value, 1, false);
   };
-  useEffect(() => {
-    if (adultMode || screen !== "all") return;
-    const value = catalogueSearchInput.trim();
-    if (value.length < 2) return;
-    searchDebounce.current = window.setTimeout(() => {
-      searchDebounce.current = null;
-      void runCatalogueSearch(value, 1, false);
-    }, 420);
-    return () => {
-      if (searchDebounce.current !== null)
-        window.clearTimeout(searchDebounce.current);
-      searchDebounce.current = null;
-    };
-  }, [adultMode, catalogueSearchInput, runCatalogueSearch, screen]);
   useEffect(
     () => () => {
-      if (searchDebounce.current !== null)
-        window.clearTimeout(searchDebounce.current);
       searchAbort.current?.abort();
     },
     [],
@@ -800,11 +797,12 @@ export function AnimeDiscovery({
               <i>⌕</i>
               <input
                 aria-label="搜尋動漫資料庫"
+                enterKeyHint="search"
                 onChange={(event) => setCatalogueSearchInput(event.target.value)}
                 placeholder="搜尋動漫名稱"
                 value={catalogueSearchInput}
               />
-              <button aria-label="搜尋動漫" className="button compact" type="submit">搜尋</button>
+              <button aria-label="搜尋動漫" className="button compact" disabled={catalogueSearching} type="submit">{catalogueSearching ? "搜尋中…" : "搜尋"}</button>
             </form>
           )}
           {catalogueSearch && (
@@ -818,6 +816,9 @@ export function AnimeDiscovery({
                 className="secondary-button compact"
                 onClick={() => {
                   searchAbort.current?.abort();
+                  searchRequestId.current += 1;
+                  searchInFlight.current = false;
+                  setCatalogueSearching(false);
                   setCatalogueSearch("");
                   setCatalogueSearchInput("");
                   setCatalogueSearchResults([]);

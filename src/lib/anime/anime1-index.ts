@@ -27,17 +27,33 @@ function mapStored(row: StoredRow): Anime1MatchRow {
 }
 
 async function readCache() {
-  const { data, error } = await createAdminClient()
-    .from("anime_external_sources")
-    .select("source_title,normalized_title,source_url,episode_text,year,season_text,subtitle_group,anilist_id,manual_match,refreshed_at")
-    .eq("source", "anime1")
-    .eq("is_active", true)
-    .order("refreshed_at", { ascending: false })
-    .limit(5000);
-  if (error) throw error;
-  const rows = (data ?? []) as StoredRow[];
-  const refreshedAt = rows[0]?.refreshed_at ? Date.parse(rows[0].refreshed_at) : 0;
-  return { rows: rows.map(mapStored), fresh: refreshedAt > Date.now() - CACHE_TTL_MS };
+  const admin = createAdminClient();
+  const rows: StoredRow[] = [];
+  let cursor: string | null = null;
+  // Supabase may cap every REST response at 1,000 rows even when limit(5000)
+  // is requested. Read the whole index in stable URL order instead.
+  for (let batch = 0; batch < 100; batch += 1) {
+    let query = admin.from("anime_external_sources")
+      .select("source_title,normalized_title,source_url,episode_text,year,season_text,subtitle_group,anilist_id,manual_match,refreshed_at")
+      .eq("source", "anime1")
+      .eq("is_active", true)
+      .order("source_url", { ascending: true })
+      .limit(500);
+    if (cursor) query = query.gt("source_url", cursor);
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = (data ?? []) as StoredRow[];
+    rows.push(...page);
+    if (page.length < 500) {
+      const refreshedAt = rows.length
+        ? Math.max(...rows.map((row) => Date.parse(row.refreshed_at))) : 0;
+      return { rows: rows.map(mapStored), fresh: refreshedAt > Date.now() - CACHE_TTL_MS };
+    }
+    const nextCursor = page.at(-1)?.source_url ?? null;
+    if (!nextCursor || nextCursor === cursor) throw new Error("Anime1 index cursor did not advance");
+    cursor = nextCursor;
+  }
+  throw new Error("Anime1 index exceeded the safe scan limit");
 }
 
 async function fetchAndPersist() {

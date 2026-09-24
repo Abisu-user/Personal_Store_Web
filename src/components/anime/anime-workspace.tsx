@@ -1155,6 +1155,34 @@ export function AnimeWorkspace({
           const replace = (items: AnimeLibraryItem[]) => items.map((item) => item.id === optimisticId ? { ...item, id: savedId ?? item.id } : item);
           if (adult) setAdultData((current) => current ? { ...current, library: replace(current.library) } : current);
           else setData((current) => ({ ...current, library: replace(current.library) }));
+          if (savedId) {
+            const scope = adult ? "adult" : "standard";
+            sourceMatchAttempted.current.add(`${scope}:${savedId}`);
+            void fetch("/api/anime/sources/match-library", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ scope, ids: [savedId] }),
+            }).then(async (response) => {
+              if (!response.ok) throw new Error(`新增收藏來源比對失敗：${response.status}`);
+              return response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>;
+            }).then((answer) => {
+              const match = answer.matches?.find((item) => item.id === savedId);
+              if (!match) return;
+              if (adult) setAdultData((current) => current ? {
+                ...current,
+                library: current.library.map((item) => item.id !== savedId ? item : match.destination === "external"
+                  ? { ...item, externalUrl: match.matchedUrl }
+                  : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" }),
+              } : current);
+              else setData((current) => ({
+                ...current,
+                library: current.library.map((item) => item.id === savedId ? { ...item, sourceUrl: match.matchedUrl } : item),
+              }));
+            }).catch((error) => {
+              sourceMatchAttempted.current.delete(`${scope}:${savedId}`);
+              console.warn("[anime-source-backfill] newly added item failed", error);
+            });
+          }
           quickAddLocks.current.delete(key);
           setNotice("已加入收藏。");
           resolve();
@@ -1450,13 +1478,10 @@ export function AnimeWorkspace({
         ? "adult"
         : null;
     if (!scope) return;
-    const cacheKey = `anime:source-backfill:${scope}`;
-    const collectionCount = scope === "standard" ? standardLibraryCount : adultLibraryCount;
-    if (readClientResource<number>(cacheKey) === collectionCount) return;
     let stopped = false;
     const run = async () => {
       let cursor: string | null = null;
-      const totals = { processed: 0, matched: 0, notFound: 0, errors: 0 };
+      const totals = { processed: 0, matched: 0, notFound: 0, ambiguous: 0, errors: 0 };
       try {
         // The visible page uses the priority request above. The rest of the
         // collection is scanned by stable UUID cursor, one bounded batch at a time.
@@ -1504,7 +1529,6 @@ export function AnimeWorkspace({
           }
           if (!answer.hasMore) {
             console.info("[anime-source-backfill] complete", { scope, ...totals });
-            if (!totals.errors) writeClientResource(cacheKey, collectionCount, 12 * 60 * 60_000);
             return;
           }
           if (!answer.cursor || answer.cursor === cursor) throw new Error("收藏來源游標未前進。");
