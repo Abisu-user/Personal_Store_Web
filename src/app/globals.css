@@ -23,6 +23,26 @@
 html, body { min-height: 100%; }
 html { background: var(--startup-canvas, var(--canvas)); scrollbar-gutter: stable; }
 
+/* The desktop app scrolls inside .app-main. Reserving another gutter on the
+   root leaves an uncovered strip beside the viewport-level wallpaper. */
+@media (min-width: 701px) {
+  html:has(.desktop-app-shell) {
+    scrollbar-gutter: auto;
+    background-color: var(--workspace-canvas-color, var(--canvas));
+  }
+  html[data-has-workspace-image="true"]:has(.desktop-app-shell) {
+    background-color: color-mix(in srgb, var(--workspace-tint) 72%, #172137);
+    background-image: var(--workspace-image);
+    background-position: var(--workspace-position);
+    background-size: var(--workspace-size, cover);
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+  html[data-has-workspace-image="true"]:has(.desktop-app-shell) body {
+    background: transparent;
+  }
+}
+
 body {
   margin: 0;
   color: var(--ink);

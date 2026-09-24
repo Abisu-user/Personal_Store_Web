@@ -2,8 +2,8 @@
 
 @media (min-width: 701px) {
   :global(.app-main:has([data-desktop-dashboard]) [data-dashboard-queue-entry]) { display: none; }
-  :global(.app-main) :global(.dashboard):has(.desktopDashboard) { width: min(calc(100% - 48px), 1460px); height: auto; min-height: 100%; padding: 20px 0 48px; overflow: visible; }
-  .desktopDashboard { display: grid; gap: 22px; min-width: 0; color: var(--ink); }
+  :global(.desktop-app-shell > .desktop-app-main .dashboard):has(.desktopDashboard) { width: calc(100% - 48px); max-width: none; height: auto; min-height: 100%; margin-inline: auto; padding: 20px 0 40px; overflow: visible; }
+  .desktopDashboard { display: grid; gap: 18px; min-width: 0; color: var(--ink); }
   .topbar, .topActions, .sectionHeading, .heroActions, .dialogHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .topbarLabel, .eyebrow { margin: 0; color: var(--brand); font-size: .68rem; font-weight: 850; letter-spacing: .15em; }
   .topActions { justify-content: flex-end; gap: 9px; }
@@ -11,10 +11,10 @@
   .topActions :global(.app-icon) { width: 19px; height: 19px; }
   .topActions i { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
   .hero, .section { border: 1px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 24px; background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 84%), transparent); box-shadow: 0 12px 36px rgb(20 37 75 / 8%); backdrop-filter: blur(18px); }
-  .hero { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(245px, .7fr); align-items: stretch; gap: 22px; padding: clamp(24px, 3vw, 38px); background: linear-gradient(115deg, color-mix(in srgb, var(--surface) 92%, var(--brand-soft)), color-mix(in srgb, var(--surface) 76%, var(--brand-soft))); }
+  .hero { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .9fr); align-items: stretch; gap: 20px; padding: clamp(22px, 1.6vw, 30px); background: linear-gradient(115deg, color-mix(in srgb, var(--surface) 92%, var(--brand-soft)), color-mix(in srgb, var(--surface) 76%, var(--brand-soft))); }
   .heroCopy { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; justify-content: center; }
   .heroCopy h1 { max-width: 100%; margin: 8px 0 10px; overflow-wrap: anywhere; color: var(--ink); font-size: clamp(1.75rem, 2.75vw, 2.65rem); letter-spacing: -.045em; line-height: 1.18; }
-  .heroCopy > p:not(.eyebrow) { max-width: 54ch; margin: 0 0 22px; color: var(--muted); font-size: .9rem; line-height: 1.6; }
+  .heroCopy > p:not(.eyebrow) { max-width: 54ch; margin: 0 0 16px; color: var(--muted); font-size: .9rem; line-height: 1.6; }
   .heroActions { justify-content: flex-start; flex-wrap: wrap; }
   .primaryButton, .secondaryButton { display: inline-flex; min-height: 43px; align-items: center; justify-content: center; gap: 8px; padding: 0 16px; border: 1px solid var(--brand); border-radius: 12px; font: inherit; font-size: .85rem; font-weight: 800; cursor: pointer; transition: transform .18s cubic-bezier(.2,.8,.2,1), box-shadow .18s cubic-bezier(.2,.8,.2,1); }
   .primaryButton { color: #fff; background: var(--brand); }
@@ -22,27 +22,27 @@
   .primaryButton:hover, .secondaryButton:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgb(20 37 75 / 12%); }
   .primaryButton :global(.app-icon), .secondaryButton :global(.app-icon) { width: 17px; height: 17px; }
   .secondaryButton kbd { color: var(--muted); font-size: .66rem; font-weight: 650; }
-  .today { display: grid; align-content: center; gap: 8px; padding: 19px; border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--line)); border-radius: 19px; background: color-mix(in srgb, var(--surface) 80%, transparent); }
+  .today { display: grid; align-content: center; gap: 6px; padding: 16px; border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--line)); border-radius: 19px; background: color-mix(in srgb, var(--surface) 80%, transparent); }
   .todayCaption { color: var(--brand); font-size: .76rem; font-weight: 850; }
   .today > strong { margin-bottom: 4px; color: var(--ink); font-size: 1rem; }
-  .today > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: .78rem; }
+  .today > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); font-size: .78rem; }
   .today > div span { color: var(--muted); }
   .today > div b { text-align: right; }
-  .section { min-width: 0; padding: 20px; }
-  .sectionHeading { align-items: flex-end; margin-bottom: 15px; }
+  .section { min-width: 0; padding: 17px 18px; }
+  .sectionHeading { align-items: flex-end; margin-bottom: 11px; }
   .sectionHeading h2 { margin: 4px 0 0; font-size: 1.25rem; letter-spacing: -.02em; }
   .sectionHeading > a { color: var(--brand); font-size: .78rem; font-weight: 850; text-decoration: none; }
-  .shortcutList { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 12px; }
-  .shortcut { display: grid; min-width: 0; justify-items: center; gap: 8px; padding: 12px 6px; border: 1px solid var(--line); border-radius: 17px; color: var(--ink); background: color-mix(in srgb, var(--surface) 82%, transparent); text-align: center; text-decoration: none; transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s; }
+  .shortcutList { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 144px)); gap: 10px; }
+  .shortcut { display: grid; min-width: 0; justify-items: center; gap: 7px; padding: 9px 6px; border: 1px solid var(--line); border-radius: 17px; color: var(--ink); background: color-mix(in srgb, var(--surface) 82%, transparent); text-align: center; text-decoration: none; transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s; }
   .shortcut:hover, .folder:hover, .activityRow:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--brand) 50%, var(--line)); }
-  .shortcut > span { display: grid; width: 48px; height: 48px; overflow: hidden; place-items: center; border-radius: 14px; color: var(--brand); background: var(--brand-soft); }
+  .shortcut > span { display: grid; width: 44px; height: 44px; overflow: hidden; place-items: center; border-radius: 14px; color: var(--brand); background: var(--brand-soft); }
   .shortcut img { width: 100%; height: 100%; object-fit: cover; }
   .shortcut :global(.app-icon) { width: 21px; height: 21px; }
   .shortcut b { max-width: 100%; overflow: hidden; font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
-  .activityGrid { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, .88fr); gap: 18px; }
+  .activityGrid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 16px; }
   .recentList, .addedList { display: grid; align-content: start; gap: 8px; }
-  .activityRow { display: flex; min-width: 0; min-height: 64px; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: color-mix(in srgb, var(--surface) 84%, transparent); text-decoration: none; transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s; }
-  .activityRow.featured { min-height: 83px; border-color: color-mix(in srgb, var(--brand) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 82%, var(--brand-soft)); }
+  .activityRow { display: flex; min-width: 0; min-height: 58px; align-items: center; gap: 12px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: color-mix(in srgb, var(--surface) 84%, transparent); text-decoration: none; transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s; }
+  .activityRow.featured { min-height: 70px; border-color: color-mix(in srgb, var(--brand) 28%, var(--line)); background: color-mix(in srgb, var(--surface) 82%, var(--brand-soft)); }
   .activityRow > span:last-child { margin-left: auto; color: var(--muted); font-size: 1.25rem; }
   .itemIcon { display: grid; width: 37px; height: 37px; flex: 0 0 37px; place-items: center; border-radius: 11px; color: var(--brand); background: var(--brand-soft); }
   .itemIcon :global(.app-icon) { width: 19px; height: 19px; }
@@ -82,12 +82,12 @@
 }
 
 @media (min-width: 701px) and (max-width: 1200px) {
-  .shortcutList { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .folderGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero { grid-template-columns: minmax(0, 1fr) minmax(220px, .75fr); }
 }
 
 @media (min-width: 701px) and (max-width: 900px) {
+  :global(.desktop-app-shell > .desktop-app-main .dashboard):has(.desktopDashboard) { width: calc(100% - 32px); }
   .activityGrid { grid-template-columns: 1fr; }
   .hero { grid-template-columns: 1fr; }
 }
