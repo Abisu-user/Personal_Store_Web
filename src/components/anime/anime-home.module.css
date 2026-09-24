@@ -14,20 +14,12 @@
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
   border-radius: 20px;
-  color: #fff;
+  color: var(--ink);
   background: linear-gradient(
     135deg,
-    color-mix(
-      in srgb,
-      var(--brand) var(--workspace-surface-opacity, 88%),
-      transparent
-    ),
-    color-mix(
-      in srgb,
-      var(--brand-dark) var(--workspace-surface-opacity, 88%),
-      transparent
-    )
-  );
+    color-mix(in srgb, var(--brand-soft) 42%, transparent),
+    color-mix(in srgb, var(--brand) 10%, transparent)
+  ), color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 88%), transparent);
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(14px) saturate(1.08);
 }
@@ -41,8 +33,11 @@
 .hero p:not(.eyebrow) {
   max-width: 580px;
   margin: 9px 0 0;
-  color: rgb(255 255 255 / 82%);
+  color: var(--secondary-text-color, var(--muted));
   line-height: 1.55;
+}
+.hero .eyebrow {
+  color: var(--secondary-text-color, var(--muted));
 }
 .eyebrow {
   margin: 0 0 5px;
@@ -67,12 +62,13 @@
   backdrop-filter: blur(14px);
 }
 .stats dt {
-  color: rgb(255 255 255 / 74%);
+  color: var(--secondary-text-color, var(--muted));
   font-size: 0.75rem;
   font-weight: 750;
 }
 .stats dd {
   margin: 3px 0 0;
+  color: var(--ink);
   font-size: 1.35rem;
   font-weight: 900;
 }
