@@ -26,8 +26,20 @@ export function CollectionNavigation({ categories, category, folderIds, folders,
   const [name, setName] = useState(""); const [query, setQuery] = useState(""); const [error, setError] = useState<string | null>(null); const [success, setSuccess] = useState<string | null>(null); const [pending, setPending] = useState(false);
   const [draftCategories, setDraftCategories] = useState<Category[]>([]); const [draftFolders, setDraftFolders] = useState<Folder[]>([]); const [removedCategoryIds, setRemovedCategoryIds] = useState<string[]>([]); const [removedFolderIds, setRemovedFolderIds] = useState<string[]>([]);
   const [rename, setRename] = useState<{ entity: Entity; id: string; value: string } | null>(null); const [dragging, setDragging] = useState<{ entity: Entity; id: string } | null>(null); const timer = useRef<number | null>(null);
+  const dashboardFolderHandled = useRef(false);
+  const justUnlockedTarget = useRef<string | null>(null);
   useEffect(() => { setLocalCategories(categories); }, [categories]); useEffect(() => { setLocalFolders(folders); }, [folders]);
-  useEffect(() => { const target = window.sessionStorage.getItem(`${storageKey}:unlock-target`); if (target && localFolders.some((folder) => folder.id === target)) { window.sessionStorage.removeItem(`${storageKey}:unlock-target`); setFolderIds([target]); setView("all"); } }, [localFolders, setFolderIds, setView, storageKey]);
+  useEffect(() => { const target = window.sessionStorage.getItem(`${storageKey}:unlock-target`); if (target && localFolders.some((folder) => folder.id === target)) { window.sessionStorage.removeItem(`${storageKey}:unlock-target`); justUnlockedTarget.current = target; setFolderIds([target]); setView("all"); } }, [localFolders, setFolderIds, setView, storageKey]);
+  useEffect(() => {
+    if (kind === "photo") return; // Photos has its own overview folder unlock flow.
+    if (dashboardFolderHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("folder");
+    const folder = target ? localFolders.find((item) => item.id === target) : null;
+    if (!folder) return;
+    dashboardFolderHandled.current = true;
+    if (folder.is_locked && justUnlockedTarget.current !== target) { setLockedFolder(folder); return; }
+    queueMicrotask(() => { setFolderIds([folder.id]); setView("all"); });
+  }, [kind, localFolders, setFolderIds, setView]);
   useEffect(() => { if (!success) return; const timer = window.setTimeout(() => setSuccess(null), 3000); return () => window.clearTimeout(timer); }, [success]);
   const active = items.filter((item) => !item.deletedAt && !item.archived);
   const itemFolderIds = (item: Item) => item.folders?.map((folder) => folder.id) ?? (item.folder ? [item.folder.id] : []);

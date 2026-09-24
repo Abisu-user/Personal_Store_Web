@@ -4,11 +4,11 @@ import { getUserCapacity } from "@/lib/system/quota";
 import type { DashboardData, DashboardKind, RecentDashboardItem } from "./types";
 
 const entryKinds = ["bookmark", "note", "code", "photo", "file"] as const;
-type EntryKind = typeof entryKinds[number];
+export type EntryKind = typeof entryKinds[number];
 type EntryRow = { id: string; kind: string; title: string | null; updated_at: string; security_level: string | null };
 type FolderRef = { id: string; is_visible: boolean | null };
 type FolderLink = { folder_id: string; folder: FolderRef | FolderRef[] | null };
-type PrivacyRow = { id: string; primary_folder: FolderRef | FolderRef[] | null; all_folder_links: FolderLink[] | null };
+export type PrivacyRow = { id: string; primary_folder: FolderRef | FolderRef[] | null; all_folder_links: FolderLink[] | null };
 type AnimeRow = PrivacyRow & { title: string | null; title_chinese: string | null; title_japanese: string | null; updated_at: string };
 
 const paths: Record<EntryKind, string> = { bookmark: "/bookmarks", note: "/notes", code: "/code", photo: "/photos", file: "/files" };
@@ -60,7 +60,7 @@ async function getFallbackEntryCounts(userId: string) {
   return settled;
 }
 
-async function getEntryPrivacy(userId: string, kind: EntryKind, ids: string[]): Promise<PrivacyRow[]> {
+export async function getEntryPrivacy(userId: string, kind: EntryKind, ids: string[]): Promise<PrivacyRow[]> {
   if (!ids.length) return [];
   const bookmarkSelect = "id,primary_folder:bookmark_folders!entries_bookmark_folder_id_fkey(id,is_visible),all_folder_links:bookmark_entry_folders!bookmark_entry_folders_entry_id_fkey(folder_id,folder:bookmark_folders!bookmark_entry_folders_folder_id_fkey(id,is_visible))";
   const contentSelect = "id,primary_folder:content_folders!entries_content_folder_id_fkey(id,is_visible),all_folder_links:entry_content_folder_links!entry_content_folder_links_entry_id_fkey(folder_id,folder:content_folders!entry_content_folder_links_folder_id_fkey(id,is_visible))";
@@ -87,7 +87,7 @@ async function getAnime(userId: string): Promise<{ count: number; data: AnimeRow
   return { count, data: (data ?? []) as unknown as AnimeRow[] };
 }
 
-async function getProtectedFolders(userId: string) {
+export async function getProtectedFolders(userId: string) {
   const admin = createAdminClient();
   const folders = new Map<EntryKind, Set<string>>(entryKinds.map((kind) => [kind, new Set<string>()]));
   let offset = 0;
@@ -114,7 +114,7 @@ function oneFolder(value: FolderRef | FolderRef[] | null) {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-function privateByFolder(row: PrivacyRow, locked: Set<string>) {
+export function privateByFolder(row: PrivacyRow, locked: Set<string>) {
   const primary = oneFolder(row.primary_folder);
   if (primary && (primary.is_visible === false || locked.has(primary.id))) return true;
   return (row.all_folder_links ?? []).some((link) => {
@@ -197,7 +197,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
 }
 
 // A nonessential capacity RPC must never keep the whole summary pending forever.
-async function capacityWithinDeadline(userId: string) {
+export async function capacityWithinDeadline(userId: string) {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

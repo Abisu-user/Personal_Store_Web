@@ -1,0 +1,15 @@
+.page { height: auto !important; overflow-y: auto !important; }
+.page > :global(.dashboard-card) { height: auto !important; overflow: visible !important; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 11px; margin: 20px 0 26px; }
+.folder { display: grid; min-width: 0; grid-template-columns: 40px minmax(0, 1fr) 12px; grid-template-rows: auto auto; align-items: center; column-gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 15px; color: var(--ink); background: color-mix(in srgb, var(--surface) 84%, var(--brand-soft)); text-decoration: none; transition: transform .18s cubic-bezier(.2,.8,.2,1), border-color .18s; }
+.folder:hover { transform: translateY(-2px); border-color: var(--brand); }
+.icon { display: grid; grid-row: span 2; width: 38px; height: 38px; place-items: center; border-radius: 11px; color: var(--brand); background: var(--brand-soft); }
+.icon :global(.app-icon) { width: 20px; height: 20px; }
+.folder strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder small { color: var(--muted); }
+.arrow { grid-column: 3; grid-row: 1 / 3; color: var(--muted); }
+.empty { padding: 18px; color: var(--muted); }
+.management { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--line); }
+.management > p { margin: 4px 0 14px; }
+@media (max-width: 700px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }.folder { padding: 10px; }.page { padding-bottom: calc(var(--mobile-nav-height, 80px) + 24px) !important; } }
+@media (prefers-reduced-motion: reduce) { .folder { transition: none; } }

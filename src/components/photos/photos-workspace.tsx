@@ -4,6 +4,7 @@ import { CreateFormActions } from "@/components/ui/create-form-actions";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { recordDashboardOpen } from "@/lib/dashboard/record-open";
 import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { createBrowserStorageManager } from "@/lib/storage/client";
 import {
@@ -103,6 +104,16 @@ export function PhotosWorkspace({
   const [category, setCategory] = useState<CollectionCategory>([]);
   const [folderIds, setFolderIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<StoredPhoto | null>(null);
+  useEffect(() => { if (selected?.id) recordDashboardOpen(selected.id); }, [selected?.id]);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    const item = target ? data.photos.find((entry) => entry.id === target) : null;
+    if (!item) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => { setMobileView("library"); setSelected(item); });
+  }, [createMode, data.photos]);
   const [editing, setEditing] = useState<StoredPhoto | null>(null);
   const [deleting, setDeleting] = useState<StoredPhoto | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
@@ -234,6 +245,14 @@ export function PhotosWorkspace({
     setView(folderId ? `folder:${folderId}` : "all");
     setChosen(new Set());
   };
+  const dashboardFolderHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || dashboardFolderHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("folder");
+    if (!target || !data.folders.some((folder) => folder.id === target)) return;
+    dashboardFolderHandled.current = true;
+    queueMicrotask(() => openFolder(target));
+  }, [createMode, data.folders, openFolder]);
   const libraryTitle = view === "trash"
     ? "回收桶"
     : recentMode

@@ -912,6 +912,15 @@ export function AnimeWorkspace({
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [folderFilters, setFolderFilters] = useState<string[]>([]);
+  const dashboardFolderHandled = useRef(false);
+  useEffect(() => {
+    if (dashboardFolderHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("folder");
+    const folder = target ? data.folders.find((item) => item.id === target && item.isVisible) : null;
+    if (!folder) return;
+    dashboardFolderHandled.current = true;
+    queueMicrotask(() => { setTab("library"); setFolderFilters([folder.id]); });
+  }, [data.folders]);
   const [adultCategoryFilters, setAdultCategoryFilters] = useState<string[]>([]);
   const [adultFolderFilters, setAdultFolderFilters] = useState<string[]>([]);
   const [query, setQuery] = useState("");
@@ -921,6 +930,15 @@ export function AnimeWorkspace({
   const [pending, setPending] = useState<string | null>(null);
   const [selected, setSelected] = useState<AnimeLibraryItem | null>(null);
   const [selectedReadOnly, setSelectedReadOnly] = useState(false);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    const item = target ? data.library.find((entry) => entry.id === target && !entry.isAdult) : null;
+    if (!item) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => { setTab("library"); setSelectedReadOnly(false); setSelected(item); });
+  }, [data.library]);
   const [editing, setEditing] = useState<AnimeLibraryItem | null>(null);
   const [adding, setAdding] = useState(false);
   useEffect(() => { const open = () => setAdding(true); window.addEventListener("personal-vault:new-item", open); return () => window.removeEventListener("personal-vault:new-item", open); }, []);

@@ -327,6 +327,15 @@ function BookmarkFolderLockGate({
   const [lockedFolder, setLockedFolder] = useState<
     BookmarksWorkspaceData["folders"][number] | null
   >(null);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("folder");
+    const folder = target ? folders.find((item) => item.id === target) : null;
+    if (!folder) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => { if (folder.is_locked) setLockedFolder(folder); else onOpen(folder.id); });
+  }, [folders, onOpen]);
   useEffect(() => {
     const intercept = (event: MouseEvent) => {
       const button = (
@@ -492,6 +501,15 @@ export function BookmarksWorkspace({
   const [draftDescription, setDraftDescription] = useState("");
   const [editing, setEditing] = useState<Bookmark | null>(null);
   const [detailItem, setDetailItem] = useState<Bookmark | null>(null);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || !loaded || dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    const item = target ? data.bookmarks.find((entry) => entry.id === target) : null;
+    if (!item) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => { setMobileView("library"); setShowAllBookmarks(true); setDetailItem(item); });
+  }, [createMode, data.bookmarks, loaded]);
   const [newCategory, setNewCategory] = useState("");
   const [newBookmarkFolder, setNewBookmarkFolder] = useState("");
   const [folders, setFolders] = useState<FolderSettings>(defaultFolderSettings);
@@ -1818,6 +1836,13 @@ export function BookmarksWorkspace({
     setShortcutDraftIds(shortcutBookmarks.map((item) => item.id));
     setShortcutManagerOpen(true);
   };
+  const dashboardShortcutHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || !loaded || dashboardShortcutHandled.current) return;
+    if (new URLSearchParams(window.location.search).get("manageShortcuts") !== "1") return;
+    dashboardShortcutHandled.current = true;
+    queueMicrotask(openShortcutManager);
+  }, [createMode, loaded, openShortcutManager]);
   const toggleShortcut = (id: string) => {
     setShortcutDraftIds((current) => current.includes(id)
       ? current.filter((entryId) => entryId !== id)

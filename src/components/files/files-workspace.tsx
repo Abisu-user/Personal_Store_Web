@@ -2,8 +2,9 @@
 import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { recordDashboardOpen } from "@/lib/dashboard/record-open";
 import { createBrowserStorageManager } from "@/lib/storage/client";
 import {
   CollectionCategory,
@@ -58,6 +59,15 @@ export function FilesWorkspace({
   const [folderIds, setFolderIds] = useState<string[]>([]);
   const [cover, setCover] = useState<CoverSelection>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => { if (selectedId) recordDashboardOpen(selectedId); }, [selectedId]);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    if (!target || !data.files.some((entry) => entry.id === target)) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => setSelectedId(target));
+  }, [createMode, data.files]);
   const [bulkConfirm, setBulkConfirm] = useState<
     "trash" | "restore" | "permanent" | null
   >(null);

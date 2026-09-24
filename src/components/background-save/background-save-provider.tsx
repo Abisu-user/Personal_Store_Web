@@ -408,7 +408,7 @@ export function BackgroundJobIndicator() {
         : `所有變更已同步${lastSync ? `，最後同步 ${lastSync}` : ""}`;
 
   return (
-    <div className={styles.indicatorSlot}>
+    <div className={styles.indicatorSlot} data-dashboard-queue-entry>
       <button
         aria-label={`開啟背景工作中心：${label}`}
         className={styles.statusButton}

@@ -2,8 +2,9 @@
 import { useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { recordDashboardOpen } from "@/lib/dashboard/record-open";
 import {
   CollectionCategory,
   CollectionNavigation,
@@ -84,6 +85,16 @@ export function NotesWorkspace({
   const [error, setError] = useState<string | null>(null);
   const pending = false;
   const [selected, setSelected] = useState<Note | null>(null);
+  useEffect(() => { if (selected?.id) recordDashboardOpen(selected.id); }, [selected?.id]);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    const item = target ? data.notes.find((entry) => entry.id === target) : null;
+    if (!item) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => setSelected(item));
+  }, [createMode, data.notes]);
   const [editing, setEditing] = useState<Note | null>(null);
   const [confirm, setConfirm] = useState<{
     note: Note;

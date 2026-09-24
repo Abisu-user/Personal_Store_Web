@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
+import { recordDashboardOpen } from "@/lib/dashboard/record-open";
 import {
   CollectionCategory,
   CollectionNavigation,
@@ -86,6 +87,16 @@ export function CodeWorkspace({
   const [error, setError] = useState<string | null>(null);
   const pending = false;
   const [selected, setSelected] = useState<CodeSnippet | null>(null);
+  useEffect(() => { if (selected?.id) recordDashboardOpen(selected.id); }, [selected?.id]);
+  const dashboardTargetHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || dashboardTargetHandled.current) return;
+    const target = new URLSearchParams(window.location.search).get("item");
+    const item = target ? data.snippets.find((entry) => entry.id === target) : null;
+    if (!item) return;
+    dashboardTargetHandled.current = true;
+    queueMicrotask(() => setSelected(item));
+  }, [createMode, data.snippets]);
   const [editing, setEditing] = useState<CodeSnippet | null>(null);
   const [deleting, setDeleting] = useState<CodeSnippet | null>(null);
   const [cover, setCover] = useState<CoverSelection>(null);
