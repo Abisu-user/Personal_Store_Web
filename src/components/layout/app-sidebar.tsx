@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { clearAppearanceIdentity } from "@/lib/appearance/preferences";
@@ -23,8 +23,6 @@ type NavigationGroup = {
   ariaLabel: string;
   items: NavigationItem[];
 };
-
-const sidebarPinnedKey = "personal-vault:desktop-sidebar-pinned:v1";
 
 const navigationGroups: NavigationGroup[] = [
   {
@@ -103,36 +101,11 @@ export function AppSidebar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [pinned, setPinned] = useState(false);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const activeHref = useMemo(() => resolveActiveHref(pathname), [pathname]);
   const profileName = displayName?.trim() || email.split("@")[0] || "Personal Store";
   const avatarContent = avatar || initialsFor(profileName);
-
-  useEffect(() => {
-    const syncPinned = () => {
-      try {
-        setPinned(window.localStorage.getItem(sidebarPinnedKey) === "1");
-      } catch {
-        setPinned(false);
-      }
-    };
-    syncPinned();
-    window.addEventListener("storage", syncPinned);
-    return () => window.removeEventListener("storage", syncPinned);
-  }, []);
-
-  function togglePinned() {
-    setPinned((current) => {
-      const next = !current;
-      try {
-        window.localStorage.setItem(sidebarPinnedKey, next ? "1" : "0");
-      } catch {
-        // The in-memory state still works when private browsing blocks storage.
-      }
-      return next;
-    });
-  }
 
   function prefetchRoute(href: string) {
     if (href !== pathname) router.prefetch(href);
@@ -150,42 +123,51 @@ export function AppSidebar({
   return (
     <aside
       aria-label="Personal Store 側邊導覽"
-      className={`${styles.sidebar} ${pinned ? styles.pinned : ""}`}
-      data-pinned={pinned ? "true" : "false"}
+      className={`${styles.sidebar} ${isSidebarExpanded ? styles.expanded : ""}`}
+      data-expanded={isSidebarExpanded ? "true" : "false"}
     >
       <header className={styles.profile}>
-        <button
-          aria-expanded={pinned}
-          aria-label={pinned ? "取消固定展開側邊欄" : "固定展開側邊欄"}
-          className={styles.avatar}
-          onClick={togglePinned}
-          title={pinned ? "取消固定展開" : "固定展開側邊欄"}
-          type="button"
-        >
-          {avatarContent}
-        </button>
+        {isSidebarExpanded ? (
+          <div aria-hidden="true" className={`${styles.avatar} ${styles.avatarStatic}`}>
+            {avatarContent}
+          </div>
+        ) : (
+          <button
+            aria-expanded="false"
+            aria-label="展開側邊欄"
+            className={styles.avatar}
+            onClick={() => setIsSidebarExpanded(true)}
+            title="展開側邊欄"
+            type="button"
+          >
+            {avatarContent}
+          </button>
+        )}
         <Link
           aria-current={pathname === "/profile" ? "page" : undefined}
+          aria-hidden={!isSidebarExpanded}
           className={styles.profileCopy}
           href="/profile"
           onFocus={() => prefetchRoute("/profile")}
           onMouseEnter={() => prefetchRoute("/profile")}
           prefetch={false}
+          tabIndex={isSidebarExpanded ? 0 : -1}
         >
           <strong>{profileName}</strong>
           <small>Personal Store</small>
         </Link>
         <button
-          aria-expanded={pinned}
-          aria-label={pinned ? "取消固定展開側邊欄" : "固定展開側邊欄"}
-          aria-pressed={pinned}
-          className={styles.pinToggle}
-          onClick={togglePinned}
-          title={pinned ? "取消固定展開" : "固定展開"}
+          aria-hidden={!isSidebarExpanded}
+          aria-label="收合側邊欄"
+          className={styles.collapseToggle}
+          disabled={!isSidebarExpanded}
+          onClick={() => setIsSidebarExpanded(false)}
+          tabIndex={isSidebarExpanded ? 0 : -1}
+          title="收合側邊欄"
           type="button"
         >
           <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
-            <path d="m9 6 6 6-6 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
+            <path d="m15 6-6 6 6 6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
           </svg>
         </button>
       </header>

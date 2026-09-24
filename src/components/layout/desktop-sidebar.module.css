@@ -7,7 +7,6 @@
     --desktop-sidebar-compact-width: 68px;
     --desktop-sidebar-expanded-width: 240px;
     --desktop-sidebar-layout-width: var(--desktop-sidebar-compact-width);
-    --desktop-sidebar-visual-width: var(--desktop-sidebar-compact-width);
     --desktop-sidebar-gutter: 8px;
     --desktop-sidebar-content-gap: 12px;
     --desktop-sidebar-gutter-total: 16px;
@@ -21,16 +20,6 @@
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
-    transition: grid-template-columns var(--desktop-sidebar-motion);
-  }
-
-  :global(.desktop-app-shell):has(.sidebar.pinned) {
-    --desktop-sidebar-layout-width: var(--desktop-sidebar-expanded-width);
-    --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
-  }
-
-  :global(.desktop-app-shell):has(.sidebar:has(:focus-visible)) {
-    --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
   }
 
   :global(.desktop-app-shell > .desktop-app-main) {
@@ -97,7 +86,7 @@
     position: relative;
     z-index: 30;
     display: flex;
-    width: var(--desktop-sidebar-visual-width);
+    width: var(--desktop-sidebar-compact-width);
     height: calc(100dvh - var(--desktop-sidebar-gutter-total));
     min-height: 0;
     flex-direction: column;
@@ -118,16 +107,8 @@
     transition: width var(--desktop-sidebar-motion), box-shadow 220ms ease;
   }
 
-  @media (hover: hover) and (pointer: fine) {
-    :global(.desktop-app-shell):has(.sidebar:not(.pinned):hover) {
-      --desktop-sidebar-visual-width: var(--desktop-sidebar-expanded-width);
-    }
-
-    .sidebar:not(.pinned):hover {
-      box-shadow:
-        0 26px 60px color-mix(in srgb, var(--brand-dark) 31%, transparent),
-        inset 0 1px 0 rgba(255, 255, 255, .11);
-    }
+  .sidebar.expanded {
+    width: var(--desktop-sidebar-expanded-width);
   }
 
   .profile {
@@ -142,6 +123,7 @@
   }
 
   .avatar {
+    position: relative;
     display: grid;
     width: 42px;
     height: 42px;
@@ -160,6 +142,16 @@
     font-size: 1rem;
     font-weight: 850;
     cursor: pointer;
+  }
+
+  .avatar:not(.avatarStatic)::before {
+    position: absolute;
+    inset: -2px;
+    content: "";
+  }
+
+  .avatarStatic {
+    cursor: default;
   }
 
   .profileCopy {
@@ -196,7 +188,7 @@
     text-transform: uppercase;
   }
 
-  .pinToggle {
+  .collapseToggle {
     position: absolute;
     top: 50%;
     right: 8px;
@@ -213,17 +205,21 @@
     opacity: 0;
     transform: translateY(-50%);
     pointer-events: none;
-    transition: opacity 160ms ease, color 180ms ease, background 180ms ease;
+    transition: opacity 90ms ease, color 180ms ease, background 180ms ease, transform 120ms ease;
   }
 
-  .pinToggle svg {
+  .collapseToggle svg {
     width: 16px;
     height: 16px;
-    transition: transform 300ms ease;
   }
 
-  .pinned .pinToggle svg {
-    transform: rotate(180deg);
+  .collapseToggle:hover:not(:disabled) {
+    color: #fff;
+    background: rgba(255, 255, 255, .12);
+  }
+
+  .collapseToggle:active:not(:disabled) {
+    transform: translateY(-50%) scale(.96);
   }
 
   .navigation {
@@ -376,62 +372,28 @@
     opacity: .62;
   }
 
-  .pinned .profileCopy,
-  .pinned .label,
-  .sidebar:has(:focus-visible) .profileCopy,
-  .sidebar:has(:focus-visible) .label {
+  .expanded .profileCopy,
+  .expanded .label {
     opacity: 1;
     transform: translateX(0);
     pointer-events: auto;
     transition-delay: 80ms;
   }
 
-  .pinned .pinToggle,
-  .sidebar:has(:focus-visible) .pinToggle {
+  .expanded .collapseToggle {
     opacity: 1;
     pointer-events: auto;
+    transition-delay: 220ms, 0ms, 0ms, 0ms;
   }
 
-  .pinned .groupLabel,
-  .sidebar:has(:focus-visible) .groupLabel {
+  .expanded .groupLabel {
     height: 20px;
     padding-top: 3px;
     opacity: 1;
   }
 
-  .pinned .group + .group,
-  .sidebar:has(:focus-visible) .group + .group {
+  .expanded .group + .group {
     margin-top: 3px;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    .sidebar:not(.pinned):hover .profileCopy,
-    .sidebar:not(.pinned):hover .label {
-      opacity: 1;
-      transform: translateX(0);
-      pointer-events: auto;
-      transition-delay: 80ms;
-    }
-
-    .sidebar:not(.pinned):hover .pinToggle {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
-    .sidebar:not(.pinned):hover .groupLabel {
-      height: 20px;
-      padding-top: 3px;
-      opacity: 1;
-    }
-
-    .sidebar:not(.pinned):hover .group + .group {
-      margin-top: 3px;
-    }
-
-    .pinToggle:hover {
-      color: #fff;
-      background: rgba(255, 255, 255, .12);
-    }
   }
 }
 
@@ -445,8 +407,7 @@
   :global(.desktop-app-shell),
   .sidebar,
   .profileCopy,
-  .pinToggle,
-  .pinToggle svg,
+  .collapseToggle,
   .groupLabel,
   .navItem,
   .logout,
