@@ -49,6 +49,9 @@ function logUpstream(provider: AnimeProvider, url: string, details: Record<strin
   console.info("[anime-upstream]", { provider, upstreamUrl: safeUrl(url), ...details });
 }
 function normalizeQuery(query: string) { return query.normalize("NFKC").trim().toLocaleLowerCase(); }
+function japaneseOnlyAniListQuery(query: string) {
+  return query.replace(/type:\s*ANIME,/g, "type: ANIME, countryOfOrigin: JP,");
+}
 function wait(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function retryAfterSeconds(value: string | null) {
   if (!value) return 20;
@@ -135,7 +138,7 @@ function mapBangumi(row: any): ExternalAnime {
 
 type AniListPayload = { data?: { Page?: { media?: unknown[] } }; errors?: Array<{ message?: unknown }> };
 async function anilist(variables: { search?: string; id?: number }, callerSignal?: AbortSignal) {
-  const response = await providerFetch("anilist", ANILIST_URL, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ query: anilistQuery, variables }), cache: "no-store" }, callerSignal);
+  const response = await providerFetch("anilist", ANILIST_URL, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ query: japaneseOnlyAniListQuery(anilistQuery), variables }), cache: "no-store" }, callerSignal);
   const payload = await response.json().catch(() => null) as AniListPayload | null;
   const graphQLError = payload?.errors?.map((entry) => text(entry?.message)).filter(Boolean).join("; ");
   if (graphQLError) throw new AnimeProviderError("anilist", 500, "upstream_error", `AniList GraphQL: ${graphQLError}`, undefined, graphQLError);
@@ -171,7 +174,7 @@ export async function searchAnimePage(query: string, page: number, perPage: numb
     const response = await providerFetch("anilist", ANILIST_URL, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ query: anilistSearchPageQuery, variables: { search: query, page, perPage } }),
+      body: JSON.stringify({ query: japaneseOnlyAniListQuery(anilistSearchPageQuery), variables: { search: query, page, perPage } }),
       cache: "no-store",
     }, callerSignal);
     const payload = await response.json().catch(() => null) as (AniListPayload & { data?: { Page?: { media?: unknown[]; pageInfo?: { currentPage?: number; hasNextPage?: boolean; total?: number } } } }) | null;

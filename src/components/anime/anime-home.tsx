@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppIcon } from "@/components/ui/app-icon";
 import { enrichAnime1Availability } from "@/lib/anime/client-source-availability";
+import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 import styles from "./anime-home.module.css";
 
@@ -211,7 +212,7 @@ export function AnimeHome({
             查看全部
           </button>
         </header>
-        <div className={styles.rail}>
+        <AnimeHorizontalScroller aria-label="最近更新動漫" className={styles.rail}>
           {loading &&
             Array.from({ length: 5 }, (_, index) => (
               <div className={styles.skeleton} key={index} />
@@ -277,7 +278,7 @@ export function AnimeHome({
           {!loading && !items.length && !error && (
             <p className={styles.empty}>目前沒有可顯示的本季作品。</p>
           )}
-        </div>
+        </AnimeHorizontalScroller>
       </section>
 
       <section className={styles.shortcuts} aria-label="動漫快速入口">

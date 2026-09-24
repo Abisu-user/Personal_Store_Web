@@ -1782,3 +1782,56 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 @media (prefers-reduced-motion: reduce) {
   .anime-rail { scroll-behavior: auto; }
 }
+
+/* Shared Anime carousel: fixed-width children guarantee real overflow, while
+   native touch, desktop wheel and mouse drag are handled by one component. */
+.anime-rail {
+  display: flex;
+  flex-flow: row nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  touch-action: pan-x pan-y;
+  cursor: grab;
+  -webkit-overflow-scrolling: touch;
+}
+.anime-rail[data-dragging="true"] { cursor: grabbing; user-select: none; }
+.anime-rail img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
+.anime-rail > .anime-catalogue-card {
+  width: 220px;
+  min-width: 220px;
+  flex: 0 0 220px;
+}
+
+/* Secondary typography is opt-in by semantic role; status, badge, button,
+   error, success and link colors keep their own component styles. */
+:where(
+  .secondary-text,
+  .hint,
+  .anime-field-hint,
+  .mobile-page-header-copy > p:not(.mobile-page-eyebrow),
+  .page-heading p:not(.eyebrow),
+  .dashboard-card > p:not(.eyebrow),
+  .anime-discovery-hero p:not(.eyebrow),
+  .anime-all-heading p:not(.eyebrow),
+  .anime-catalogue-main p,
+  .anime-external-detail section p,
+  .appearance-section > div:first-child > p:not(.eyebrow)
+) {
+  color: var(--secondary-text-color, var(--muted));
+  font-family: var(--secondary-font, inherit);
+  font-size: calc(1em * var(--secondary-font-scale, 1));
+  font-weight: var(--secondary-font-weight, inherit);
+}
+.secondary-typography-controls { display: grid; gap: 14px; }
+.secondary-typography-controls > label:not(.font-scale-control) { display: grid; gap: 7px; font-weight: 800; }
+.secondary-typography-controls select { min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface); font: inherit; }
+.appearance-secondary-preview { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
+@media (max-width: 700px) {
+  .anime-rail > .anime-catalogue-card {
+    width: clamp(152px, 43vw, 168px);
+    min-width: clamp(152px, 43vw, 168px);
+    flex-basis: clamp(152px, 43vw, 168px);
+  }
+}

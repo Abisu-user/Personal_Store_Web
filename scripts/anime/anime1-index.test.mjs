@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { matchAnime1, normalizeAnimeTitle, parseAnime1Index } from "../../src/lib/anime/anime-title-matcher.ts";
+import { matchAnime1, matchExternalAnimeSource, normalizeAnimeTitle, parseAnime1Index } from "../../src/lib/anime/anime-title-matcher.ts";
 
 test("normalizes Chinese, English and Roman season markers", () => {
   assert.deepEqual(normalizeAnimeTitle("進擊的巨人 第三季"), { normalized: "進擊的巨人 第三季", base: "進擊的巨人", seasonNumber: 3 });
@@ -45,4 +45,40 @@ test("keeps unavailable and ambiguous source states distinct", () => {
   const anime = { id: "101", source: "anilist", title: "Example", titleChinese: null, titleJapanese: null, titleEnglish: null, originalTitle: null, synonyms: [], releaseYear: null, season: null };
   assert.equal(matchAnime1(anime, [], false).status, "source_unavailable");
   assert.equal(matchAnime1(anime, [], true).status, "not_found");
+});
+
+test("normalizes cour, release markers and multilingual aliases", () => {
+  assert.equal(normalizeAnimeTitle("Re:ZERO 2nd Cour").seasonNumber, 2);
+  assert.equal(
+    normalizeAnimeTitle("葬送的芙莉蓮 第二季 中文字幕").base,
+    normalizeAnimeTitle("葬送的芙莉蓮 第2季").base,
+  );
+});
+
+test("reuses the safe matcher for an adult external source", () => {
+  const anime = {
+    id: "adult-1",
+    source: "jikan",
+    title: "Sample Story",
+    titleChinese: "範例物語",
+    titleJapanese: "サンプル物語",
+    titleEnglish: "Sample Story",
+    originalTitle: null,
+    synonyms: ["Sample Monogatari"],
+    releaseYear: 2024,
+    season: null,
+  };
+  const result = matchExternalAnimeSource("hanime1", anime, [{
+    sourceTitle: "範例物語",
+    normalizedTitle: normalizeAnimeTitle("範例物語").normalized,
+    sourceUrl: "https://hanime1.me/watch?v=sample",
+    episodeText: null,
+    year: null,
+    seasonText: null,
+    subtitleGroup: null,
+    anilistId: null,
+    manualMatch: false,
+  }], true);
+  assert.equal(result.status, "available");
+  assert.equal(result.source, "hanime1");
 });

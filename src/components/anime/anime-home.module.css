@@ -111,9 +111,8 @@
   font-weight: 850;
 }
 .rail {
-  display: grid;
-  grid-auto-columns: minmax(190px, 216px);
-  grid-auto-flow: column;
+  display: flex;
+  flex-flow: row nowrap;
   gap: 11px;
   max-width: 100%;
   overflow-x: auto;
@@ -121,16 +120,21 @@
   padding: 2px 12px 8px 2px;
   scroll-padding-inline: 2px 12px;
   scroll-snap-type: x mandatory;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
+  cursor: grab;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
+.rail[data-dragging="true"] { cursor: grabbing; user-select: none; }
 .rail::-webkit-scrollbar {
   display: none;
 }
 .card {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-width: 0;
+  width: 210px;
+  min-width: 210px;
+  flex: 0 0 210px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -269,6 +273,9 @@
   font-size: 1.35rem;
 }
 .skeleton {
+  width: 210px;
+  min-width: 210px;
+  flex: 0 0 210px;
   height: 292px;
   border-radius: 18px;
   background: linear-gradient(
@@ -329,11 +336,11 @@
     min-height: 44px;
   }
   .rail {
-    grid-auto-columns: clamp(148px, 43vw, 168px);
     gap: 9px;
     margin-inline: -2px;
     padding-right: 28px;
   }
+  .card, .skeleton { width: clamp(148px, 43vw, 168px); min-width: clamp(148px, 43vw, 168px); flex-basis: clamp(148px, 43vw, 168px); }
   .card {
     border-radius: 16px;
   }
@@ -379,8 +386,9 @@
     grid-template-columns: 1fr;
   }
   .rail {
-    grid-auto-columns: minmax(142px, 45vw);
+    --anime-card-width: max(142px, 45vw);
   }
+  .card, .skeleton { width: var(--anime-card-width); min-width: var(--anime-card-width); flex-basis: var(--anime-card-width); }
 }
 @media (prefers-reduced-motion: reduce) {
   .skeleton {

@@ -69,6 +69,19 @@ const restoreAppearance = `try {
   root.style.setProperty("--startup-canvas", canvas);
   root.style.setProperty("--workspace-canvas-color", saved.canvasColor || "#f4f6fb");
   root.style.setProperty("--custom-brand", saved.customColor || "#2b65bd");
+  const secondaryFont = saved.secondaryFontFamily === "rounded"
+    ? "ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif"
+    : saved.secondaryFontFamily === "serif"
+      ? "Iowan Old Style, 'Noto Serif TC', Georgia, serif"
+      : saved.secondaryFontFamily === "mono"
+        ? "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+        : "Inter, ui-sans-serif, system-ui, sans-serif";
+  root.style.setProperty("--secondary-font", secondaryFont);
+  root.style.setProperty("--secondary-font-scale", String(Math.max(80, Math.min(120, Number(saved.secondaryFontScale) || 100)) / 100));
+  root.style.setProperty("--secondary-font-weight", [400, 500, 600, 700].includes(Number(saved.secondaryFontWeight)) ? String(saved.secondaryFontWeight) : "500");
+  if (typeof saved.secondaryTextColor === "string" && /^#[0-9a-f]{6}$/i.test(saved.secondaryTextColor)) {
+    root.style.setProperty("--secondary-text-color", saved.secondaryTextColor);
+  }
   const mobileNavigation = saved.mobileNavigation && typeof saved.mobileNavigation === "object" ? saved.mobileNavigation : {};
   const mobileNavColor = typeof mobileNavigation.backgroundColor === "string" && /^#[0-9a-f]{6}$/i.test(mobileNavigation.backgroundColor) ? mobileNavigation.backgroundColor : "#101117";
   const mobileNavOpacity = typeof mobileNavigation.opacity === "number" ? Math.max(40, Math.min(100, mobileNavigation.opacity)) : 92;

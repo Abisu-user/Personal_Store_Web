@@ -36,6 +36,8 @@ export function normalizeAnimeTitle(input: string): NormalizedAnimeTitle {
   const patterns = [
     /第\s*([0-9一二兩三四五六七八九十]+)\s*(?:季|期|章|部)/i,
     /(?:season|series|part)\s*([0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x)\b/i,
+    /(?:cour|クール)\s*([0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x)\b/i,
+    /([0-9一二兩三四五六七八九十]+)\s*(?:nd|rd|th)?\s*(?:season|cour)/i,
     /\bs\s*([0-9]+)\b/i,
     /\s+([2-9]|1[0-9])\s*$/i,
     /\b(i{1,3}|iv|v|vi{0,3}|ix|x)\s*$/i,
@@ -46,7 +48,8 @@ export function normalizeAnimeTitle(input: string): NormalizedAnimeTitle {
     if (match?.[1]) { seasonNumber = parseSeasonNumber(match[1]); break; }
   }
   const withoutSeason = patterns.reduce((value, pattern) => value.replace(pattern, " "), folded)
-    .replace(/\b(?:the\s+)?(?:animation|anime|tv)\b/g, " ");
+    .replace(/\b(?:the\s+)?(?:animation|anime|tv|uncensored)\b/g, " ")
+    .replace(/(?:無修正|无码|無碼|繁體|簡體|中字|中文字幕|web版|bd版)/g, " ");
   const clean = (value: string) => value
     .replace(/&(?:amp|#38);/gi, "and")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
@@ -92,11 +95,18 @@ function scoreCandidate(anime: ExternalAnime, row: Anime1MatchRow) {
   for (const variant of variants(anime)) {
     if (!variant.base || !target.base) continue;
     if (variant.seasonNumber && target.seasonNumber && variant.seasonNumber !== target.seasonNumber) continue;
+    const shorter = compact(variant.base).length <= compact(target.base).length
+      ? compact(variant.base)
+      : compact(target.base);
+    const longer = shorter === compact(variant.base) ? compact(target.base) : compact(variant.base);
+    const safeContainment = shorter.length >= 5 && longer.startsWith(shorter);
     let score = variant.normalized === target.normalized
       ? 0.98
       : variant.base === target.base
         ? (variant.seasonNumber && target.seasonNumber ? 0.95 : 0.87)
-        : 0.68 + dice(variant.base, target.base) * 0.22;
+        : safeContainment
+          ? 0.88
+          : 0.68 + dice(variant.base, target.base) * 0.22;
     if (anime.releaseYear && row.year) score += anime.releaseYear === row.year ? 0.03 : Math.abs(anime.releaseYear - row.year) > 1 ? -0.08 : 0;
     const animeQuarter = quarter(anime.season); const sourceQuarter = quarter(row.seasonText);
     if (animeQuarter && sourceQuarter) score += animeQuarter === sourceQuarter ? 0.02 : -0.03;
@@ -105,21 +115,27 @@ function scoreCandidate(anime: ExternalAnime, row: Anime1MatchRow) {
   return Math.min(1, Math.max(0, best));
 }
 
-function statusOnly(status: AnimeSourceAvailability["status"]): AnimeSourceAvailability {
-  return { source: "anime1", status, title: null, url: null, episodeText: null, year: null, seasonText: null, subtitleGroup: null };
+function statusOnly(source: AnimeSourceAvailability["source"], status: AnimeSourceAvailability["status"]): AnimeSourceAvailability {
+  return { source, status, title: null, url: null, episodeText: null, year: null, seasonText: null, subtitleGroup: null };
 }
 
-export function matchAnime1(anime: ExternalAnime, rows: Anime1MatchRow[], sourceAvailable = true): AnimeSourceAvailability {
-  if (!sourceAvailable) return statusOnly("source_unavailable");
-  const manual = rows.find((row) => row.manualMatch && row.anilistId === Number(anime.id));
+export function matchExternalAnimeSource(source: AnimeSourceAvailability["source"], anime: ExternalAnime, rows: Anime1MatchRow[], sourceAvailable = true): AnimeSourceAvailability {
+  if (!sourceAvailable) return statusOnly(source, "source_unavailable");
+  const manual = anime.source === "anilist"
+    ? rows.find((row) => row.manualMatch && row.anilistId === Number(anime.id))
+    : undefined;
   const ranked = manual ? [{ row: manual, score: 1 }] : rows
     .map((row) => ({ row, score: scoreCandidate(anime, row) }))
     .filter((candidate) => candidate.score >= 0.68)
     .sort((left, right) => right.score - left.score);
   const best = ranked[0];
-  if (!best) return statusOnly("not_found");
-  if (!manual && (best.score < 0.86 || (ranked[1] && best.score - ranked[1].score < 0.025 && ranked[1].row.sourceUrl !== best.row.sourceUrl))) return statusOnly("unknown");
-  return { source: "anime1", status: "available", title: best.row.sourceTitle, url: best.row.sourceUrl, episodeText: best.row.episodeText, year: best.row.year, seasonText: best.row.seasonText, subtitleGroup: best.row.subtitleGroup };
+  if (!best) return statusOnly(source, "not_found");
+  if (!manual && (best.score < 0.84 || (ranked[1] && best.score - ranked[1].score < 0.025 && ranked[1].row.sourceUrl !== best.row.sourceUrl))) return statusOnly(source, "unknown");
+  return { source, status: "available", title: best.row.sourceTitle, url: best.row.sourceUrl, episodeText: best.row.episodeText, year: best.row.year, seasonText: best.row.seasonText, subtitleGroup: best.row.subtitleGroup };
+}
+
+export function matchAnime1(anime: ExternalAnime, rows: Anime1MatchRow[], sourceAvailable = true): AnimeSourceAvailability {
+  return matchExternalAnimeSource("anime1", anime, rows, sourceAvailable);
 }
 
 function decodeHtmlEntities(value: string) {

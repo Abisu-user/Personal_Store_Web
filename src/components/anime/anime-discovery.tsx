@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import { ModalDialog } from "@/components/ui/modal-dialog";
+import { enrichAnime1Availability, enrichHAnime1Availability } from "@/lib/anime/client-source-availability";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
@@ -45,13 +47,6 @@ type SearchPage = {
   hasNextPage?: boolean;
   total?: number;
 };
-type Anime1MatchResponse = {
-  matches?: Array<{
-    id: string;
-    availability: NonNullable<ExternalAnime["sourceAvailability"]>;
-  }>;
-};
-
 const seasons: { key: Season; label: string }[] = [
   { key: "WINTER", label: "冬番" },
   { key: "SPRING", label: "春番" },
@@ -317,59 +312,10 @@ async function get<T>(url: string) {
   return body as T;
 }
 
-async function withAnime1Availability(items: ExternalAnime[]) {
-  const candidates = items.filter((item) => item.source === "anilist");
-  if (!candidates.length) return items;
-  const availability = new Map<
-    string,
-    NonNullable<ExternalAnime["sourceAvailability"]>
-  >();
-  for (let start = 0; start < candidates.length; start += 30) {
-    const batch = candidates.slice(start, start + 30);
-    const response = await fetch("/api/anime/sources/anime1/match", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: batch.map(
-          ({
-            id,
-            source,
-            title,
-            titleChinese,
-            titleJapanese,
-            titleEnglish,
-            originalTitle,
-            titleUserPreferred,
-            synonyms,
-            releaseYear,
-            season,
-          }) => ({
-            id,
-            source,
-            title,
-            titleChinese,
-            titleJapanese,
-            titleEnglish,
-            originalTitle,
-            titleUserPreferred,
-            synonyms,
-            releaseYear,
-            season,
-          }),
-        ),
-      }),
-    });
-    if (!response.ok) continue;
-    const body = (await response.json()) as Anime1MatchResponse;
-    body.matches?.forEach((match) =>
-      availability.set(match.id, match.availability),
-    );
-  }
-  return items.map((item) =>
-    availability.has(item.id)
-      ? { ...item, sourceAvailability: availability.get(item.id) }
-      : item,
-  );
+async function withWatchSourceAvailability(items: ExternalAnime[], adult = false) {
+  return adult
+    ? enrichHAnime1Availability(items)
+    : enrichAnime1Availability(items);
 }
 
 export function AnimeDiscovery({
@@ -447,7 +393,6 @@ export function AnimeDiscovery({
   const [catalogueSearchPage, setCatalogueSearchPage] = useState(1);
   const [catalogueSearchHasMore, setCatalogueSearchHasMore] = useState(false);
   const searchAbort = useRef<AbortController | null>(null);
-  const sourceAbort = useRef<AbortController | null>(null);
   const searchDebounce = useRef<number | null>(null);
   const searchRequestId = useRef(0);
   const seen = useRef("");
@@ -477,7 +422,7 @@ export function AnimeDiscovery({
       setPopular(answer.popular.items);
       setHighest(answer.top.items);
       setTaxonomy(answer.taxonomy);
-      void withAnime1Availability([
+      void withWatchSourceAvailability([
         ...answer.current.items,
         ...answer.upcoming.items,
         ...answer.popular.items,
@@ -543,7 +488,7 @@ export function AnimeDiscovery({
                 ),
               ),
         );
-        void withAnime1Availability(response.items)
+        void withWatchSourceAvailability(response.items, adultMode)
           .then((enriched) =>
             setAll((currentRows) =>
               currentRows.map(
@@ -606,7 +551,7 @@ export function AnimeDiscovery({
         `/api/anime/catalogue?view=schedule&tzOffset=${new Date().getTimezoneOffset()}`,
       );
       setScheduleItems(response.items);
-      void withAnime1Availability(response.items)
+      void withWatchSourceAvailability(response.items)
         .then(setScheduleItems)
         .catch(() => undefined);
     } catch (cause) {
@@ -627,13 +572,6 @@ export function AnimeDiscovery({
       return () => window.clearTimeout(timer);
     }
   }, [discoveryView, loadSchedule, scheduleItems.length, screen]);
-  const openAll = (update?: Partial<Filters>) => {
-    const value = { ...filters, ...update };
-    setFilters(value);
-    setFilterDraft(value);
-    seen.current = "";
-    setScreen("all");
-  };
   const apply = () => {
     setFilters(filterDraft);
     seen.current = "";
@@ -643,7 +581,6 @@ export function AnimeDiscovery({
     setDiscoveryView(view);
     if (view === "schedule") {
       searchAbort.current?.abort();
-      sourceAbort.current?.abort();
       setCatalogueSearch("");
       setCatalogueSearchInput("");
       setCatalogueSearchResults([]);
@@ -683,7 +620,6 @@ export function AnimeDiscovery({
       if (value.length < 2) return;
       const requestId = ++searchRequestId.current;
       searchAbort.current?.abort();
-      sourceAbort.current?.abort();
       const controller = new AbortController();
       searchAbort.current = controller;
       setCatalogueSearching(true);
@@ -713,52 +649,12 @@ export function AnimeDiscovery({
         setCatalogueSearchPage(answer.page ?? requestedPage);
         setCatalogueSearchHasMore(Boolean(answer.hasNextPage));
         setCatalogueSearching(false);
-        if (adultMode || !items.length) return;
-        const sourceController = new AbortController();
-        sourceAbort.current = sourceController;
-        const sourceResponse = await fetch("/api/anime/sources/anime1/match", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: items.map(
-              ({
-                id,
-                source,
-                title,
-                titleChinese,
-                titleJapanese,
-                titleEnglish,
-                originalTitle,
-                titleUserPreferred,
-                synonyms,
-                releaseYear,
-                season,
-              }) => ({
-                id,
-                source,
-                title,
-                titleChinese,
-                titleJapanese,
-                titleEnglish,
-                originalTitle,
-                titleUserPreferred,
-                synonyms,
-                releaseYear,
-                season,
-              }),
-            ),
-          }),
-          signal: sourceController.signal,
-        });
-        if (!sourceResponse.ok || requestId !== searchRequestId.current) return;
-        const sourceAnswer =
-          (await sourceResponse.json()) as Anime1MatchResponse;
-        const availability = new Map(
-          (sourceAnswer.matches ?? []).map((match) => [
-            match.id,
-            match.availability,
-          ]),
-        );
+        if (!items.length) return;
+        const enriched = await withWatchSourceAvailability(items, adultMode);
+        if (requestId !== searchRequestId.current) return;
+        const availability = new Map(enriched.flatMap((item) =>
+          item.sourceAvailability ? [[item.id, item.sourceAvailability] as const] : [],
+        ));
         setCatalogueSearchResults((currentRows) =>
           currentRows.map((anime) =>
             availability.has(anime.id)
@@ -817,7 +713,6 @@ export function AnimeDiscovery({
       if (searchDebounce.current !== null)
         window.clearTimeout(searchDebounce.current);
       searchAbort.current?.abort();
-      sourceAbort.current?.abort();
     },
     [],
   );
@@ -847,7 +742,7 @@ export function AnimeDiscovery({
             onClick={() => selectDiscoveryView("updates")}
             type="button"
           >
-            最近更新
+            探索動漫
           </button>
           <button
             className={discoveryView === "schedule" ? "active" : ""}
@@ -878,19 +773,6 @@ export function AnimeDiscovery({
       )}
       {screen === "home" && !adultMode && (
         <>
-          <section className="anime-discovery-hero compact">
-            <div>
-              <h2>探索動漫</h2>
-              <p>搜尋作品，或瀏覽本季、熱門與高評分清單。</p>
-            </div>
-            <button
-              className="secondary-button"
-              onClick={() => openAll()}
-              type="button"
-            >
-              搜尋／瀏覽全部動漫 →
-            </button>
-          </section>
           <Rail
             loading={homeLoading}
             title={"本季新番 · " + seasonName(current.season, current.year)}
@@ -934,7 +816,7 @@ export function AnimeDiscovery({
                 {discoveryView === "schedule"
                   ? "本週播出時間表"
                   : discoveryView === "updates"
-                    ? "最近更新"
+                    ? "探索動漫"
                     : "搜尋與全部動漫"}
               </h2>
               <p>
@@ -998,7 +880,6 @@ export function AnimeDiscovery({
                 className="secondary-button compact"
                 onClick={() => {
                   searchAbort.current?.abort();
-                  sourceAbort.current?.abort();
                   setCatalogueSearch("");
                   setCatalogueSearchInput("");
                   setCatalogueSearchResults([]);
@@ -1300,7 +1181,7 @@ function Rail({
               : "目前沒有作品"}
         </span>
       </div>
-      <div className="anime-rail">
+      <AnimeHorizontalScroller aria-label={title} className="anime-rail">
         {items.map((anime) => (
           <Card
             anime={anime}
@@ -1313,7 +1194,7 @@ function Rail({
         {!loading && !items.length && (
           <p className="anime-rail-empty">暫時沒有可顯示的作品。</p>
         )}
-      </div>
+      </AnimeHorizontalScroller>
     </section>
   );
 }
@@ -1475,7 +1356,7 @@ function SourceAvailability({
         }
       >
         <a href={availability.url} rel="noopener noreferrer" target="_blank">
-          <span>Anime1</span><b aria-hidden="true">↗</b>
+          <span>{availability.source === "hanime1" ? "hanime1.me" : "Anime1"}</span><b aria-hidden="true">↗</b>
         </a>
         {detail && metadata && <small title={metadata}>{metadata}</small>}
       </div>

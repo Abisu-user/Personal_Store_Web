@@ -785,11 +785,11 @@ function AnimeCollectionList({
                 )}
               </div>
             </button>
-            {!adult && (anime.sourceUrl ? (
+            {anime.sourceUrl ? (
               <a className="anime-card-link has-source" href={anime.sourceUrl} rel="noopener noreferrer" target="_blank" title={anime.sourceUrl}>
                 <span>{watchSourceLabel(anime.sourceUrl)}</span><b aria-hidden="true">↗</b>
               </a>
-            ) : <div className="anime-card-link">尚未設定</div>)}
+            ) : <div className="anime-card-link">尚未設定</div>}
             {!trashed && onStatusChange && <div className="anime-card-quick-status"><label><span>觀看狀態</span><select aria-label={`更新 ${displayTitle(anime)} 的觀看狀態`} onChange={(event) => onStatusChange(anime, event.target.value as Exclude<AnimeWatchStatus, "paused">)} value={anime.watchStatus === "paused" ? "planning" : anime.watchStatus}>{statuses.map((status) => <option key={status} value={status}>{animeStatusLabels[status]}</option>)}</select></label></div>}
           </article>
         ))}
@@ -903,6 +903,7 @@ export function AnimeWorkspace({
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
+  const sourceMatchPending = useRef(new Set<string>());
   const [trashData, setTrashData] = useState<AnimeWorkspaceData | null>(null);
   const [adultTrashData, setAdultTrashData] =
     useState<AnimeWorkspaceData | null>(null);
@@ -929,6 +930,71 @@ export function AnimeWorkspace({
   const libraryPageSize = libraryGridColumns
     ? libraryGridColumns * 5
     : 12;
+
+  useEffect(() => {
+    const candidates = data.library.filter((item) =>
+      !item.sourceUrl &&
+      item.externalSource !== "manual" &&
+      !item.id.startsWith("optimistic-") &&
+      !sourceMatchPending.current.has(`standard:${item.id}`),
+    ).slice(0, 24);
+    if (!candidates.length) return;
+    candidates.forEach((item) => sourceMatchPending.current.add(`standard:${item.id}`));
+    void fetch("/api/anime/sources/match-library", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "standard", ids: candidates.map((item) => item.id) }),
+    }).then(async (response) => response.ok
+      ? response.json() as Promise<{ matches?: Array<{ id: string; sourceUrl: string }> }>
+      : { matches: [] },
+    ).then((answer) => {
+      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.sourceUrl]));
+      if (!byId.size) return;
+      setData((current) => ({
+        ...current,
+        library: current.library.map((item) =>
+          !item.sourceUrl && byId.has(item.id)
+            ? { ...item, sourceUrl: byId.get(item.id) ?? null }
+            : item,
+        ),
+      }));
+    }).catch(() => undefined).finally(() => {
+      candidates.forEach((item) => sourceMatchPending.current.delete(`standard:${item.id}`));
+    });
+  }, [data.library]);
+
+  useEffect(() => {
+    if (!adultUnlocked || !adultData) return;
+    const candidates = adultData.library.filter((item) =>
+      !item.sourceUrl &&
+      item.externalSource !== "manual" &&
+      !item.id.startsWith("optimistic-") &&
+      !sourceMatchPending.current.has(`adult:${item.id}`),
+    ).slice(0, 24);
+    if (!candidates.length) return;
+    candidates.forEach((item) => sourceMatchPending.current.add(`adult:${item.id}`));
+    void fetch("/api/anime/sources/match-library", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: "adult", ids: candidates.map((item) => item.id) }),
+    }).then(async (response) => response.ok
+      ? response.json() as Promise<{ matches?: Array<{ id: string; sourceUrl: string }> }>
+      : { matches: [] },
+    ).then((answer) => {
+      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.sourceUrl]));
+      if (!byId.size) return;
+      setAdultData((current) => current ? ({
+        ...current,
+        library: current.library.map((item) =>
+          !item.sourceUrl && byId.has(item.id)
+            ? { ...item, sourceUrl: byId.get(item.id) ?? null, adultSource: "hanime1" }
+            : item,
+        ),
+      }) : current);
+    }).catch(() => undefined).finally(() => {
+      candidates.forEach((item) => sourceMatchPending.current.delete(`adult:${item.id}`));
+    });
+  }, [adultData, adultUnlocked]);
 
   useEffect(() => {
     let active = true;

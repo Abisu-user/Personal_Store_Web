@@ -53,7 +53,7 @@ export type DiscoveryHome = {
 };
 
 const mediaFields = `
-  id title { romaji english native } coverImage { extraLarge large } bannerImage description(asHtml: false)
+  id idMal title { romaji english native userPreferred } synonyms coverImage { extraLarge large } bannerImage description(asHtml: false)
   format status episodes duration season seasonYear startDate { year month day } endDate { year month day }
   averageScore popularity favourites countryOfOrigin genres studios { nodes { name } } source isAdult siteUrl
   nextAiringEpisode { episode airingAt timeUntilAiring }
@@ -73,6 +73,7 @@ function buildCatalogueQuery(filters: CatalogueFilters) {
   ];
   const mediaArguments = [
     "type: ANIME",
+    "countryOfOrigin: JP",
     `isAdult: ${filters.includeAdult ? "true" : "false"}`,
     "sort: $sort",
   ];
@@ -126,6 +127,11 @@ function mapAnime(row: any): ExternalAnime {
     titleEnglish: asText(row?.title?.english),
     titleChinese: null,
     originalTitle: asText(row?.title?.romaji),
+    titleUserPreferred: asText(row?.title?.userPreferred),
+    synonyms: Array.isArray(row?.synonyms)
+      ? row.synonyms.filter((item: unknown): item is string => typeof item === "string" && Boolean(item.trim()))
+      : [],
+    malId: asNumber(row?.idMal),
     coverUrl:
       asText(row?.coverImage?.extraLarge) ?? asText(row?.coverImage?.large),
     bannerUrl: asText(row?.bannerImage) ?? asText(row?.coverImage?.extraLarge),
@@ -245,6 +251,7 @@ export async function getCatalogue(
         adult: Boolean(filters.includeAdult),
       },
     );
+    if (!filters.includeAdult) throw cause;
     if (filters.includeAdult)
       return getShikimoriCatalogue({ ...filters, page, perPage });
     try {
@@ -268,22 +275,13 @@ export async function getCatalogue(
   }
   const info = data?.Page?.pageInfo;
   const items: ExternalAnime[] = Array.isArray(data?.Page?.media)
-    ? data.Page.media.map(mapAnime).filter((item: ExternalAnime) => item.id)
+    ? data.Page.media
+        .map(mapAnime)
+        .filter((item: ExternalAnime) => item.id && item.countryOfOrigin === "JP")
     : [];
   const localized = await localizeAnimeTitles(items);
-  // Keep provider popularity as the primary ranking. Japanese productions get
-  // a small presentation priority without excluding animation from elsewhere.
-  const ranked = localized
-    .map((item, index) => ({ item, index }))
-    .sort(
-      (left, right) =>
-        Number(right.item.countryOfOrigin === "JP") -
-          Number(left.item.countryOfOrigin === "JP") ||
-        left.index - right.index,
-    )
-    .map(({ item }) => item);
   return {
-    items: ranked,
+    items: localized,
     page: Number(info?.currentPage ?? page),
     hasNextPage: Boolean(info?.hasNextPage),
     total: Number(info?.total ?? 0),
@@ -331,7 +329,7 @@ export async function getWeeklySchedule(
         : [];
       for (const row of rows) {
         const item = mapAnime(row?.media);
-        if (!item.id || item.isAdult) continue;
+        if (!item.id || item.isAdult || item.countryOfOrigin !== "JP") continue;
         item.nextAiringEpisode = {
           episode: Number(row?.episode ?? 0),
           airingAt: Number(row?.airingAt ?? 0),
