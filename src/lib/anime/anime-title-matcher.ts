@@ -1,3 +1,4 @@
+import OpenCC from "opencc-js";
 import type { AnimeSourceAvailability, ExternalAnime } from "@/lib/anime/types";
 
 export type NormalizedAnimeTitle = { normalized: string; base: string; seasonNumber: number | null };
@@ -16,6 +17,9 @@ export type ParsedAnime1Row = Anime1MatchRow & { sourceItemKey: string };
 
 const chineseDigits: Record<string, number> = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
 const romanDigits: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10 };
+export const EXTERNAL_SOURCE_MATCHING_VERSION = 2;
+const toTraditional = OpenCC.Converter({ from: "cn", to: "tw" });
+const toSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
 
 function parseSeasonNumber(value: string) {
   if (/^\d+$/.test(value)) return Number(value);
@@ -37,6 +41,7 @@ export function normalizeAnimeTitle(input: string): NormalizedAnimeTitle {
     /第\s*([0-9一二兩三四五六七八九十]+)\s*(?:季|期|章|部)/i,
     /(?:season|series|part)\s*([0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x)\b/i,
     /(?:cour|クール)\s*([0-9]+|i{1,3}|iv|v|vi{0,3}|ix|x)\b/i,
+    /(?<=[\p{Script=Han}\s])([ivx]{1,4})\s*(?=[~～:：\-—])/iu,
     /([0-9一二兩三四五六七八九十]+)\s*(?:nd|rd|th)?\s*(?:season|cour)/i,
     /\bs\s*([0-9]+)\b/i,
     /\s+([2-9]|1[0-9])\s*$/i,
@@ -83,10 +88,40 @@ function quarter(value: string | null | undefined) {
   return null;
 }
 
+export function buildAnimeTitleAliases(anime: ExternalAnime) {
+  const aliases = new Map<string, string>();
+  const add = (value: string | null | undefined) => {
+    const title = value?.trim();
+    if (!title) return;
+    const key = normalizeAnimeTitle(title).normalized;
+    if (key && !aliases.has(key)) aliases.set(key, title);
+  };
+  add(anime.titleJapanese);
+  if (anime.titleChinese) {
+    add(toTraditional(anime.titleChinese));
+    add(toSimplified(anime.titleChinese));
+  }
+  [anime.titleUserPreferred, anime.title, anime.originalTitle, anime.titleEnglish, ...(anime.synonyms ?? [])].forEach(add);
+  // Expand every remaining Han title after the language-priority candidates,
+  // so provider search gets Japanese, both Chinese scripts and romanized /
+  // English aliases before less useful variants.
+  [anime.titleJapanese, anime.titleUserPreferred, anime.title, anime.originalTitle, anime.titleEnglish, ...(anime.synonyms ?? [])].forEach((title) => {
+    if (title && /[\p{Script=Han}]/u.test(title)) {
+      add(toTraditional(title));
+      add(toSimplified(title));
+    }
+  });
+  return [...aliases.values()];
+}
+
 function variants(anime: ExternalAnime) {
-  return Array.from(new Set([anime.titleChinese, anime.titleUserPreferred, anime.title, anime.titleJapanese, anime.titleEnglish, anime.originalTitle, ...(anime.synonyms ?? [])]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .map((value) => normalizeAnimeTitle(value))));
+  const normalized = new Map<string, NormalizedAnimeTitle>();
+  buildAnimeTitleAliases(anime).forEach((title) => {
+    const variant = normalizeAnimeTitle(title);
+    const key = `${variant.normalized}|${variant.base}|${variant.seasonNumber ?? ""}`;
+    if (!normalized.has(key)) normalized.set(key, variant);
+  });
+  return [...normalized.values()];
 }
 
 function scoreCandidate(anime: ExternalAnime, row: Anime1MatchRow) {
@@ -95,11 +130,13 @@ function scoreCandidate(anime: ExternalAnime, row: Anime1MatchRow) {
   for (const variant of variants(anime)) {
     if (!variant.base || !target.base) continue;
     if (variant.seasonNumber && target.seasonNumber && variant.seasonNumber !== target.seasonNumber) continue;
+    if ((target.seasonNumber ?? 0) > 1 && !variant.seasonNumber) continue;
+    if ((variant.seasonNumber ?? 0) > 1 && !target.seasonNumber) continue;
     const shorter = compact(variant.base).length <= compact(target.base).length
       ? compact(variant.base)
       : compact(target.base);
     const longer = shorter === compact(variant.base) ? compact(target.base) : compact(variant.base);
-    const safeContainment = shorter.length >= 5 && longer.startsWith(shorter);
+    const safeContainment = shorter.length >= 5 && longer.includes(shorter) && shorter.length / longer.length >= 0.6;
     let score = variant.normalized === target.normalized
       ? 0.98
       : variant.base === target.base
@@ -117,6 +154,10 @@ function scoreCandidate(anime: ExternalAnime, row: Anime1MatchRow) {
 
 function statusOnly(source: AnimeSourceAvailability["source"], status: AnimeSourceAvailability["status"]): AnimeSourceAvailability {
   return { source, status, title: null, url: null, episodeText: null, year: null, seasonText: null, subtitleGroup: null };
+}
+
+export function externalSourceStatus(source: AnimeSourceAvailability["source"], status: AnimeSourceAvailability["status"]) {
+  return statusOnly(source, status);
 }
 
 export function matchExternalAnimeSource(source: AnimeSourceAvailability["source"], anime: ExternalAnime, rows: Anime1MatchRow[], sourceAvailable = true): AnimeSourceAvailability {

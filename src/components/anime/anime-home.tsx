@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppIcon } from "@/components/ui/app-icon";
-import { enrichAnime1Availability } from "@/lib/anime/client-source-availability";
+import { enrichAnime1Availability, markSourceAvailabilityChecking } from "@/lib/anime/client-source-availability";
 import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 import styles from "./anime-home.module.css";
@@ -100,9 +100,9 @@ export function AnimeHome({
         .catch(() => ({}))) as Partial<DiscoveryHome> & { error?: string };
       if (!response.ok || !body.current)
         throw new Error(body.error || "動漫資訊暫時無法載入。");
-      setCatalogue(body.current);
+      setCatalogue({ ...body.current, items: markSourceAvailabilityChecking(body.current.items) });
       const nextSchedule = body.schedule ?? [];
-      setSchedule(nextSchedule);
+      setSchedule(markSourceAvailabilityChecking(nextSchedule));
       void enrichAnime1Availability([
         ...body.current.items,
         ...nextSchedule,

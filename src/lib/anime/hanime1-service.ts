@@ -1,6 +1,8 @@
 import "server-only";
 
 import {
+  buildAnimeTitleAliases,
+  externalSourceStatus,
   matchExternalAnimeSource,
   normalizeAnimeTitle,
   type Anime1MatchRow,
@@ -11,6 +13,7 @@ const SEARCH_ROOT = "https://hanime1.me/search";
 const CACHE_TTL_MS = 12 * 60 * 60_000;
 const SOURCE_BACKOFF_MS = 15 * 60_000;
 const cache = new Map<string, { until: number; rows: Anime1MatchRow[] }>();
+const inflight = new Map<string, Promise<Anime1MatchRow[]>>();
 let sourceUnavailableUntil = 0;
 
 function decode(value: string) {
@@ -61,13 +64,11 @@ function parseSearch(html: string) {
   return [...rows.values()];
 }
 
-async function search(title: string) {
+async function requestSearch(title: string) {
   if (sourceUnavailableUntil > Date.now()) {
     throw new Error("hanime1 is temporarily unavailable");
   }
   const key = normalizeAnimeTitle(title).normalized;
-  const saved = cache.get(key);
-  if (saved && saved.until > Date.now()) return saved.rows;
   const url = new URL(SEARCH_ROOT);
   url.searchParams.set("query", title);
   const response = await fetch(url, {
@@ -90,34 +91,42 @@ async function search(title: string) {
   return rows;
 }
 
-function variants(anime: ExternalAnime) {
-  return Array.from(new Set([
-    anime.titleChinese,
-    anime.titleJapanese,
-    anime.titleUserPreferred,
-    anime.title,
-    anime.titleEnglish,
-    anime.originalTitle,
-    ...(anime.synonyms ?? []),
-  ].filter((value): value is string => Boolean(value?.trim())))).slice(0, 3);
+async function search(title: string) {
+  const key = normalizeAnimeTitle(title).normalized;
+  const saved = cache.get(key);
+  if (saved && saved.until > Date.now()) return saved.rows;
+  const active = inflight.get(key);
+  if (active) return active;
+  const task = requestSearch(title).finally(() => inflight.delete(key));
+  inflight.set(key, task);
+  return task;
 }
 
 export async function matchHAnime1(anime: ExternalAnime): Promise<AnimeSourceAvailability> {
   const rows = new Map<string, Anime1MatchRow>();
-  let sourceAvailable = false;
-  for (const title of variants(anime)) {
+  let completedSearches = 0;
+  let failedSearches = 0;
+  for (const title of buildAnimeTitleAliases(anime).slice(0, 8)) {
     try {
       const matches = await search(title);
-      sourceAvailable = true;
+      completedSearches += 1;
       matches.forEach((row) => rows.set(row.sourceUrl, row));
       const availability = matchExternalAnimeSource("hanime1", anime, [...rows.values()], true);
       if (availability.status === "available") return availability;
-    } catch {
+    } catch (error) {
+      failedSearches += 1;
+      console.warn("[hanime1-match] search failed", {
+        title,
+        message: error instanceof Error ? error.message : "unknown",
+      });
       // Optional source failure must never block Anime Library.
       if (sourceUnavailableUntil > Date.now()) break;
     }
   }
-  return matchExternalAnimeSource("hanime1", anime, [...rows.values()], sourceAvailable);
+  // A timeout, parser failure or rate limit is not evidence that a work is
+  // absent.  Only a fully completed set of searches may become not_found.
+  if (!completedSearches || failedSearches) return externalSourceStatus("hanime1", "error");
+  return matchExternalAnimeSource("hanime1", anime, [...rows.values()], true);
 }
 
 export async function matchHAnime1Batch(items: ExternalAnime[]) {
@@ -127,7 +136,7 @@ export async function matchHAnime1Batch(items: ExternalAnime[]) {
     while (cursor < items.length) {
       const index = cursor++;
       const item = items[index]!;
-      result.set(item.id, await matchHAnime1(item));
+      result.set(`${item.source}:${item.id}`, await matchHAnime1(item));
     }
   });
   await Promise.all(workers);

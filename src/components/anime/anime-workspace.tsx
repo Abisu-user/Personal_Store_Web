@@ -1,5 +1,6 @@
 "use client";
 import styles from "./anime-mobile.module.css";
+import { usePathname } from "next/navigation";
 import { AppIcon } from "@/components/ui/app-icon";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
@@ -88,6 +89,31 @@ function watchSourceLabel(url: string) {
   } catch {
     return "觀看來源";
   }
+}
+
+function isWatchSource(url: string | null | undefined, hostname: string) {
+  if (!url) return false;
+  try {
+    const actual = new URL(url).hostname.replace(/^www\./, "");
+    return actual === hostname || actual.endsWith(`.${hostname}`);
+  } catch {
+    return false;
+  }
+}
+
+function AnimeSourceLinks({ anime }: { anime: AnimeLibraryItem }) {
+  const candidates = anime.isAdult ? [anime.sourceUrl, anime.externalUrl] : [anime.sourceUrl];
+  const links = Array.from(new Set(candidates.filter((value): value is string => Boolean(value))));
+  if (!links.length) return <div className="anime-card-link">尚未設定</div>;
+  return (
+    <div className="anime-card-source-links">
+      {links.map((url) => (
+        <a className="anime-card-link has-source" href={url} key={url} rel="noopener noreferrer" target="_blank" title={url}>
+          <span>{watchSourceLabel(url)}</span><b aria-hidden="true">↗</b>
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: boolean): AnimeLibraryItem {
@@ -785,11 +811,7 @@ function AnimeCollectionList({
                 )}
               </div>
             </button>
-            {anime.sourceUrl ? (
-              <a className="anime-card-link has-source" href={anime.sourceUrl} rel="noopener noreferrer" target="_blank" title={anime.sourceUrl}>
-                <span>{watchSourceLabel(anime.sourceUrl)}</span><b aria-hidden="true">↗</b>
-              </a>
-            ) : <div className="anime-card-link">尚未設定</div>}
+            <AnimeSourceLinks anime={anime} />
             {!trashed && onStatusChange && <div className="anime-card-quick-status"><label><span>觀看狀態</span><select aria-label={`更新 ${displayTitle(anime)} 的觀看狀態`} onChange={(event) => onStatusChange(anime, event.target.value as Exclude<AnimeWatchStatus, "paused">)} value={anime.watchStatus === "paused" ? "planning" : anime.watchStatus}>{statuses.map((status) => <option key={status} value={status}>{animeStatusLabels[status]}</option>)}</select></label></div>}
           </article>
         ))}
@@ -859,6 +881,7 @@ export function AnimeWorkspace({
   initialAdultOpen?: boolean;
 }) {
   const backgroundJobs = useBackgroundSave();
+  const pathname = usePathname();
   const [data, setData] = useState(initialData ?? empty);
   const hasAdultAccess = data.adultPermissions?.adultContentAccess === true;
   const initialAdultHandled = useRef(false);
@@ -916,6 +939,8 @@ export function AnimeWorkspace({
   const [adultUnlocked, setAdultUnlocked] = useState(false);
   const [adultView, setAdultView] = useState<AdultView>("library");
   const [adultPinPrompt, setAdultPinPrompt] = useState(false);
+  const [adultPinBusy, setAdultPinBusy] = useState(false);
+  const previousAdultContext = useRef({ pathname, tab });
   const quickAddLocks = useRef(new Set<string>());
   const [preferences, setPreferences] = useState(
     initialData?.preferences ?? defaultPreferences,
@@ -945,10 +970,10 @@ export function AnimeWorkspace({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope: "standard", ids: candidates.map((item) => item.id) }),
     }).then(async (response) => response.ok
-      ? response.json() as Promise<{ matches?: Array<{ id: string; sourceUrl: string }> }>
+      ? response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string }> }>
       : { matches: [] },
     ).then((answer) => {
-      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.sourceUrl]));
+      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.matchedUrl]));
       if (!byId.size) return;
       setData((current) => ({
         ...current,
@@ -966,7 +991,8 @@ export function AnimeWorkspace({
   useEffect(() => {
     if (!adultUnlocked || !adultData) return;
     const candidates = adultData.library.filter((item) =>
-      !item.sourceUrl &&
+      !isWatchSource(item.sourceUrl, "hanime1.me") &&
+      !isWatchSource(item.externalUrl, "hanime1.me") &&
       item.externalSource !== "manual" &&
       !item.id.startsWith("optimistic-") &&
       !sourceMatchPending.current.has(`adult:${item.id}`),
@@ -978,18 +1004,20 @@ export function AnimeWorkspace({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope: "adult", ids: candidates.map((item) => item.id) }),
     }).then(async (response) => response.ok
-      ? response.json() as Promise<{ matches?: Array<{ id: string; sourceUrl: string }> }>
+      ? response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>
       : { matches: [] },
     ).then((answer) => {
-      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.sourceUrl]));
+      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match]));
       if (!byId.size) return;
       setAdultData((current) => current ? ({
         ...current,
-        library: current.library.map((item) =>
-          !item.sourceUrl && byId.has(item.id)
-            ? { ...item, sourceUrl: byId.get(item.id) ?? null, adultSource: "hanime1" }
-            : item,
-        ),
+        library: current.library.map((item) => {
+          const match = byId.get(item.id);
+          if (!match) return item;
+          return match.destination === "external"
+            ? { ...item, externalUrl: match.matchedUrl }
+            : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" };
+        }),
       }) : current);
     }).catch(() => undefined).finally(() => {
       candidates.forEach((item) => sourceMatchPending.current.delete(`adult:${item.id}`));
@@ -1292,7 +1320,7 @@ export function AnimeWorkspace({
   };
   const finishAdultPinUnlock = async () => {
     setAdultPinPrompt(false);
-    setPending(null);
+    setAdultPinBusy(false);
     try {
       await loadAdult();
     } catch (cause) {
@@ -1310,6 +1338,21 @@ export function AnimeWorkspace({
     document.addEventListener("visibilitychange", hideAdult);
     return () => document.removeEventListener("visibilitychange", hideAdult);
   }, [tab]);
+  useEffect(() => {
+    const previous = previousAdultContext.current;
+    const leftAdultRoute = previous.pathname.startsWith("/anime/adult") && !pathname.startsWith("/anime/adult");
+    const leftAdultTab = previous.tab === "adult" && tab !== "adult";
+    if (leftAdultRoute || leftAdultTab) {
+      setAdultUnlocked(false);
+      setAdultData(null);
+      setAdultPinPrompt(false);
+      setAdultPinBusy(false);
+      setAdultQuery("");
+      setAdultFolderFilters([]);
+      setAdultCategoryFilters([]);
+    }
+    previousAdultContext.current = { pathname, tab };
+  }, [pathname, tab]);
   const library = useMemo(
     () =>
       data.library.filter((anime) => {
@@ -1431,7 +1474,7 @@ export function AnimeWorkspace({
   );
   return (
     <section className="anime-workspace">
-      {pending && (
+      {pending && pending !== "adult-access" && (
         <OperationStatus
           label={pending === "adult-access" ? "正在驗證成人內容存取權…" : "正在更新成人內容安全設定…"}
         />
@@ -1439,10 +1482,14 @@ export function AnimeWorkspace({
       <div className={`anime-mobile-heading${librarySearchOpen ? " search-open" : ""}`}>
         <h1>動漫收藏</h1>
         {tab === "library" && (
-          <div className="anime-mobile-inline-search">
+          <div
+            aria-hidden={!librarySearchOpen}
+            className={`anime-mobile-inline-search${librarySearchOpen ? " is-open" : ""}`}
+          >
             <AppIcon name="search" />
             <input
               aria-label="搜尋自己的動漫"
+              disabled={!librarySearchOpen}
               ref={librarySearch}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜尋動漫"
@@ -1845,6 +1892,15 @@ export function AnimeWorkspace({
                   {value === "all" ? "全部" : animeStatusLabels[value]}
                 </button>
               ))}
+              <button
+                aria-expanded={filterOpen}
+                className="secondary-button compact anime-mobile-filter"
+                onClick={openLibraryFilters}
+                type="button"
+              >
+                <AppIcon name="organize" />
+                篩選
+              </button>
             </div>
             <input
               aria-label="搜尋自己的動漫"
@@ -1853,14 +1909,6 @@ export function AnimeWorkspace({
               placeholder="搜尋名稱、類別或備註"
               value={query}
             />
-            <button
-              aria-expanded={filterOpen}
-              className="secondary-button compact anime-mobile-filter"
-              onClick={openLibraryFilters}
-              type="button"
-            >
-              篩選
-            </button>
           </div>
           <AnimeFolderNavigation
             collectionLayout
@@ -2294,10 +2342,10 @@ export function AnimeWorkspace({
       <ModalDialog
         className="mobile-sheet-dialog pin-verification-dialog"
         onClose={() => {
-          if (!pending) setAdultPinPrompt(false);
+          if (!adultPinBusy) setAdultPinPrompt(false);
         }}
         open={adultPinPrompt}
-        pending={pending === "adult-access"}
+        pending={adultPinBusy}
         title="解鎖成人內容"
       >
         <GlassyPinVerification
@@ -2308,7 +2356,7 @@ export function AnimeWorkspace({
           verifyPin={verifyAdultPin}
           onVerified={finishAdultPinUnlock}
           onCancel={() => setAdultPinPrompt(false)}
-          onStateChange={(state) => setPending(state === "centering" || state === "verifying" || state === "success" ? "adult-access" : null)}
+          onStateChange={(state) => setAdultPinBusy(state === "centering" || state === "verifying" || state === "success")}
         />
       </ModalDialog>
     </section>
@@ -2767,32 +2815,28 @@ function AnimeDetailDialog({
             <p>{anime.notes}</p>
           </section>
         )}
-        {anime.sourceUrl && (
+        {(anime.sourceUrl || anime.externalUrl) && (
           <section className="anime-view-link">
             <h4>觀看連結</h4>
-            {anime.isAdult ? (
-              <>
+            <div className="anime-view-link-actions">
+              {Array.from(new Set((anime.isAdult ? [anime.sourceUrl, anime.externalUrl] : [anime.sourceUrl]).filter((value): value is string => Boolean(value)))).map((url) => (
                 <a
                   className="button compact"
-                  href={anime.sourceUrl}
+                  href={url}
+                  key={url}
                   rel="noopener noreferrer"
                   target="_blank"
                 >
-                  在新分頁開啟連結
+                  {watchSourceLabel(url)} ↗
                 </a>
+              ))}
+            </div>
+            {anime.isAdult && (
+              <>
                 <p className="anime-field-hint">
                   此連結不會收到 Personal Vault 的來源資訊。
                 </p>
               </>
-            ) : (
-              <a
-                className="button compact"
-                href={anime.sourceUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                ▶ 前往觀看
-              </a>
             )}
           </section>
         )}

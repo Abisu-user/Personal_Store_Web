@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 const nullableText = z.string().trim().max(500).nullable().optional();
 const itemSchema = z.object({
   id: z.string().trim().min(1).max(500),
+  matchKey: z.string().trim().min(1).max(500).optional(),
   source: z.enum(["anilist", "jikan", "bangumi"]),
   title: z.string().trim().min(1).max(500),
   titleChinese: nullableText,
@@ -33,8 +34,8 @@ export async function POST(request: NextRequest) {
   const matches = await matchHAnime1Batch(parsed.data.items as ExternalAnime[]);
   return NextResponse.json({
     matches: parsed.data.items.map((anime) => ({
-      id: anime.id,
-      availability: matches.get(anime.id),
+      id: anime.matchKey ?? anime.id,
+      availability: matches.get(`${anime.source}:${anime.id}`),
     })),
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

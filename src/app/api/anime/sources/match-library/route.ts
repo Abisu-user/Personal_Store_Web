@@ -20,6 +20,16 @@ function asText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function isProviderUrl(value: unknown, hostname: string) {
+  if (typeof value !== "string" || !value) return false;
+  try {
+    const actual = new URL(value).hostname.replace(/^www\./, "");
+    return actual === hostname || actual.endsWith(`.${hostname}`);
+  } catch {
+    return false;
+  }
+}
+
 function toExternal(row: Record<string, unknown>): ExternalAnime | null {
   const source = row.external_source;
   if (source !== "anilist" && source !== "jikan" && source !== "bangumi") return null;
@@ -68,14 +78,13 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   let query = admin
     .from("anime_library")
-    .select("id,external_id,external_source,title,title_japanese,title_english,title_chinese,original_title,release_year,season,is_adult,content_rating,source_url")
+    .select("id,external_id,external_source,title,title_japanese,title_english,title_chinese,original_title,release_year,season,is_adult,content_rating,source_url,external_url,adult_source")
     .eq("user_id", security.userId)
     .in("id", parsed.data.ids)
-    .is("source_url", null)
     .is("deleted_at", null);
   query = parsed.data.scope === "adult"
     ? query.eq("is_adult", true)
-    : query.or("is_adult.is.null,is_adult.eq.false");
+    : query.or("is_adult.is.null,is_adult.eq.false").is("source_url", null);
   const { data: rows, error } = await query;
   if (error) {
     console.warn("[anime-source-backfill] library query failed", { code: error.code, message: error.message });
@@ -83,6 +92,10 @@ export async function POST(request: NextRequest) {
   }
 
   const candidates = (rows ?? []).flatMap((row) => {
+    if (parsed.data.scope === "adult" && (
+      isProviderUrl(row.source_url, "hanime1.me") ||
+      isProviderUrl(row.external_url, "hanime1.me")
+    )) return [];
     const anime = toExternal(row);
     return anime ? [{ row, anime }] : [];
   });
@@ -90,29 +103,36 @@ export async function POST(request: NextRequest) {
     ? await matchHAnime1Batch(candidates.map(({ anime }) => anime))
     : null;
   const anime1Index = parsed.data.scope === "standard" ? await getAnime1Index() : null;
-  const matches: Array<{ id: string; sourceUrl: string; source: "anime1" | "hanime1" }> = [];
+  const matches: Array<{ id: string; matchedUrl: string; destination: "source" | "external"; source: "anime1" | "hanime1" }> = [];
 
   for (const { row, anime } of candidates) {
     const availability = parsed.data.scope === "adult"
-      ? adultMatches?.get(anime.id)
+      ? adultMatches?.get(`${anime.source}:${anime.id}`)
       : matchAnime1(anime, anime1Index?.rows ?? [], anime1Index?.sourceAvailable ?? false);
     if (availability?.status !== "available" || !availability.url) continue;
+    const existingSource = asText(row.source_url);
+    const destination = parsed.data.scope === "adult" && existingSource ? "external" : "source";
     const updates = parsed.data.scope === "adult"
-      ? { source_url: availability.url, external_url: availability.url, adult_source: "hanime1" }
+      ? existingSource
+        ? { external_url: availability.url }
+        : { source_url: availability.url, external_url: availability.url, adult_source: "hanime1" }
       : { source_url: availability.url };
-    const { data: updated, error: updateError } = await admin
+    let updateQuery = admin
       .from("anime_library")
       .update(updates)
       .eq("id", row.id)
-      .eq("user_id", security.userId)
-      .is("source_url", null)
+      .eq("user_id", security.userId);
+    updateQuery = existingSource
+      ? updateQuery.eq("source_url", existingSource)
+      : updateQuery.is("source_url", null);
+    const { data: updated, error: updateError } = await updateQuery
       .select("id")
       .maybeSingle();
     if (updateError) {
       console.warn("[anime-source-backfill] update failed", { code: updateError.code, message: updateError.message, scope: parsed.data.scope });
       continue;
     }
-    if (updated) matches.push({ id: row.id, sourceUrl: availability.url, source: availability.source });
+    if (updated) matches.push({ id: row.id, matchedUrl: availability.url, destination, source: availability.source });
   }
 
   return NextResponse.json({ matches }, { headers: { "Cache-Control": "private, no-store" } });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import { ModalDialog } from "@/components/ui/modal-dialog";
-import { enrichAnime1Availability, enrichHAnime1Availability } from "@/lib/anime/client-source-availability";
+import { enrichAnime1Availability, enrichHAnime1Availability, markSourceAvailabilityChecking } from "@/lib/anime/client-source-availability";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
@@ -417,10 +417,10 @@ export function AnimeDiscovery({
       setError(null);
       setHomeLoading(true);
       const answer = await get<DiscoveryHome>("/api/anime/catalogue?view=home");
-      setThisSeason(answer.current.items);
-      setNextSeason(answer.upcoming.items);
-      setPopular(answer.popular.items);
-      setHighest(answer.top.items);
+      setThisSeason(markSourceAvailabilityChecking(answer.current.items));
+      setNextSeason(markSourceAvailabilityChecking(answer.upcoming.items));
+      setPopular(markSourceAvailabilityChecking(answer.popular.items));
+      setHighest(markSourceAvailabilityChecking(answer.top.items));
       setTaxonomy(answer.taxonomy);
       void withWatchSourceAvailability([
         ...answer.current.items,
@@ -479,11 +479,12 @@ export function AnimeDiscovery({
               adult: adultMode ? 1 : undefined,
             }),
         );
+        const checkingItems = markSourceAvailabilityChecking(response.items, adultMode);
         setAll((currentRows) =>
           replace
-            ? response.items
+            ? checkingItems
             : currentRows.concat(
-                response.items.filter(
+                checkingItems.filter(
                   (anime) => !currentRows.some((row) => row.id === anime.id),
                 ),
               ),
@@ -550,7 +551,7 @@ export function AnimeDiscovery({
       const response = await get<{ items: ExternalAnime[] }>(
         `/api/anime/catalogue?view=schedule&tzOffset=${new Date().getTimezoneOffset()}`,
       );
-      setScheduleItems(response.items);
+      setScheduleItems(markSourceAvailabilityChecking(response.items));
       void withWatchSourceAvailability(response.items)
         .then(setScheduleItems)
         .catch(() => undefined);
@@ -637,14 +638,15 @@ export function AnimeDiscovery({
           throw new Error(answer.error || "搜尋失敗，請稍後再試。");
         if (requestId !== searchRequestId.current) return;
         const items = answer.results ?? answer.items ?? [];
+        const checkingItems = markSourceAvailabilityChecking(items, adultMode);
         setCatalogueSearchResults((currentRows) =>
           append
             ? currentRows.concat(
-                items.filter(
+                checkingItems.filter(
                   (anime) => !currentRows.some((row) => row.id === anime.id),
                 ),
               )
-            : items,
+            : checkingItems,
         );
         setCatalogueSearchPage(answer.page ?? requestedPage);
         setCatalogueSearchHasMore(Boolean(answer.hasNextPage));
@@ -1361,6 +1363,12 @@ function SourceAvailability({
         {detail && metadata && <small title={metadata}>{metadata}</small>}
       </div>
     );
+  }
+  if (detail && (availability.status === "error" || availability.status === "source_unavailable")) {
+    return <p className="anime-source-availability-state">外部觀看來源暫時無法確認，稍後可重新嘗試。</p>;
+  }
+  if (detail && availability.status === "checking") {
+    return <p className="anime-source-availability-state">正在確認外部觀看來源…</p>;
   }
   return null;
 }

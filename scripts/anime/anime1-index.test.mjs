@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { matchAnime1, matchExternalAnimeSource, normalizeAnimeTitle, parseAnime1Index } from "../../src/lib/anime/anime-title-matcher.ts";
+import { buildAnimeTitleAliases, matchAnime1, matchExternalAnimeSource, normalizeAnimeTitle, parseAnime1Index } from "../../src/lib/anime/anime-title-matcher.ts";
 
 test("normalizes Chinese, English and Roman season markers", () => {
   assert.deepEqual(normalizeAnimeTitle("進擊的巨人 第三季"), { normalized: "進擊的巨人 第三季", base: "進擊的巨人", seasonNumber: 3 });
@@ -81,4 +81,50 @@ test("reuses the safe matcher for an adult external source", () => {
   }], true);
   assert.equal(result.status, "available");
   assert.equal(result.source, "hanime1");
+});
+
+test("expands Chinese aliases across Traditional and Simplified titles", () => {
+  const anime = {
+    id: "zh-1",
+    source: "anilist",
+    title: "葬送的芙莉蓮",
+    titleChinese: "葬送的芙莉蓮",
+    titleJapanese: "葬送のフリーレン",
+    titleEnglish: "Frieren: Beyond Journey''s End",
+    originalTitle: null,
+    synonyms: [],
+    releaseYear: 2023,
+    season: "fall",
+  };
+  const aliases = buildAnimeTitleAliases(anime);
+  assert.ok(aliases.includes("葬送的芙莉莲"));
+  const result = matchAnime1(anime, [{
+    sourceTitle: "葬送的芙莉莲",
+    normalizedTitle: normalizeAnimeTitle("葬送的芙莉莲").normalized,
+    sourceUrl: "https://anime1.me/?cat=999",
+    episodeText: "28",
+    year: 2023,
+    seasonText: "秋",
+    subtitleGroup: null,
+    anilistId: null,
+    manualMatch: false,
+  }], true);
+  assert.equal(result.status, "available");
+});
+
+test("does not infer a later season from an unnumbered title", () => {
+  const anime = { id: "season-safe", source: "anilist", title: "Re:從零開始的異世界生活", titleChinese: "Re:從零開始的異世界生活", titleJapanese: null, titleEnglish: null, originalTitle: null, synonyms: [], releaseYear: 2016, season: "spring" };
+  const result = matchAnime1(anime, [{
+    sourceTitle: "Re:從零開始的異世界生活 第二季",
+    normalizedTitle: normalizeAnimeTitle("Re:從零開始的異世界生活 第二季").normalized,
+    sourceUrl: "https://anime1.me/?cat=738",
+    episodeText: null,
+    year: null,
+    seasonText: "2020夏/2021冬",
+    subtitleGroup: null,
+    anilistId: null,
+    manualMatch: false,
+  }], true);
+  assert.equal(result.status, "not_found");
+  assert.equal(normalizeAnimeTitle("無職轉生III～到了異世界就拿出真本事～").seasonNumber, 3);
 });

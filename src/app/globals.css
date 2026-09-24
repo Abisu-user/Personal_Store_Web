@@ -1760,6 +1760,10 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 .anime-card-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .anime-card-link > b { flex: 0 0 auto; font-size: .78rem; }
 .anime-card-link.has-source:hover { text-decoration: underline; }
+.anime-card-source-links { display: flex; min-width: 0; flex-wrap: wrap; gap: 5px; margin: 0 10px 8px; }
+.anime-card-source-links .anime-card-link { min-width: 0; flex: 1 1 auto; justify-content: center; margin: 0; }
+.anime-view-link-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.anime-source-availability-state { margin: 7px 0 0; color: var(--muted); font-size: .76rem; }
 .anime-source-availability { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .anime-source-availability a { display: inline-flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; overflow: hidden; }
 .anime-source-availability a > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

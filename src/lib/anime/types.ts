@@ -25,7 +25,7 @@ export type AnimeRelation = {
   type: string | null;
 };
 export type AnimeSourceAvailabilityStatus =
-  "available" | "not_found" | "unknown" | "source_unavailable";
+  "available" | "not_found" | "unknown" | "checking" | "error" | "source_unavailable";
 export type AnimeSourceAvailability = {
   source: "anime1" | "hanime1";
   status: AnimeSourceAvailabilityStatus;
