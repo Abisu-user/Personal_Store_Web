@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCatalogue, getCatalogueTaxonomy, getDiscoveryHome, type CatalogueFilters } from "@/lib/anime/anilist-catalogue";
+import {
+  getCatalogue,
+  getCatalogueTaxonomy,
+  getDiscoveryHome,
+  getWeeklySchedule,
+  type CatalogueFilters,
+} from "@/lib/anime/anilist-catalogue";
 import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { hasAdultContentAccess } from "@/lib/security/adult-content";
@@ -10,34 +16,122 @@ export const runtime = "nodejs";
 const seasons = new Set(["WINTER", "SPRING", "SUMMER", "FALL"]);
 const formats = new Set(["TV", "MOVIE", "OVA", "ONA", "SPECIAL"]);
 const statuses = new Set(["RELEASING", "FINISHED", "NOT_YET_RELEASED"]);
-const sorts = new Set(["POPULARITY_DESC", "SCORE_DESC", "START_DATE_DESC", "NEXT_AIRING_EPISODE_DESC", "TITLE_ROMAJI", "FAVOURITES_DESC"]);
-const safeValue = (value: string | null, accepted: Set<string>) => value && accepted.has(value) ? value : undefined;
-const positive = (value: string | null, fallback: number) => { const parsed = Number(value); return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback; };
+const sorts = new Set([
+  "POPULARITY_DESC",
+  "SCORE_DESC",
+  "START_DATE_DESC",
+  "NEXT_AIRING_EPISODE_DESC",
+  "TITLE_ROMAJI",
+  "FAVOURITES_DESC",
+]);
+const safeValue = (value: string | null, accepted: Set<string>) =>
+  value && accepted.has(value) ? value : undefined;
+const positive = (value: string | null, fallback: number) => {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
 
 export async function GET(request: NextRequest) {
   const security = await getSecurityContext();
-  if (!security) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!security)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = request.nextUrl.searchParams;
   const adultRequested = params.get("adult") === "1";
-  const includeAdult = adultRequested && await hasAdultContentAccess(security.userId) && (await getAnimePreferences(security.userId)).adultModeEnabled;
-  if (params.get("adult") === "1" && !includeAdult) return NextResponse.json({ error: "成人內容模式尚未啟用。" }, { status: 403 });
+  const includeAdult =
+    adultRequested &&
+    (await hasAdultContentAccess(security.userId)) &&
+    (await getAnimePreferences(security.userId)).adultModeEnabled;
+  if (params.get("adult") === "1" && !includeAdult)
+    return NextResponse.json(
+      { error: "成人內容模式尚未啟用。" },
+      { status: 403 },
+    );
+  const timeZoneOffset = Math.max(
+    -840,
+    Math.min(840, Number(params.get("tzOffset") ?? 0) || 0),
+  );
   if (params.get("view") === "home") {
-    try { return NextResponse.json(await getDiscoveryHome(), { headers: { "Cache-Control": "private, max-age=900" } }); }
-    catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得探索動漫。" }, { status: 503 }); }
+    try {
+      return NextResponse.json(await getDiscoveryHome(timeZoneOffset), {
+        headers: { "Cache-Control": "private, max-age=900" },
+      });
+    } catch (cause) {
+      return NextResponse.json(
+        {
+          error: cause instanceof Error ? cause.message : "無法取得探索動漫。",
+        },
+        { status: 503 },
+      );
+    }
+  }
+  if (params.get("view") === "schedule") {
+    try {
+      return NextResponse.json(
+        { items: await getWeeklySchedule(timeZoneOffset) },
+        { headers: { "Cache-Control": "private, max-age=900" } },
+      );
+    } catch (cause) {
+      return NextResponse.json(
+        {
+          error:
+            cause instanceof Error ? cause.message : "無法取得本週播出時間表。",
+        },
+        { status: 503 },
+      );
+    }
   }
   if (params.get("resource") === "taxonomy") {
-    try { return NextResponse.json(await getCatalogueTaxonomy(), { headers: { "Cache-Control": "private, max-age=3600" } }); }
-    catch (cause) { return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得動漫分類。" }, { status: 503 }); }
+    try {
+      return NextResponse.json(await getCatalogueTaxonomy(), {
+        headers: { "Cache-Control": "private, max-age=3600" },
+      });
+    } catch (cause) {
+      return NextResponse.json(
+        {
+          error: cause instanceof Error ? cause.message : "無法取得動漫分類。",
+        },
+        { status: 503 },
+      );
+    }
   }
-  const season = safeValue(params.get("season"), seasons) as CatalogueFilters["season"];
-  const format = safeValue(params.get("format"), formats) as CatalogueFilters["format"];
-  const status = safeValue(params.get("status"), statuses) as CatalogueFilters["status"];
+  const season = safeValue(
+    params.get("season"),
+    seasons,
+  ) as CatalogueFilters["season"];
+  const format = safeValue(
+    params.get("format"),
+    formats,
+  ) as CatalogueFilters["format"];
+  const status = safeValue(
+    params.get("status"),
+    statuses,
+  ) as CatalogueFilters["status"];
   const sort = safeValue(params.get("sort"), sorts) as CatalogueFilters["sort"];
-  const clean = (value: string | null) => value?.trim().slice(0, 80) || undefined;
-  const filters: CatalogueFilters = { page: positive(params.get("page"), 1), perPage: Math.min(30, positive(params.get("perPage"), 20)), season, seasonYear: params.get("seasonYear") ? positive(params.get("seasonYear"), new Date().getFullYear()) : undefined, genre: clean(params.get("genre")), tag: clean(params.get("tag")), format, status, sort, includeAdult, search: clean(params.get("search")) };
+  const clean = (value: string | null) =>
+    value?.trim().slice(0, 80) || undefined;
+  const filters: CatalogueFilters = {
+    page: positive(params.get("page"), 1),
+    perPage: Math.min(30, positive(params.get("perPage"), 20)),
+    season,
+    seasonYear: params.get("seasonYear")
+      ? positive(params.get("seasonYear"), new Date().getFullYear())
+      : undefined,
+    genre: clean(params.get("genre")),
+    tag: clean(params.get("tag")),
+    format,
+    status,
+    sort,
+    includeAdult,
+    search: clean(params.get("search")),
+  };
   try {
-    return NextResponse.json(await getCatalogue(filters), { headers: { "Cache-Control": "private, max-age=900" } });
+    return NextResponse.json(await getCatalogue(filters), {
+      headers: { "Cache-Control": "private, max-age=900" },
+    });
   } catch (cause) {
-    return NextResponse.json({ error: cause instanceof Error ? cause.message : "無法取得動漫資料。" }, { status: 503 });
+    return NextResponse.json(
+      { error: cause instanceof Error ? cause.message : "無法取得動漫資料。" },
+      { status: 503 },
+    );
   }
 }

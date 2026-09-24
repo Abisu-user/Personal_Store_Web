@@ -1744,3 +1744,41 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-source-availability.muted { justify-content: center; }
 }
 @media (prefers-reduced-motion: reduce) { .anime-catalogue-skeleton { animation: none; } }
+
+/* Anime V5 layout refinements: bounded desktop canvas, compact discovery and
+   source rows that share the existing Personal Store theme. */
+.page-create-button { min-height: 44px; }
+.anime-workspace { width: min(100%, 1380px); margin-inline: auto; }
+.anime-discovery { width: 100%; min-width: 0; }
+.anime-discovery-hero.compact { align-items: center; padding: 16px 18px; }
+.anime-discovery-hero.compact h2 { margin: 0; }
+.anime-discovery-hero.compact p { margin-top: 4px; font-size: .84rem; }
+.anime-rail { max-width: 100%; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; touch-action: pan-x; scrollbar-width: none; }
+.anime-rail::-webkit-scrollbar { display: none; }
+.anime-discovery-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.anime-card-link { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; margin: 0 10px 8px; overflow: hidden; color: var(--brand); text-decoration: none; }
+.anime-card-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anime-card-link > b { flex: 0 0 auto; font-size: .78rem; }
+.anime-card-link.has-source:hover { text-decoration: underline; }
+.anime-source-availability { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.anime-source-availability a { display: inline-flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; overflow: hidden; }
+.anime-source-availability a > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anime-source-availability small { grid-column: 1 / -1; }
+
+@media (max-width: 700px) {
+  .anime-workspace { width: 100%; }
+  .anime-discovery { gap: 14px; }
+  .anime-discovery-hero.compact { padding: 13px 14px; }
+  .anime-rail { grid-auto-columns: clamp(152px, 43vw, 168px); gap: 9px; padding-right: 26px; }
+  .anime-catalogue-card { gap: 6px; padding: 8px; }
+  .anime-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .anime-discovery-grid .anime-catalogue-main > img,
+  .anime-discovery-grid .anime-catalogue-cover-fallback { height: auto; aspect-ratio: 2 / 3; }
+  .anime-catalogue-main h3 { margin-top: 6px; font-size: .82rem; }
+  .anime-source-availability { min-height: 34px; align-items: center; padding: 4px 7px; }
+  .anime-card-link { margin-inline: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anime-rail { scroll-behavior: auto; }
+}

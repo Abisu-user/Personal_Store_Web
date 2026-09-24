@@ -79,6 +79,17 @@ const displayTitle = (
 const externalDisplayTitle = (anime: ExternalAnime) =>
   anime.titleChinese || anime.titleJapanese || anime.title || "未命名動漫";
 
+function watchSourceLabel(url: string) {
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, "");
+    return hostname === "anime1.me" || hostname.endsWith(".anime1.me")
+      ? "Anime1"
+      : hostname;
+  } catch {
+    return "觀看來源";
+  }
+}
+
 function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: boolean): AnimeLibraryItem {
   const now = new Date().toISOString();
   return {
@@ -769,17 +780,16 @@ function AnimeCollectionList({
                 </p>
                 {!adult && (
                   <div className={styles.episodeProgress}>
-                    <span><span>{anime.watchedEpisodes > 0 ? `已看 ${anime.watchedEpisodes} 集` : "尚未開始"}</span><span>{anime.episodes && anime.episodes > 0 ? `共 ${anime.episodes} 集` : "集數未定"}</span></span>
-                    {anime.episodes && anime.episodes > 0 ? <i aria-hidden="true"><b style={{ width: `${Math.min(100, Math.max(0, anime.watchedEpisodes / anime.episodes * 100))}%` }} /></i> : null}
-                  </div>
-                )}
-                {!adult && (
-                  <div className="anime-card-link">
-                    {anime.sourceUrl ? "已設定觀看連結" : "尚未設定觀看連結"}
+                    <span>{anime.episodes && anime.episodes > 0 ? `全 ${anime.episodes} 集` : "集數未定"}</span>
                   </div>
                 )}
               </div>
             </button>
+            {!adult && (anime.sourceUrl ? (
+              <a className="anime-card-link has-source" href={anime.sourceUrl} rel="noopener noreferrer" target="_blank" title={anime.sourceUrl}>
+                <span>{watchSourceLabel(anime.sourceUrl)}</span><b aria-hidden="true">↗</b>
+              </a>
+            ) : <div className="anime-card-link">尚未設定</div>)}
             {!trashed && onStatusChange && <div className="anime-card-quick-status"><label><span>觀看狀態</span><select aria-label={`更新 ${displayTitle(anime)} 的觀看狀態`} onChange={(event) => onStatusChange(anime, event.target.value as Exclude<AnimeWatchStatus, "paused">)} value={anime.watchStatus === "paused" ? "planning" : anime.watchStatus}>{statuses.map((status) => <option key={status} value={status}>{animeStatusLabels[status]}</option>)}</select></label></div>}
           </article>
         ))}
@@ -862,6 +872,7 @@ export function AnimeWorkspace({
   const [adultFolderFilters, setAdultFolderFilters] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const librarySearch = useRef<HTMLInputElement>(null);
+  const [librarySearchOpen, setLibrarySearchOpen] = useState(false);
   const [adultQuery, setAdultQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
   const [selected, setSelected] = useState<AnimeLibraryItem | null>(null);
@@ -876,10 +887,15 @@ export function AnimeWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const [folderManageSignal, setFolderManageSignal] = useState(0);
   const [libraryFilterDraft, setLibraryFilterDraft] = useState<{
-    status: Filter;
     folderIds: string[];
     categoryIds: string[];
-  }>({ status: "all", folderIds: [], categoryIds: [] });
+  }>({ folderIds: [], categoryIds: [] });
+
+  useEffect(() => {
+    if (!librarySearchOpen) return;
+    const frame = window.requestAnimationFrame(() => librarySearch.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [librarySearchOpen]);
   const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [categoryMoreOpen, setCategoryMoreOpen] = useState(false);
   const [categoryManageScope, setCategoryManageScope] =
@@ -1115,12 +1131,11 @@ export function AnimeWorkspace({
     setFilter(value);
   };
   const openLibraryFilters = () => {
-    setLibraryFilterDraft({ status: filter, folderIds: folderFilters, categoryIds: categoryFilters });
+    setLibraryFilterDraft({ folderIds: folderFilters, categoryIds: categoryFilters });
     setFilterOpen(true);
   };
   const applyLibraryFilters = () => {
     setLibraryView("library");
-    setFilter(libraryFilterDraft.status);
     setFolderFilters(libraryFilterDraft.folderIds);
     setCategoryFilters(libraryFilterDraft.categoryIds);
     setFilterOpen(false);
@@ -1355,10 +1370,23 @@ export function AnimeWorkspace({
           label={pending === "adult-access" ? "正在驗證成人內容存取權…" : "正在更新成人內容安全設定…"}
         />
       )}
-      <div className="anime-mobile-heading">
+      <div className={`anime-mobile-heading${librarySearchOpen ? " search-open" : ""}`}>
         <h1>動漫收藏</h1>
+        {tab === "library" && (
+          <div className="anime-mobile-inline-search">
+            <AppIcon name="search" />
+            <input
+              aria-label="搜尋自己的動漫"
+              ref={librarySearch}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜尋動漫"
+              value={query}
+            />
+            <button aria-label="關閉搜尋" onClick={() => { setQuery(""); setLibrarySearchOpen(false); }} type="button">×</button>
+          </div>
+        )}
         <div className={styles.headingActions}>
-        {tab === "library" && <button className="mobile-icon-button" aria-label="搜尋自己的動漫" onClick={() => librarySearch.current?.focus()} type="button"><AppIcon name="search" /></button>}
+        {tab === "library" && !librarySearchOpen && <button className="mobile-icon-button" aria-label="搜尋自己的動漫" onClick={() => setLibrarySearchOpen(true)} type="button"><AppIcon name="search" /></button>}
         {(tab !== "adult" || adultUnlocked) && (
           <button
             className="button compact page-create-button anime-mobile-create-button"
@@ -1754,7 +1782,7 @@ export function AnimeWorkspace({
             </div>
             <input
               aria-label="搜尋自己的動漫"
-              ref={librarySearch}
+              className="anime-library-search-field"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜尋名稱、類別或備註"
               value={query}
@@ -1765,7 +1793,7 @@ export function AnimeWorkspace({
               onClick={openLibraryFilters}
               type="button"
             >
-              篩選{filter === "all" ? "" : `：${animeStatusLabels[filter]}`}
+              篩選
             </button>
           </div>
           <AnimeFolderNavigation
@@ -1956,21 +1984,6 @@ export function AnimeWorkspace({
           >
             <div className="anime-mobile-filter-panel">
               <section>
-                <header><div><strong>觀看狀態</strong><span>可與資料夾、類別一起篩選</span></div><button onClick={() => setLibraryFilterDraft((current) => ({ ...current, status: "all" }))} type="button">清除</button></header>
-                <div className="anime-mobile-filter-options">
-                {visibleFilters.map((value) => (
-                  <button
-                    className={libraryFilterDraft.status === value ? "active" : ""}
-                    key={value}
-                    onClick={() => setLibraryFilterDraft((current) => ({ ...current, status: value }))}
-                    type="button"
-                  >
-                    {value === "all" ? "全部" : animeStatusLabels[value]}
-                  </button>
-                ))}
-                </div>
-              </section>
-              <section>
                 <header><div><strong>資料夾（可複選）</strong><span>符合任一選取資料夾時顯示</span></div><button onClick={() => setLibraryFilterDraft((current) => ({ ...current, folderIds: [] }))} type="button">清除</button></header>
                 <div className="anime-mobile-filter-options">
                   {data.folders.filter((folder) => folder.isVisible).map((folder) => <button className={libraryFilterDraft.folderIds.includes(folder.id) ? "active" : ""} key={folder.id} onClick={() => setLibraryFilterDraft((current) => { const folderIds = toggledFolderIds(current.folderIds, folder.id); return { ...current, folderIds, categoryIds: current.categoryIds.filter((categoryId) => { const category = data.tags.find((item) => item.id === categoryId); return !category?.folderId || folderIds.includes(category.folderId); }) }; })} type="button">{libraryFilterDraft.folderIds.includes(folder.id) ? "✓ " : ""}{folder.name}</button>)}
@@ -1986,8 +1999,8 @@ export function AnimeWorkspace({
                 </div>
                 <button className="anime-mobile-filter-manage" onClick={() => { setFilterOpen(false); setCategoryManageScope("standard"); }} type="button">管理類別</button>
               </section>
-              <div className="anime-mobile-filter-summary"><strong>目前選擇</strong><span>{libraryFilterDraft.status === "all" ? "全部狀態" : animeStatusLabels[libraryFilterDraft.status]} · {libraryFilterDraft.folderIds.length ? `${libraryFilterDraft.folderIds.length} 個資料夾` : "全部資料夾"} · {libraryFilterDraft.categoryIds.length ? `${libraryFilterDraft.categoryIds.length} 個類別` : "全部類別"}</span></div>
-              <div className="dialog-actions anime-mobile-filter-actions"><button className="secondary-button" onClick={() => setLibraryFilterDraft({ status: "all", folderIds: [], categoryIds: [] })} type="button">全部清除</button><button className="button" onClick={applyLibraryFilters} type="button">套用篩選</button></div>
+              <div className="anime-mobile-filter-summary"><strong>目前選擇</strong><span>{libraryFilterDraft.folderIds.length ? `${libraryFilterDraft.folderIds.length} 個資料夾` : "全部資料夾"} · {libraryFilterDraft.categoryIds.length ? `${libraryFilterDraft.categoryIds.length} 個類別` : "全部類別"}</span></div>
+              <div className="dialog-actions anime-mobile-filter-actions"><button className="secondary-button" onClick={() => setLibraryFilterDraft({ folderIds: [], categoryIds: [] })} type="button">全部清除</button><button className="button" onClick={applyLibraryFilters} type="button">套用篩選</button></div>
             </div>
           </ModalDialog>
           <ModalDialog
@@ -2108,7 +2121,6 @@ export function AnimeWorkspace({
           folders={tab === "adult" ? (adultData?.folders ?? []) : data.folders}
           onClose={() => setAdding(false)}
           onSaved={async () => {
-            setAdding(false);
             if (tab === "adult") await refreshAdult();
             else await refresh();
             setNotice(tab === "adult" ? "已新增成人作品。" : "已新增動漫。");
@@ -2123,7 +2135,6 @@ export function AnimeWorkspace({
           prefill={prefill}
           onClose={() => setPrefill(null)}
           onSaved={async () => {
-            setPrefill(null);
             await refresh();
             setNotice("已新增動漫。");
           }}
@@ -2138,7 +2149,6 @@ export function AnimeWorkspace({
           prefill={adultPrefill}
           onClose={() => setAdultPrefill(null)}
           onSaved={async () => {
-            setAdultPrefill(null);
             await refreshAdult();
             setNotice("已新增成人作品。");
           }}
@@ -2182,7 +2192,6 @@ export function AnimeWorkspace({
               setAdultView("library");
               setTab("adult");
             } else await refresh();
-            setEditing(null);
             setNotice("已儲存動漫資料。");
           }}
         />

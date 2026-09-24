@@ -1,4 +1,5 @@
 .episodeProgress { display: none; }
+.animePage :global(.anime-mobile-inline-search) { display: none; }
 .animePage :global(.anime-card-quick-status) { padding: 0 10px 10px; }
 .animePage :global(.anime-card-quick-status label) { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .76rem; font-weight: 800; }
 .animePage :global(.anime-card-quick-status select) { min-height: 36px; padding: 0 28px 0 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface); font: inherit; }
@@ -9,7 +10,12 @@
   .animePage :global(.page-heading.anime-page-heading) { display: none; }
   .animePage :global(.anime-workspace) { margin-top: 0; gap: 8px; }
   .animePage :global(.anime-mobile-heading) { min-height: 44px; gap: 8px; margin-bottom: 4px; }
-  .animePage :global(.anime-mobile-heading h1) { font-size: 1.55rem; }
+  .animePage :global(.anime-mobile-heading h1) { max-width: 100%; overflow: hidden; font-size: 1.55rem; opacity: 1; white-space: nowrap; transition: max-width 220ms ease, opacity 160ms ease; }
+  .animePage :global(.anime-mobile-heading.search-open h1) { max-width: 0; opacity: 0; }
+  .animePage :global(.anime-mobile-inline-search) { display: flex; flex: 1 1 auto; min-width: 0; height: 44px; align-items: center; gap: 7px; padding: 0 5px 0 11px; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; background: color-mix(in srgb, var(--surface) 92%, transparent); opacity: 0; transform: scaleX(.92); transform-origin: right center; animation: anime-search-open 220ms ease forwards; }
+  .animePage :global(.anime-mobile-inline-search .app-icon) { width: 18px; flex: 0 0 18px; color: var(--brand); }
+  .animePage :global(.anime-mobile-inline-search input) { width: 100%; min-width: 0; height: 42px; padding: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font: inherit; font-size: .82rem; }
+  .animePage :global(.anime-mobile-inline-search button) { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border: 0; border-radius: 10px; color: var(--muted); background: transparent; font: inherit; font-size: 1.22rem; }
   .headingActions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
   .animePage :global(.anime-mobile-create-button) { height: 44px; padding-inline: 12px; border-radius: 13px; display: inline-flex; align-items: center; gap: 6px; }
   .animePage :global(.anime-mobile-create-button .app-icon) { width: 17px; height: 17px; }
@@ -28,16 +34,14 @@
   .animePage :global(.anime-card-line) { gap: 4px; }
   .animePage :global(.anime-status) { padding: 3px 6px; font-size: .63rem; }
   .animePage :global(.anime-rating-summary) { font-size: .65rem; white-space: nowrap; }
-  .animePage :global(.anime-card-link) { margin-top: 6px; font-size: .63rem; }
-  .episodeProgress { display: grid; gap: 5px; margin-top: 6px; color: var(--muted); font-size: .68rem; }
-  .episodeProgress > span { display: flex; justify-content: space-between; gap: 4px; }
-  .episodeProgress i { display: block; height: 4px; overflow: hidden; border-radius: 9px; background: var(--line); }
-  .episodeProgress b { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+  .animePage :global(.anime-card-link) { margin: 0 8px 6px; font-size: .63rem; }
+  .episodeProgress { display: block; margin-top: 6px; color: var(--muted); font-size: .68rem; }
   :global(html[data-density="compact"]) .animePage :global(.anime-grid) { gap: 8px; }
   .animePage :global(.anime-workspace > .anime-folder-navigation[data-anime-scope="standard"]),
   .animePage :global(.anime-workspace > .anime-category-bar[data-anime-scope="standard"]) { display: none; }
   .animePage :global(.anime-workspace > .anime-filter-bar > .anime-mobile-filter) { display: inline-grid !important; min-width: 74px; min-height: 44px; place-items: center; }
   .animePage :global(.anime-workspace > .anime-filter-bar > input) { grid-column: 1; min-height: 44px; }
+  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-library-search-field) { display: none; }
   .animePage :global(.anime-card-quick-status) { padding: 0 8px 8px; }
   .animePage :global(.anime-card-quick-status label) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; color: var(--muted); font-size: .67rem; font-weight: 750; }
   .animePage :global(.anime-card-quick-status select) { min-width: 0; min-height: 36px; padding: 0 23px 0 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface); font: inherit; font-size: .7rem; }
@@ -59,4 +63,8 @@
   .animePage :global(.anime-schedule-days) { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
   .animePage :global(.anime-schedule-days button) { min-width: 0; min-height: 42px; padding: 0 2px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: var(--surface); font: inherit; font-size: .7rem; font-weight: 800; }
   .animePage :global(.anime-schedule-days button.active) { border-color: var(--brand); color: #fff; background: var(--brand); }
+}
+@keyframes anime-search-open { to { opacity: 1; transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .animePage :global(.anime-mobile-heading h1), .animePage :global(.anime-mobile-inline-search) { animation-duration: .01ms; transition-duration: .01ms; }
 }
