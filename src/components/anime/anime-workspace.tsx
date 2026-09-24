@@ -101,9 +101,19 @@ function isWatchSource(url: string | null | undefined, hostname: string) {
   }
 }
 
-function AnimeSourceLinks({ anime }: { anime: AnimeLibraryItem }) {
+function watchLinks(anime: AnimeLibraryItem) {
   const candidates = anime.isAdult ? [anime.sourceUrl, anime.externalUrl] : [anime.sourceUrl];
-  const links = Array.from(new Set(candidates.filter((value): value is string => Boolean(value))));
+  return Array.from(new Set(candidates.filter((value): value is string => {
+    if (!value || isWatchSource(value, "anilist.co")) return false;
+    // Provider metadata is not a watch page. Custom manual URLs remain valid.
+    if (anime.isAdult && anime.externalSource !== "manual" && anime.adultSource !== "manual" &&
+      !isWatchSource(value, "hanime1.me")) return false;
+    return true;
+  })));
+}
+
+function AnimeSourceLinks({ anime }: { anime: AnimeLibraryItem }) {
+  const links = watchLinks(anime);
   if (!links.length) return <div className="anime-card-link">尚未設定</div>;
   return (
     <div className="anime-card-source-links">
@@ -156,11 +166,11 @@ function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: bool
     createdAt: now,
     updatedAt: now,
     tags: [],
-    sourceUrl: anime.sourceAvailability?.status === "available" ? anime.sourceAvailability.url : null,
+    sourceUrl: null,
     isAdult: adult,
     contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
     adultSource: adult ? anime.source : null,
-    externalUrl: anime.externalUrl,
+    externalUrl: null,
     folderId: null,
     folderIds: [],
   };
@@ -926,7 +936,7 @@ export function AnimeWorkspace({
   const [prefill, setPrefill] = useState<ExternalAnime | null>(null);
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
-  const sourceMatchPending = useRef(new Set<string>());
+  const sourceMatchAttempted = useRef(new Set<string>());
   const [trashData, setTrashData] = useState<AnimeWorkspaceData | null>(null);
   const [adultTrashData, setAdultTrashData] =
     useState<AnimeWorkspaceData | null>(null);
@@ -940,6 +950,7 @@ export function AnimeWorkspace({
   const [adultView, setAdultView] = useState<AdultView>("library");
   const [adultPinPrompt, setAdultPinPrompt] = useState(false);
   const [adultPinBusy, setAdultPinBusy] = useState(false);
+  const [adultLoading, setAdultLoading] = useState(false);
   const previousAdultContext = useRef({ pathname, tab });
   const quickAddLocks = useRef(new Set<string>());
   const [preferences, setPreferences] = useState(
@@ -957,71 +968,43 @@ export function AnimeWorkspace({
     : 12;
 
   useEffect(() => {
-    const candidates = data.library.filter((item) =>
-      !item.sourceUrl &&
-      item.externalSource !== "manual" &&
-      !item.id.startsWith("optimistic-") &&
-      !sourceMatchPending.current.has(`standard:${item.id}`),
-    ).slice(0, 24);
-    if (!candidates.length) return;
-    candidates.forEach((item) => sourceMatchPending.current.add(`standard:${item.id}`));
-    void fetch("/api/anime/sources/match-library", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope: "standard", ids: candidates.map((item) => item.id) }),
-    }).then(async (response) => response.ok
-      ? response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string }> }>
-      : { matches: [] },
-    ).then((answer) => {
-      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.matchedUrl]));
-      if (!byId.size) return;
-      setData((current) => ({
-        ...current,
-        library: current.library.map((item) =>
-          !item.sourceUrl && byId.has(item.id)
-            ? { ...item, sourceUrl: byId.get(item.id) ?? null }
-            : item,
-        ),
-      }));
-    }).catch(() => undefined).finally(() => {
-      candidates.forEach((item) => sourceMatchPending.current.delete(`standard:${item.id}`));
-    });
-  }, [data.library]);
-
-  useEffect(() => {
     if (!adultUnlocked || !adultData) return;
     const candidates = adultData.library.filter((item) =>
       !isWatchSource(item.sourceUrl, "hanime1.me") &&
       !isWatchSource(item.externalUrl, "hanime1.me") &&
       item.externalSource !== "manual" &&
       !item.id.startsWith("optimistic-") &&
-      !sourceMatchPending.current.has(`adult:${item.id}`),
-    ).slice(0, 24);
+      !sourceMatchAttempted.current.has(`adult:${item.id}`),
+    );
     if (!candidates.length) return;
-    candidates.forEach((item) => sourceMatchPending.current.add(`adult:${item.id}`));
-    void fetch("/api/anime/sources/match-library", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope: "adult", ids: candidates.map((item) => item.id) }),
-    }).then(async (response) => response.ok
-      ? response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>
-      : { matches: [] },
-    ).then((answer) => {
-      const byId = new Map((answer.matches ?? []).map((match) => [match.id, match]));
-      if (!byId.size) return;
-      setAdultData((current) => current ? ({
-        ...current,
-        library: current.library.map((item) => {
-          const match = byId.get(item.id);
-          if (!match) return item;
-          return match.destination === "external"
-            ? { ...item, externalUrl: match.matchedUrl }
-            : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" };
-        }),
-      }) : current);
-    }).catch(() => undefined).finally(() => {
-      candidates.forEach((item) => sourceMatchPending.current.delete(`adult:${item.id}`));
-    });
+    candidates.forEach((item) => sourceMatchAttempted.current.add(`adult:${item.id}`));
+    for (let offset = 0; offset < candidates.length; offset += 24) {
+      const batch = candidates.slice(offset, offset + 24);
+      void fetch("/api/anime/sources/match-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "adult", ids: batch.map((item) => item.id) }),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`成人觀看來源比對失敗：${response.status}`);
+        return response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>;
+      }).then((answer) => {
+        const byId = new Map((answer.matches ?? []).map((match) => [match.id, match]));
+        if (!byId.size) return;
+        setAdultData((current) => current ? ({
+          ...current,
+          library: current.library.map((item) => {
+            const match = byId.get(item.id);
+            if (!match) return item;
+            return match.destination === "external"
+              ? { ...item, externalUrl: match.matchedUrl }
+              : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" };
+          }),
+        }) : current);
+      }).catch((error) => {
+        batch.forEach((item) => sourceMatchAttempted.current.delete(`adult:${item.id}`));
+        console.warn("[anime-source-backfill] adult page batch failed", error);
+      });
+    }
   }, [adultData, adultUnlocked]);
 
   useEffect(() => {
@@ -1116,7 +1099,7 @@ export function AnimeWorkspace({
           method: "POST",
           body: {
             title: externalDisplayTitle(anime),
-            sourceUrl: anime.sourceAvailability?.status === "available" ? anime.sourceAvailability.url : null,
+            sourceUrl: null,
             coverUrl: anime.coverUrl,
             watchStatus: "planning",
             categoryIds: [],
@@ -1124,7 +1107,7 @@ export function AnimeWorkspace({
             isAdult: adult,
             contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
             adultSource: adult ? anime.source : null,
-            externalUrl: anime.externalUrl,
+            externalUrl: null,
             externalId: anime.id,
             externalSource: anime.source,
             metadata: {
@@ -1321,10 +1304,22 @@ export function AnimeWorkspace({
   const finishAdultPinUnlock = async () => {
     setAdultPinPrompt(false);
     setAdultPinBusy(false);
+    setAdultLoading(true);
+    setTab("adult");
     try {
-      await loadAdult();
+      const [next] = await Promise.all([
+        api<AnimeWorkspaceData>("/api/anime/library?scope=adult"),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 300)),
+      ]);
+      if (document.visibilityState !== "visible") return;
+      setAdultData(next);
+      setAdultUnlocked(true);
+      setAdultView("library");
     } catch (cause) {
       setNotice(cause instanceof Error ? cause.message : "無法開啟成人內容。");
+      setTab("library");
+    } finally {
+      setAdultLoading(false);
     }
   };
   useEffect(() => {
@@ -1332,6 +1327,7 @@ export function AnimeWorkspace({
       if (document.visibilityState !== "visible") {
         setAdultUnlocked(false);
         setAdultData(null);
+        setAdultLoading(false);
         if (tab === "adult") setTab("library");
       }
     };
@@ -1345,6 +1341,7 @@ export function AnimeWorkspace({
     if (leftAdultRoute || leftAdultTab) {
       setAdultUnlocked(false);
       setAdultData(null);
+      setAdultLoading(false);
       setAdultPinPrompt(false);
       setAdultPinBusy(false);
       setAdultQuery("");
@@ -1391,6 +1388,44 @@ export function AnimeWorkspace({
     (activeLibraryPage - 1) * libraryPageSize,
     activeLibraryPage * libraryPageSize,
   );
+  useEffect(() => {
+    if (tab !== "library" || libraryView !== "library") return;
+    const candidates = pagedLibrary.filter((item) =>
+      !item.sourceUrl &&
+      item.externalSource !== "manual" &&
+      !item.id.startsWith("optimistic-") &&
+      !sourceMatchAttempted.current.has(`standard:${item.id}`),
+    );
+    if (!candidates.length) return;
+    candidates.forEach((item) => sourceMatchAttempted.current.add(`standard:${item.id}`));
+    // Match only the currently visible page. A page change enqueues its own
+    // records without refreshing the route or resetting pagination/scroll.
+    for (let offset = 0; offset < candidates.length; offset += 24) {
+      const batch = candidates.slice(offset, offset + 24);
+      void fetch("/api/anime/sources/match-library", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "standard", ids: batch.map((item) => item.id) }),
+      }).then(async (response) => {
+        if (!response.ok) throw new Error(`觀看來源比對失敗：${response.status}`);
+        return response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string }> }>;
+      }).then((answer) => {
+        const byId = new Map((answer.matches ?? []).map((match) => [match.id, match.matchedUrl]));
+        if (!byId.size) return;
+        setData((current) => ({
+          ...current,
+          library: current.library.map((item) =>
+            !item.sourceUrl && byId.has(item.id)
+              ? { ...item, sourceUrl: byId.get(item.id) ?? null }
+              : item,
+          ),
+        }));
+      }).catch((error) => {
+        batch.forEach((item) => sourceMatchAttempted.current.delete(`standard:${item.id}`));
+        console.warn("[anime-source-backfill] standard page batch failed", error);
+      });
+    }
+  }, [pagedLibrary, tab, libraryView]);
   useEffect(() => {
     setLibraryPage((current) => Math.min(current, libraryPageCount));
   }, [libraryPageCount]);
@@ -1586,7 +1621,13 @@ export function AnimeWorkspace({
       {tab === "discover" && (
         <AnimeDiscovery initialView={discoveryView} key={discoveryView} library={data.library} onAdd={(anime) => quickAddExternal(anime)} />
       )}
-      {tab === "adult" && adultUnlocked && adultData && (
+      {tab === "adult" && adultLoading && (
+        <section className="anime-adult-loading" role="status" aria-live="polite">
+          <span className="anime-adult-loading-spinner" aria-hidden="true" />
+          <h2>正在載入成人內容…</h2>
+        </section>
+      )}
+      {tab === "adult" && !adultLoading && adultUnlocked && adultData && (
         <section className="anime-adult-workspace">
           <div className="anime-filter-bar anime-adult-filter-bar">
             <div className="anime-filter-scroll">
@@ -2355,6 +2396,8 @@ export function AnimeWorkspace({
           description={`請輸入獨立的 ${preferences.adultAccessMode === "pin6" ? "6" : "4"} 位數成人區 PIN。`}
           verifyPin={verifyAdultPin}
           onVerified={finishAdultPinUnlock}
+          successHoldMs={400}
+          successMessage="密碼正確"
           onCancel={() => setAdultPinPrompt(false)}
           onStateChange={(state) => setAdultPinBusy(state === "centering" || state === "verifying" || state === "success")}
         />
@@ -2815,11 +2858,11 @@ function AnimeDetailDialog({
             <p>{anime.notes}</p>
           </section>
         )}
-        {(anime.sourceUrl || anime.externalUrl) && (
+        {watchLinks(anime).length > 0 && (
           <section className="anime-view-link">
             <h4>觀看連結</h4>
             <div className="anime-view-link-actions">
-              {Array.from(new Set((anime.isAdult ? [anime.sourceUrl, anime.externalUrl] : [anime.sourceUrl]).filter((value): value is string => Boolean(value)))).map((url) => (
+              {watchLinks(anime).map((url) => (
                 <a
                   className="button compact"
                   href={url}

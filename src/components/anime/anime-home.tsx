@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppIcon } from "@/components/ui/app-icon";
-import { enrichAnime1Availability, markSourceAvailabilityChecking } from "@/lib/anime/client-source-availability";
 import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 import styles from "./anime-home.module.css";
@@ -100,35 +99,8 @@ export function AnimeHome({
         .catch(() => ({}))) as Partial<DiscoveryHome> & { error?: string };
       if (!response.ok || !body.current)
         throw new Error(body.error || "動漫資訊暫時無法載入。");
-      setCatalogue({ ...body.current, items: markSourceAvailabilityChecking(body.current.items) });
-      const nextSchedule = body.schedule ?? [];
-      setSchedule(markSourceAvailabilityChecking(nextSchedule));
-      void enrichAnime1Availability([
-        ...body.current.items,
-        ...nextSchedule,
-      ])
-        .then((enriched) => {
-          const byKey = new Map(
-            enriched.map((item) => [`${item.source}:${item.id}`, item]),
-          );
-          setCatalogue((current) =>
-            current
-              ? {
-                  ...current,
-                  items: current.items.map(
-                    (item) =>
-                      byKey.get(`${item.source}:${item.id}`) ?? item,
-                  ),
-                }
-              : current,
-          );
-          setSchedule(
-            nextSchedule.map(
-              (item) => byKey.get(`${item.source}:${item.id}`) ?? item,
-            ),
-          );
-        })
-        .catch(() => undefined);
+      setCatalogue(body.current);
+      setSchedule(body.schedule ?? []);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "動漫資訊暫時無法載入。",

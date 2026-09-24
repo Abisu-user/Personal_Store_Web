@@ -47,6 +47,8 @@ type GlassyPinVerificationProps = {
   externalMessage?: string;
   embedded?: boolean;
   onStateChange?: (state: PinVerificationState) => void;
+  successHoldMs?: number;
+  successMessage?: string;
 };
 
 function delay(milliseconds: number) {
@@ -77,6 +79,8 @@ export function GlassyPinVerification({
   externalMessage,
   embedded = false,
   onStateChange,
+  successHoldMs = SUCCESS_HOLD_MS,
+  successMessage,
 }: GlassyPinVerificationProps) {
   const [pin, setPin] = useState("");
   const [state, setState] = useState<PinVerificationState>("input");
@@ -85,7 +89,9 @@ export function GlassyPinVerification({
   const [focusSignal, setFocusSignal] = useState(0);
   const requestLock = useRef(false);
   const mounted = useRef(true);
-  const copy = stateCopy(state, errorStatus);
+  const copy = state === "success" && successMessage
+    ? { title: successMessage, detail: "已安全解鎖" }
+    : stateCopy(state, errorStatus);
 
   useEffect(() => {
     mounted.current = true;
@@ -121,7 +127,7 @@ export function GlassyPinVerification({
 
       if (result.ok) {
         setState("success");
-        await delay(SUCCESS_HOLD_MS);
+        await delay(successHoldMs);
         if (mounted.current) await onVerified();
         return;
       }
@@ -139,7 +145,7 @@ export function GlassyPinVerification({
       requestLock.current = false;
       setFocusSignal((current) => current + 1);
     },
-    [onVerified, state, verifyPin],
+    [onVerified, state, successHoldMs, verifyPin],
   );
 
   const busy = state === "centering" || state === "verifying" || state === "success";

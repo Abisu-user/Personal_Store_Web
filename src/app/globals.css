@@ -1753,7 +1753,7 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 .anime-discovery-hero.compact { align-items: center; padding: 16px 18px; }
 .anime-discovery-hero.compact h2 { margin: 0; }
 .anime-discovery-hero.compact p { margin-top: 4px; font-size: .84rem; }
-.anime-rail { max-width: 100%; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; touch-action: pan-x; scrollbar-width: none; }
+.anime-rail { max-width: 100%; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; touch-action: pan-x pan-y; scrollbar-width: none; }
 .anime-rail::-webkit-scrollbar { display: none; }
 .anime-discovery-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .anime-card-link { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; margin: 0 10px 8px; overflow: hidden; color: var(--brand); text-decoration: none; }
@@ -1787,8 +1787,8 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-rail { scroll-behavior: auto; }
 }
 
-/* Shared Anime carousel: fixed-width children guarantee real overflow, while
-   native touch, desktop wheel and mouse drag are handled by one component. */
+/* Shared Anime carousel: fixed-width children guarantee real overflow while
+   native touch/trackpad and bounded desktop wheel are handled by one component. */
 .anime-rail {
   display: flex;
   flex-flow: row nowrap;
@@ -1797,10 +1797,10 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
   touch-action: pan-x pan-y;
-  cursor: grab;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
-.anime-rail[data-dragging="true"] { cursor: grabbing; user-select: none; }
+.anime-rail::-webkit-scrollbar { display: none; }
 .anime-rail img { pointer-events: none; user-select: none; -webkit-user-drag: none; }
 .anime-rail > .anime-catalogue-card {
   width: 220px;
@@ -1810,7 +1810,7 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 
 /* Secondary typography is opt-in by semantic role; status, badge, button,
    error, success and link colors keep their own component styles. */
-:where(
+:is(
   .secondary-text,
   .hint,
   .anime-field-hint,
@@ -1825,13 +1825,21 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 ) {
   color: var(--secondary-text-color, var(--muted));
   font-family: var(--secondary-font, inherit);
-  font-size: calc(1em * var(--secondary-font-scale, 1));
+  font-size: calc(.88rem * var(--secondary-font-scale, 1));
   font-weight: var(--secondary-font-weight, inherit);
 }
 .secondary-typography-controls { display: grid; gap: 14px; }
 .secondary-typography-controls > label:not(.font-scale-control) { display: grid; gap: 7px; font-weight: 800; }
 .secondary-typography-controls select { min-height: 42px; padding: 0 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface); font: inherit; }
 .appearance-secondary-preview { margin: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--surface) 88%, transparent); }
+.appearance-typography-secondary { display: grid; gap: 14px; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.appearance-typography-secondary h3 { margin: 0; font-size: 1rem; }
+.appearance-typography-secondary > p { margin: 0; color: var(--secondary-text-color, var(--muted)); font-family: var(--secondary-font, inherit); font-size: calc(.88rem * var(--secondary-font-scale, 1)); font-weight: var(--secondary-font-weight, inherit); }
+.anime-adult-loading { display: grid; min-height: min(42vh, 360px); place-content: center; justify-items: center; gap: 14px; color: var(--ink); text-align: center; }
+.anime-adult-loading h2 { margin: 0; font-size: 1rem; }
+.anime-adult-loading-spinner { width: 38px; height: 38px; border: 3px solid var(--brand-soft); border-top-color: var(--brand); border-radius: 50%; animation: anime-adult-spin .8s linear infinite; }
+@keyframes anime-adult-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .anime-adult-loading-spinner { animation-duration: 2s; } }
 @media (max-width: 700px) {
   .anime-rail > .anime-catalogue-card {
     width: clamp(152px, 43vw, 168px);

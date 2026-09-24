@@ -121,11 +121,9 @@
   scroll-padding-inline: 2px 12px;
   scroll-snap-type: x mandatory;
   touch-action: pan-x pan-y;
-  cursor: grab;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
-.rail[data-dragging="true"] { cursor: grabbing; user-select: none; }
 .rail::-webkit-scrollbar {
   display: none;
 }

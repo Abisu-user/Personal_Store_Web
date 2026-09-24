@@ -631,6 +631,68 @@ export function AppearanceSettings() {
             />
             <output>{appearance.fontScale}%</output>
           </label>
+          <div className="appearance-typography-secondary">
+            <h3>副標題／次要文字</h3>
+            <p>套用於頁面描述、卡片說明與輔助文字，不影響按鈕、狀態、警告或連結。</p>
+            <div className="secondary-typography-controls">
+              <div className="appearance-options">
+                {options.font.map(([value, label]) => (
+                  <button
+                    aria-pressed={appearance.secondaryFontFamily === value}
+                    className={appearance.secondaryFontFamily === value ? "appearance-choice active" : "appearance-choice"}
+                    key={value}
+                    onClick={() => update("secondaryFontFamily", value as FontFamily)}
+                    type="button"
+                  >
+                    <i className={`font-swatch ${value}`} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="custom-color-controls">
+                <label>
+                  次要文字顏色
+                  <input
+                    aria-label="副標題與次要文字顏色"
+                    onChange={(event) => update("secondaryTextColor", event.target.value)}
+                    type="color"
+                    value={appearance.secondaryTextColor ?? "#60708A"}
+                  />
+                </label>
+                <button className="secondary-button compact" onClick={() => update("secondaryTextColor", undefined)} type="button">
+                  跟隨明暗模式
+                </button>
+              </div>
+              <label className="font-scale-control">
+                字體大小
+                <input
+                  aria-label="副標題與次要文字字體大小"
+                  max="120"
+                  min="80"
+                  onChange={(event) => update("secondaryFontScale", Number(event.target.value))}
+                  type="range"
+                  value={appearance.secondaryFontScale}
+                />
+                <output>{appearance.secondaryFontScale}%</output>
+              </label>
+              <label>
+                字重
+                <select
+                  aria-label="副標題與次要文字字重"
+                  onChange={(event) => update("secondaryFontWeight", Number(event.target.value) as SecondaryFontWeight)}
+                  value={appearance.secondaryFontWeight}
+                >
+                  <option value="400">一般</option>
+                  <option value="500">中等</option>
+                  <option value="600">半粗</option>
+                  <option value="700">粗體</option>
+                </select>
+              </label>
+              <p className="secondary-text appearance-secondary-preview">
+                調整適合自己的顯示方式，變更會立即預覽並在背景同步。
+              </p>
+            </div>
+          </div>
         </div>
       </section>
       <section className="appearance-section">
@@ -1086,92 +1148,6 @@ export function AppearanceSettings() {
           >
             恢復導覽列預設
           </button>
-        </div>
-      </section>
-      <section className="appearance-section">
-        <div>
-          <p className="eyebrow">SECONDARY TEXT</p>
-          <h2>副標題／次要文字</h2>
-          <p className="hint">
-            套用於頁面描述、卡片說明與輔助文字，不影響按鈕、狀態、警告或連結。
-          </p>
-        </div>
-        <div className="secondary-typography-controls">
-          <div className="appearance-options">
-            {options.font.map(([value, label]) => (
-              <button
-                aria-pressed={appearance.secondaryFontFamily === value}
-                className={
-                  appearance.secondaryFontFamily === value
-                    ? "appearance-choice active"
-                    : "appearance-choice"
-                }
-                key={value}
-                onClick={() =>
-                  update("secondaryFontFamily", value as FontFamily)
-                }
-                type="button"
-              >
-                <i className={`font-swatch ${value}`} />
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="custom-color-controls">
-            <label>
-              次要文字顏色
-              <input
-                aria-label="副標題與次要文字顏色"
-                onChange={(event) =>
-                  update("secondaryTextColor", event.target.value)
-                }
-                type="color"
-                value={appearance.secondaryTextColor ?? "#60708A"}
-              />
-            </label>
-            <button
-              className="secondary-button compact"
-              onClick={() => update("secondaryTextColor", undefined)}
-              type="button"
-            >
-              跟隨明暗模式
-            </button>
-          </div>
-          <label className="font-scale-control">
-            字體大小
-            <input
-              aria-label="副標題與次要文字字體大小"
-              max="120"
-              min="80"
-              onChange={(event) =>
-                update("secondaryFontScale", Number(event.target.value))
-              }
-              type="range"
-              value={appearance.secondaryFontScale}
-            />
-            <output>{appearance.secondaryFontScale}%</output>
-          </label>
-          <label>
-            字重
-            <select
-              aria-label="副標題與次要文字字重"
-              onChange={(event) =>
-                update(
-                  "secondaryFontWeight",
-                  Number(event.target.value) as SecondaryFontWeight,
-                )
-              }
-              value={appearance.secondaryFontWeight}
-            >
-              <option value="400">一般</option>
-              <option value="500">中等</option>
-              <option value="600">半粗</option>
-              <option value="700">粗體</option>
-            </select>
-          </label>
-          <p className="secondary-text appearance-secondary-preview">
-            調整適合自己的顯示方式，變更會立即預覽並在背景同步。
-          </p>
         </div>
       </section>
       <button

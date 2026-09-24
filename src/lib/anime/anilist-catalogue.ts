@@ -163,7 +163,8 @@ function mapAnime(row: any): ExternalAnime {
     relations: [],
     isAdult: Boolean(row?.isAdult),
     contentRating: row?.isAdult ? "成人內容" : null,
-    externalUrl: asText(row?.siteUrl),
+    // AniList's siteUrl is a metadata page, not an external watch source.
+    externalUrl: null,
     nextAiringEpisode:
       row?.nextAiringEpisode &&
       asNumber(row.nextAiringEpisode.episode) !== null &&
@@ -226,7 +227,11 @@ export async function getCatalogue(
   const variables: Record<string, unknown> = {
     page,
     perPage,
-    sort: [filters.sort ?? "POPULARITY_DESC"],
+    // AniList MediaSort has no NEXT_AIRING_EPISODE_DESC value. Keep that
+    // product-level choice, but send a supported sort to the provider.
+    sort: [filters.sort === "NEXT_AIRING_EPISODE_DESC"
+      ? "START_DATE_DESC"
+      : filters.sort ?? "POPULARITY_DESC"],
   };
   for (const [key, value] of Object.entries({
     season: filters.season,

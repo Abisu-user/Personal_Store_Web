@@ -111,9 +111,15 @@ export async function POST(request: NextRequest) {
       : matchAnime1(anime, anime1Index?.rows ?? [], anime1Index?.sourceAvailable ?? false);
     if (availability?.status !== "available" || !availability.url) continue;
     const existingSource = asText(row.source_url);
-    const destination = parsed.data.scope === "adult" && existingSource ? "external" : "source";
+    // Older automatic imports stored AniList's metadata page as a watch URL.
+    // Replace only that provider URL; keep any non-AniList custom source.
+    const invalidMetadataSource = parsed.data.scope === "adult" &&
+      isProviderUrl(existingSource, "anilist.co");
+    const destination = parsed.data.scope === "adult" && existingSource && !invalidMetadataSource
+      ? "external"
+      : "source";
     const updates = parsed.data.scope === "adult"
-      ? existingSource
+      ? existingSource && !invalidMetadataSource
         ? { external_url: availability.url }
         : { source_url: availability.url, external_url: availability.url, adult_source: "hanime1" }
       : { source_url: availability.url };

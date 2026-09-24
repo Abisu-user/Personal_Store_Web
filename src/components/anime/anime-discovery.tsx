@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import { ModalDialog } from "@/components/ui/modal-dialog";
-import { enrichAnime1Availability, enrichHAnime1Availability, markSourceAvailabilityChecking } from "@/lib/anime/client-source-availability";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
@@ -312,12 +311,6 @@ async function get<T>(url: string) {
   return body as T;
 }
 
-async function withWatchSourceAvailability(items: ExternalAnime[], adult = false) {
-  return adult
-    ? enrichHAnime1Availability(items)
-    : enrichAnime1Availability(items);
-}
-
 export function AnimeDiscovery({
   library,
   onAdd,
@@ -417,29 +410,11 @@ export function AnimeDiscovery({
       setError(null);
       setHomeLoading(true);
       const answer = await get<DiscoveryHome>("/api/anime/catalogue?view=home");
-      setThisSeason(markSourceAvailabilityChecking(answer.current.items));
-      setNextSeason(markSourceAvailabilityChecking(answer.upcoming.items));
-      setPopular(markSourceAvailabilityChecking(answer.popular.items));
-      setHighest(markSourceAvailabilityChecking(answer.top.items));
+      setThisSeason(answer.current.items);
+      setNextSeason(answer.upcoming.items);
+      setPopular(answer.popular.items);
+      setHighest(answer.top.items);
       setTaxonomy(answer.taxonomy);
-      void withWatchSourceAvailability([
-        ...answer.current.items,
-        ...answer.upcoming.items,
-        ...answer.popular.items,
-        ...answer.top.items,
-      ])
-        .then((enriched) => {
-          const byKey = new Map(
-            enriched.map((item) => [`${item.source}:${item.id}`, item]),
-          );
-          const applySources = (rows: ExternalAnime[]) =>
-            rows.map((item) => byKey.get(`${item.source}:${item.id}`) ?? item);
-          setThisSeason(applySources(answer.current.items));
-          setNextSeason(applySources(answer.upcoming.items));
-          setPopular(applySources(answer.popular.items));
-          setHighest(applySources(answer.top.items));
-        })
-        .catch(() => undefined);
       if (answer.unavailable.length === 5)
         setError("動漫資料暫時無法載入，請稍後再試。");
     } catch (cause) {
@@ -479,28 +454,15 @@ export function AnimeDiscovery({
               adult: adultMode ? 1 : undefined,
             }),
         );
-        const checkingItems = markSourceAvailabilityChecking(response.items, adultMode);
         setAll((currentRows) =>
           replace
-            ? checkingItems
+            ? response.items
             : currentRows.concat(
-                checkingItems.filter(
+                response.items.filter(
                   (anime) => !currentRows.some((row) => row.id === anime.id),
                 ),
               ),
         );
-        void withWatchSourceAvailability(response.items, adultMode)
-          .then((enriched) =>
-            setAll((currentRows) =>
-              currentRows.map(
-                (row) =>
-                  enriched.find(
-                    (item) => item.source === row.source && item.id === row.id,
-                  ) ?? row,
-              ),
-            ),
-          )
-          .catch(() => undefined);
         setPage(response.page);
         setHasMore(response.hasNextPage);
       } catch (cause) {
@@ -551,10 +513,7 @@ export function AnimeDiscovery({
       const response = await get<{ items: ExternalAnime[] }>(
         `/api/anime/catalogue?view=schedule&tzOffset=${new Date().getTimezoneOffset()}`,
       );
-      setScheduleItems(markSourceAvailabilityChecking(response.items));
-      void withWatchSourceAvailability(response.items)
-        .then(setScheduleItems)
-        .catch(() => undefined);
+      setScheduleItems(response.items);
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "本週播出時間表暫時無法載入。",
@@ -638,40 +597,17 @@ export function AnimeDiscovery({
           throw new Error(answer.error || "搜尋失敗，請稍後再試。");
         if (requestId !== searchRequestId.current) return;
         const items = answer.results ?? answer.items ?? [];
-        const checkingItems = markSourceAvailabilityChecking(items, adultMode);
         setCatalogueSearchResults((currentRows) =>
           append
             ? currentRows.concat(
-                checkingItems.filter(
+                items.filter(
                   (anime) => !currentRows.some((row) => row.id === anime.id),
                 ),
               )
-            : checkingItems,
+            : items,
         );
         setCatalogueSearchPage(answer.page ?? requestedPage);
         setCatalogueSearchHasMore(Boolean(answer.hasNextPage));
-        setCatalogueSearching(false);
-        if (!items.length) return;
-        const enriched = await withWatchSourceAvailability(items, adultMode);
-        if (requestId !== searchRequestId.current) return;
-        const availability = new Map(enriched.flatMap((item) =>
-          item.sourceAvailability ? [[item.id, item.sourceAvailability] as const] : [],
-        ));
-        setCatalogueSearchResults((currentRows) =>
-          currentRows.map((anime) =>
-            availability.has(anime.id)
-              ? { ...anime, sourceAvailability: availability.get(anime.id) }
-              : anime,
-          ),
-        );
-        setDetail((currentDetail) =>
-          currentDetail && availability.has(currentDetail.id)
-            ? {
-                ...currentDetail,
-                sourceAvailability: availability.get(currentDetail.id),
-              }
-            : currentDetail,
-        );
       } catch (cause) {
         if (
           !(cause instanceof DOMException && cause.name === "AbortError") &&
@@ -824,7 +760,7 @@ export function AnimeDiscovery({
               <p>
                 {discoveryView === "schedule"
                   ? "依星期查看本季即將播出的作品。"
-                  : "可搜尋特定作品，或以篩選條件瀏覽完整資料庫；搜尋結果會先顯示 AniList 資料，再補上 Anime1 可用狀態。"}
+                  : "可搜尋特定作品，或以篩選條件瀏覽完整動漫資料庫。"}
               </p>
             </div>
             {discoveryView !== "schedule" && (
@@ -1245,7 +1181,6 @@ function Card({
           <small>{formatName(anime.animeType)}</small>
         </div>
       </button>
-      <SourceAvailability anime={anime} />
       <button
         className={added ? "secondary-button compact added" : "button compact"}
         disabled={added}
@@ -1305,7 +1240,6 @@ function Detail({
             ))}
           </div>
         )}
-        <SourceAvailability anime={anime} detail />
         {anime.synopsis && (
           <section>
             <h3>劇情介紹</h3>
@@ -1328,47 +1262,4 @@ function Detail({
       </div>
     </ModalDialog>
   );
-}
-
-function SourceAvailability({
-  anime,
-  detail = false,
-}: {
-  anime: ExternalAnime;
-  detail?: boolean;
-}) {
-  const availability = anime.sourceAvailability;
-  if (!availability) return null;
-  if (availability.status === "available" && availability.url) {
-    const metadata = [
-      availability.title,
-      availability.episodeText ? `${availability.episodeText} 集` : null,
-      availability.year,
-      availability.seasonText,
-      availability.subtitleGroup,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-    return (
-      <div
-        className={
-          detail
-            ? "anime-source-availability detail"
-            : "anime-source-availability"
-        }
-      >
-        <a href={availability.url} rel="noopener noreferrer" target="_blank">
-          <span>{availability.source === "hanime1" ? "hanime1.me" : "Anime1"}</span><b aria-hidden="true">↗</b>
-        </a>
-        {detail && metadata && <small title={metadata}>{metadata}</small>}
-      </div>
-    );
-  }
-  if (detail && (availability.status === "error" || availability.status === "source_unavailable")) {
-    return <p className="anime-source-availability-state">外部觀看來源暫時無法確認，稍後可重新嘗試。</p>;
-  }
-  if (detail && availability.status === "checking") {
-    return <p className="anime-source-availability-state">正在確認外部觀看來源…</p>;
-  }
-  return null;
 }
