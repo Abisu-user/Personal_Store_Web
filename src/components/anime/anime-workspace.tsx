@@ -58,6 +58,17 @@ const visibleFilters: Filter[] = [
   "completed",
   "dropped",
 ];
+function compactPageNumbers(current: number, total: number): Array<number | "ellipsis"> {
+  if (total <= 5) return Array.from({ length: total }, (_, index) => index + 1);
+  const pages = new Set([1, total, current]);
+  if (current <= 3) [2, 3, 4].forEach((page) => pages.add(page));
+  else if (current >= total - 2) [total - 3, total - 2, total - 1].forEach((page) => pages.add(page));
+  else [current - 1, current + 1].forEach((page) => pages.add(page));
+  const sorted = [...pages].sort((left, right) => left - right);
+  return sorted.flatMap((page, index) =>
+    index > 0 && page - sorted[index - 1]! > 1 ? ["ellipsis" as const, page] : [page],
+  );
+}
 const defaultPreferences: AnimePreferences = {
   adultModeEnabled: false,
   adultHiddenByDefault: true,
@@ -937,6 +948,7 @@ export function AnimeWorkspace({
   const [adultPrefill, setAdultPrefill] = useState<ExternalAnime | null>(null);
   const [adultData, setAdultData] = useState<AnimeWorkspaceData | null>(null);
   const sourceMatchAttempted = useRef(new Set<string>());
+  const sourcePriorityPending = useRef(0);
   const [trashData, setTrashData] = useState<AnimeWorkspaceData | null>(null);
   const [adultTrashData, setAdultTrashData] =
     useState<AnimeWorkspaceData | null>(null);
@@ -980,6 +992,7 @@ export function AnimeWorkspace({
     candidates.forEach((item) => sourceMatchAttempted.current.add(`adult:${item.id}`));
     for (let offset = 0; offset < candidates.length; offset += 24) {
       const batch = candidates.slice(offset, offset + 24);
+      sourcePriorityPending.current += 1;
       void fetch("/api/anime/sources/match-library", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1003,7 +1016,7 @@ export function AnimeWorkspace({
       }).catch((error) => {
         batch.forEach((item) => sourceMatchAttempted.current.delete(`adult:${item.id}`));
         console.warn("[anime-source-backfill] adult page batch failed", error);
-      });
+      }).finally(() => { sourcePriorityPending.current -= 1; });
     }
   }, [adultData, adultUnlocked]);
 
@@ -1402,6 +1415,7 @@ export function AnimeWorkspace({
     // records without refreshing the route or resetting pagination/scroll.
     for (let offset = 0; offset < candidates.length; offset += 24) {
       const batch = candidates.slice(offset, offset + 24);
+      sourcePriorityPending.current += 1;
       void fetch("/api/anime/sources/match-library", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1423,9 +1437,87 @@ export function AnimeWorkspace({
       }).catch((error) => {
         batch.forEach((item) => sourceMatchAttempted.current.delete(`standard:${item.id}`));
         console.warn("[anime-source-backfill] standard page batch failed", error);
-      });
+      }).finally(() => { sourcePriorityPending.current -= 1; });
     }
   }, [pagedLibrary, tab, libraryView]);
+  const adultDataReady = adultData !== null;
+  const standardLibraryCount = data.library.length;
+  const adultLibraryCount = adultData?.library.length ?? 0;
+  useEffect(() => {
+    const scope = tab === "library" && libraryView === "library" && loaded
+      ? "standard"
+      : tab === "adult" && adultUnlocked && adultDataReady
+        ? "adult"
+        : null;
+    if (!scope) return;
+    const cacheKey = `anime:source-backfill:${scope}`;
+    const collectionCount = scope === "standard" ? standardLibraryCount : adultLibraryCount;
+    if (readClientResource<number>(cacheKey) === collectionCount) return;
+    let stopped = false;
+    const run = async () => {
+      let cursor: string | null = null;
+      const totals = { processed: 0, matched: 0, notFound: 0, errors: 0 };
+      try {
+        // The visible page uses the priority request above. The rest of the
+        // collection is scanned by stable UUID cursor, one bounded batch at a time.
+        for (let batchNumber = 0; batchNumber < 10_000 && !stopped; batchNumber += 1) {
+          while (sourcePriorityPending.current > 0 && !stopped) {
+            await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+          }
+          if (stopped) return;
+          const response = await fetch("/api/anime/sources/match-library", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scope, scan: true, cursor }),
+          });
+          if (!response.ok) throw new Error(`收藏來源背景補全失敗：${response.status}`);
+          const answer = await response.json() as {
+            matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }>;
+            cursor: string | null;
+            hasMore: boolean;
+            progress: typeof totals;
+          };
+          if (stopped) return;
+          for (const key of Object.keys(totals) as Array<keyof typeof totals>) {
+            totals[key] += answer.progress[key] ?? 0;
+          }
+          const byId = new Map((answer.matches ?? []).map((match) => [match.id, match]));
+          if (byId.size && scope === "standard") {
+            setData((current) => ({
+              ...current,
+              library: current.library.map((item) => {
+                const match = byId.get(item.id);
+                return match && !item.sourceUrl ? { ...item, sourceUrl: match.matchedUrl } : item;
+              }),
+            }));
+          } else if (byId.size) {
+            setAdultData((current) => current ? ({
+              ...current,
+              library: current.library.map((item) => {
+                const match = byId.get(item.id);
+                if (!match) return item;
+                return match.destination === "external"
+                  ? { ...item, externalUrl: match.matchedUrl }
+                  : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" };
+              }),
+            }) : current);
+          }
+          if (!answer.hasMore) {
+            console.info("[anime-source-backfill] complete", { scope, ...totals });
+            if (!totals.errors) writeClientResource(cacheKey, collectionCount, 12 * 60 * 60_000);
+            return;
+          }
+          if (!answer.cursor || answer.cursor === cursor) throw new Error("收藏來源游標未前進。");
+          cursor = answer.cursor;
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
+        }
+      } catch (error) {
+        if (!stopped) console.warn("[anime-source-backfill] scan interrupted", { scope, ...totals, error });
+      }
+    };
+    void run();
+    return () => { stopped = true; };
+  }, [adultDataReady, adultLibraryCount, adultUnlocked, libraryView, loaded, standardLibraryCount, tab]);
   useEffect(() => {
     setLibraryPage((current) => Math.min(current, libraryPageCount));
   }, [libraryPageCount]);
@@ -2035,7 +2127,7 @@ export function AnimeWorkspace({
                 <nav aria-label="我的動漫分頁" className="anime-pagination">
                   <button
                     aria-label="第一頁"
-                    className="secondary-button compact"
+                    className="secondary-button compact anime-pagination-edge"
                     disabled={activeLibraryPage === 1}
                     onClick={() => setLibraryPage(1)}
                     type="button"
@@ -2051,9 +2143,9 @@ export function AnimeWorkspace({
                     }
                     type="button"
                   >
-                    上一頁
+                    <span className="anime-pagination-text">上一頁</span><span aria-hidden="true" className="anime-pagination-arrow">‹</span>
                   </button>
-                  {Array.from(
+                  <div className="anime-pagination-desktop-pages">{Array.from(
                     { length: libraryPageCount },
                     (_, index) => index + 1,
                   )
@@ -2073,7 +2165,20 @@ export function AnimeWorkspace({
                       >
                         {number}
                       </button>
-                    ))}
+                    ))}</div>
+                  <div className="anime-pagination-mobile-pages">
+                    {compactPageNumbers(activeLibraryPage, libraryPageCount).map((number, index) =>
+                      number === "ellipsis"
+                        ? <span aria-hidden="true" className="anime-pagination-ellipsis" key={`ellipsis-${index}`}>…</span>
+                        : <button
+                            aria-current={number === activeLibraryPage ? "page" : undefined}
+                            className={number === activeLibraryPage ? "active" : ""}
+                            key={number}
+                            onClick={() => setLibraryPage(number)}
+                            type="button"
+                          >{number}</button>,
+                    )}
+                  </div>
                   <button
                     aria-label="下一頁"
                     className="secondary-button compact"
@@ -2085,11 +2190,11 @@ export function AnimeWorkspace({
                     }
                     type="button"
                   >
-                    下一頁
+                    <span className="anime-pagination-text">下一頁</span><span aria-hidden="true" className="anime-pagination-arrow">›</span>
                   </button>
                   <button
                     aria-label="最後一頁"
-                    className="secondary-button compact"
+                    className="secondary-button compact anime-pagination-edge"
                     disabled={activeLibraryPage === libraryPageCount}
                     onClick={() => setLibraryPage(libraryPageCount)}
                     type="button"

@@ -127,6 +127,9 @@
 .rail::-webkit-scrollbar {
   display: none;
 }
+@media (min-width: 701px) {
+  .rail { scroll-snap-type: x proximity; }
+}
 .card {
   display: grid;
   grid-template-rows: auto 1fr auto;

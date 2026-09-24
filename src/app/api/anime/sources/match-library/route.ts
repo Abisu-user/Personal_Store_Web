@@ -11,10 +11,12 @@ import type { ExternalAnime } from "@/lib/anime/types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const payloadSchema = z.object({
-  scope: z.enum(["standard", "adult"]),
-  ids: z.array(z.string().uuid()).min(1).max(24),
-});
+const scopeSchema = z.enum(["standard", "adult"]);
+const payloadSchema = z.union([
+  z.object({ scope: scopeSchema, ids: z.array(z.string().uuid()).min(1).max(24) }),
+  z.object({ scope: scopeSchema, scan: z.literal(true), cursor: z.string().uuid().nullable().optional() }),
+]);
+const SCAN_BATCH_SIZE = 24;
 
 function asText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -76,19 +78,29 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
+  const ids = "ids" in parsed.data ? parsed.data.ids : null;
+  const cursor = "cursor" in parsed.data ? parsed.data.cursor ?? null : null;
+  const scan = ids === null;
   let query = admin
     .from("anime_library")
     .select("id,external_id,external_source,title,title_japanese,title_english,title_chinese,original_title,release_year,season,is_adult,content_rating,source_url,external_url,adult_source")
     .eq("user_id", security.userId)
-    .in("id", parsed.data.ids)
     .is("deleted_at", null);
+  if (scan) {
+    // UUID is a stable cursor: changing source_url never shifts later batches.
+    query = query.in("external_source", ["anilist", "jikan", "bangumi"])
+      .order("id", { ascending: true }).limit(SCAN_BATCH_SIZE);
+    if (cursor) query = query.gt("id", cursor);
+  } else {
+    query = query.in("id", ids);
+  }
   query = parsed.data.scope === "adult"
     ? query.eq("is_adult", true)
     : query.or("is_adult.is.null,is_adult.eq.false").is("source_url", null);
   const { data: rows, error } = await query;
   if (error) {
     console.warn("[anime-source-backfill] library query failed", { code: error.code, message: error.message });
-    return NextResponse.json({ matches: [] });
+    return NextResponse.json({ error: "無法取得待比對的收藏。" }, { status: 503 });
   }
 
   const candidates = (rows ?? []).flatMap((row) => {
@@ -104,11 +116,15 @@ export async function POST(request: NextRequest) {
     : null;
   const anime1Index = parsed.data.scope === "standard" ? await getAnime1Index() : null;
   const matches: Array<{ id: string; matchedUrl: string; destination: "source" | "external"; source: "anime1" | "hanime1" }> = [];
+  const progress = { processed: 0, matched: 0, notFound: 0, errors: 0 };
 
   for (const { row, anime } of candidates) {
     const availability = parsed.data.scope === "adult"
       ? adultMatches?.get(`${anime.source}:${anime.id}`)
       : matchAnime1(anime, anime1Index?.rows ?? [], anime1Index?.sourceAvailable ?? false);
+    progress.processed += 1;
+    if (availability?.status === "not_found") progress.notFound += 1;
+    if (!availability || availability.status === "error" || availability.status === "source_unavailable") progress.errors += 1;
     if (availability?.status !== "available" || !availability.url) continue;
     const existingSource = asText(row.source_url);
     // Older automatic imports stored AniList's metadata page as a watch URL.
@@ -136,10 +152,21 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (updateError) {
       console.warn("[anime-source-backfill] update failed", { code: updateError.code, message: updateError.message, scope: parsed.data.scope });
+      progress.errors += 1;
       continue;
     }
-    if (updated) matches.push({ id: row.id, matchedUrl: availability.url, destination, source: availability.source });
+    if (updated) {
+      progress.matched += 1;
+      matches.push({ id: row.id, matchedUrl: availability.url, destination, source: availability.source });
+    }
   }
 
-  return NextResponse.json({ matches }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({
+    matches,
+    ...(scan ? {
+      cursor: rows?.at(-1)?.id ?? cursor,
+      hasMore: (rows?.length ?? 0) === SCAN_BATCH_SIZE,
+      progress,
+    } : {}),
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

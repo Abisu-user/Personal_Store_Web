@@ -102,6 +102,11 @@ const taxonomyQuery = `query AnimeTaxonomy {
   GenreCollection
   MediaTagCollection { name rank isMediaSpoiler category }
 }`;
+const seasonCountQuery = `query AnimeSeasonCount($page: Int!, $season: MediaSeason!, $year: Int!) {
+  Page(page: $page, perPage: 50) {
+    media(type: ANIME, countryOfOrigin: JP, isAdult: false, season: $season, seasonYear: $year) { id }
+  }
+}`;
 
 function asText(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -407,11 +412,28 @@ export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {
   return { genres, tags };
 }
 
+async function getCurrentSeasonCount(season: NonNullable<CatalogueFilters["season"]>, year: number) {
+  let count = 0;
+  // AniList currently returns 5000 for pageInfo.total even with season/year
+  // and JP filters. Count the actual filtered IDs, not that metadata field.
+  for (let page = 1; page <= 100; page += 1) {
+    const data = await request<{ Page?: { media?: Array<{ id: number }> } }>(
+      seasonCountQuery, { page, season, year }, CATALOGUE_TTL,
+    );
+    const rows = data?.Page?.media;
+    if (!Array.isArray(rows)) throw new Error("本季作品數無法確認。");
+    count += rows.length;
+    if (rows.length < 50) return count;
+  }
+  throw new Error("本季作品數超過安全分頁上限。");
+}
+
 export async function getDiscoveryHome(
   timeZoneOffsetMinutes = 0,
 ): Promise<DiscoveryHome> {
-  const current = currentSeason();
-  const upcoming = nextSeason();
+  const localToday = new Date(Date.now() - timeZoneOffsetMinutes * 60_000);
+  const current = currentSeason(localToday);
+  const upcoming = nextSeason(localToday);
   const jobs = await Promise.allSettled([
     getCatalogue({
       season: current.season,
@@ -429,6 +451,7 @@ export async function getDiscoveryHome(
     getCatalogue({ sort: "SCORE_DESC", perPage: 12 }),
     getCatalogueTaxonomy(),
     getWeeklySchedule(timeZoneOffsetMinutes),
+    getCurrentSeasonCount(current.season, current.year),
   ]);
   const empty: CataloguePage = {
     items: [],
@@ -445,7 +468,7 @@ export async function getDiscoveryHome(
     jobs[4]?.status === "fulfilled"
       ? (jobs[4].value as CatalogueTaxonomy)
       : { genres: [], tags: [] };
-  const unavailable = jobs.flatMap((job, index) =>
+  const unavailable = jobs.slice(0, 6).flatMap((job, index) =>
     job.status === "rejected"
       ? [
           index === 0
@@ -464,8 +487,12 @@ export async function getDiscoveryHome(
   );
   const schedule =
     jobs[5]?.status === "fulfilled" ? (jobs[5].value as ExternalAnime[]) : [];
+  const currentPage = pageAt(0);
+  const currentWithCount = jobs[6]?.status === "fulfilled"
+    ? { ...currentPage, total: jobs[6].value as number, totalExact: true }
+    : { ...currentPage, total: currentPage.items.length, totalExact: !currentPage.hasNextPage };
   return {
-    current: pageAt(0),
+    current: currentWithCount,
     upcoming: pageAt(1),
     popular: pageAt(2),
     top: pageAt(3),

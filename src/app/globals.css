@@ -1755,6 +1755,7 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 .anime-discovery-hero.compact p { margin-top: 4px; font-size: .84rem; }
 .anime-rail { max-width: 100%; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; touch-action: pan-x pan-y; scrollbar-width: none; }
 .anime-rail::-webkit-scrollbar { display: none; }
+@media (min-width: 701px) { .anime-rail { scroll-snap-type: x proximity; } }
 .anime-discovery-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .anime-card-link { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; margin: 0 10px 8px; overflow: hidden; color: var(--brand); text-decoration: none; }
 .anime-card-link > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1806,6 +1807,17 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   width: 220px;
   min-width: 220px;
   flex: 0 0 220px;
+}
+.anime-pagination-desktop-pages { display: flex; align-items: center; gap: 7px; }
+.anime-pagination-mobile-pages, .anime-pagination-arrow { display: none; }
+@media (max-width: 700px) {
+  .anime-pagination { flex-wrap: nowrap; gap: 4px; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .anime-pagination::-webkit-scrollbar { display: none; }
+  .anime-pagination .anime-pagination-edge, .anime-pagination-desktop-pages, .anime-pagination-text { display: none; }
+  .anime-pagination-mobile-pages { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+  .anime-pagination-arrow { display: inline; font-size: 1.3rem; line-height: 1; }
+  .anime-pagination button { display: inline-flex; flex: 0 0 32px; width: 32px; min-width: 32px; height: 34px; min-height: 34px; align-items: center; justify-content: center; padding: 0; }
+  .anime-pagination-ellipsis { display: inline-grid; width: 20px; height: 34px; place-items: center; color: var(--muted); font-size: .8rem; }
 }
 
 /* Secondary typography is opt-in by semantic role; status, badge, button,
