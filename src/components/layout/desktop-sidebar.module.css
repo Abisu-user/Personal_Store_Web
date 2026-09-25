@@ -20,6 +20,11 @@
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
+    transition: grid-template-columns var(--desktop-sidebar-motion);
+  }
+
+  :global(.app-shell.desktop-app-shell[data-sidebar-pinned="true"]) {
+    --desktop-sidebar-layout-width: var(--desktop-sidebar-expanded-width);
   }
 
   :global(.desktop-app-shell > .desktop-app-main) {
@@ -112,8 +117,8 @@
   }
 
   .profile {
-    position: relative;
-    display: flex;
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr) 32px;
     min-height: 68px;
     flex: 0 0 auto;
     align-items: center;
@@ -150,10 +155,6 @@
     content: "";
   }
 
-  .avatarStatic {
-    cursor: default;
-  }
-
   .profileCopy {
     display: grid;
     min-width: 0;
@@ -188,10 +189,7 @@
     text-transform: uppercase;
   }
 
-  .collapseToggle {
-    position: absolute;
-    top: 50%;
-    right: 8px;
+  .pinToggle {
     display: grid;
     width: 32px;
     height: 32px;
@@ -203,23 +201,27 @@
     color: var(--sidebar-muted);
     background: rgba(255, 255, 255, .06);
     opacity: 0;
-    transform: translateY(-50%);
     pointer-events: none;
-    transition: opacity 90ms ease, color 180ms ease, background 180ms ease, transform 120ms ease;
+    transition: opacity 90ms ease, color 180ms ease, background 180ms ease;
   }
 
-  .collapseToggle svg {
+  .pinToggle svg {
     width: 16px;
     height: 16px;
+    transition: transform 250ms ease;
   }
 
-  .collapseToggle:hover:not(:disabled) {
+  .sidebar[data-pinned="true"] .pinToggle svg {
+    transform: rotate(180deg);
+  }
+
+  .pinToggle:hover:not(:disabled) {
     color: #fff;
     background: rgba(255, 255, 255, .12);
   }
 
-  .collapseToggle:active:not(:disabled) {
-    transform: translateY(-50%) scale(.96);
+  .pinToggle:active:not(:disabled) {
+    background: rgba(255, 255, 255, .18);
   }
 
   .navigation {
@@ -380,7 +382,7 @@
     transition-delay: 80ms;
   }
 
-  .expanded .collapseToggle {
+  .expanded .pinToggle {
     opacity: 1;
     pointer-events: auto;
     transition-delay: 220ms, 0ms, 0ms, 0ms;
@@ -407,7 +409,8 @@
   :global(.desktop-app-shell),
   .sidebar,
   .profileCopy,
-  .collapseToggle,
+  .pinToggle,
+  .pinToggle svg,
   .groupLabel,
   .navItem,
   .logout,

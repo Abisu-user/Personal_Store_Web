@@ -94,14 +94,23 @@ export function AppSidebar({
   email,
   displayName,
   avatar,
+  isExpanded = false,
+  isPinned = false,
+  onInteract,
+  onLogoClick,
+  onPinClick,
 }: {
   email: string;
   displayName: string | null;
   avatar: ProfileAvatar;
+  isExpanded?: boolean;
+  isPinned?: boolean;
+  onInteract?: () => void;
+  onLogoClick?: () => void;
+  onPinClick?: () => void;
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const activeHref = useMemo(() => resolveActiveHref(pathname), [pathname]);
   const profileName = displayName?.trim() || email.split("@")[0] || "Personal Store";
@@ -123,47 +132,47 @@ export function AppSidebar({
   return (
     <aside
       aria-label="Personal Store 側邊導覽"
-      className={`${styles.sidebar} ${isSidebarExpanded ? styles.expanded : ""}`}
-      data-expanded={isSidebarExpanded ? "true" : "false"}
+      className={`${styles.sidebar} ${isExpanded ? styles.expanded : ""}`}
+      data-expanded={isExpanded}
+      data-pinned={isPinned}
+      onClickCapture={onInteract}
+      onKeyDownCapture={onInteract}
+      onPointerDownCapture={onInteract}
+      onScrollCapture={onInteract}
     >
       <header className={styles.profile}>
-        {isSidebarExpanded ? (
-          <div aria-hidden="true" className={`${styles.avatar} ${styles.avatarStatic}`}>
-            {avatarContent}
-          </div>
-        ) : (
-          <button
-            aria-expanded="false"
-            aria-label="展開側邊欄"
-            className={styles.avatar}
-            onClick={() => setIsSidebarExpanded(true)}
-            title="展開側邊欄"
-            type="button"
-          >
-            {avatarContent}
-          </button>
-        )}
+        <button
+          aria-expanded={isExpanded}
+          aria-label={isPinned ? "側邊欄已固定" : isExpanded ? "收合側邊欄" : "展開側邊欄"}
+          className={styles.avatar}
+          onClick={onLogoClick}
+          title={isPinned ? "側邊欄已固定" : isExpanded ? "收合側邊欄" : "展開側邊欄"}
+          type="button"
+        >
+          {avatarContent}
+        </button>
         <Link
           aria-current={pathname === "/profile" ? "page" : undefined}
-          aria-hidden={!isSidebarExpanded}
+          aria-hidden={!isExpanded}
           className={styles.profileCopy}
           href="/profile"
           onFocus={() => prefetchRoute("/profile")}
           onMouseEnter={() => prefetchRoute("/profile")}
           prefetch={false}
-          tabIndex={isSidebarExpanded ? 0 : -1}
+          tabIndex={isExpanded ? 0 : -1}
         >
           <strong>{profileName}</strong>
           <small>Personal Store</small>
         </Link>
         <button
-          aria-hidden={!isSidebarExpanded}
-          aria-label="收合側邊欄"
-          className={styles.collapseToggle}
-          disabled={!isSidebarExpanded}
-          onClick={() => setIsSidebarExpanded(false)}
-          tabIndex={isSidebarExpanded ? 0 : -1}
-          title="收合側邊欄"
+          aria-hidden={!isExpanded}
+          aria-label={isPinned ? "取消固定側邊欄" : "固定展開側邊欄"}
+          aria-pressed={isPinned}
+          className={styles.pinToggle}
+          disabled={!isExpanded}
+          onClick={onPinClick}
+          tabIndex={isExpanded ? 0 : -1}
+          title={isPinned ? "取消固定側邊欄" : "固定側邊欄"}
           type="button"
         >
           <svg aria-hidden="true" fill="none" viewBox="0 0 24 24">
