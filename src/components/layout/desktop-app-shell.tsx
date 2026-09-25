@@ -26,6 +26,7 @@ export function DesktopAppShell({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const sidebarStateRef = useRef({ isExpanded: false, isPinned: false });
+  const sidebarRef = useRef<HTMLElement | null>(null);
   const autoCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function clearAutoCloseTimer() {
@@ -56,8 +57,8 @@ export function DesktopAppShell({
   }
 
   function toggleLogo() {
-    if (sidebarStateRef.current.isPinned) return;
-    changeSidebarState(!sidebarStateRef.current.isExpanded, false);
+    if (sidebarStateRef.current.isExpanded) return;
+    changeSidebarState(true, false);
   }
 
   function togglePin() {
@@ -71,8 +72,24 @@ export function DesktopAppShell({
     }
   }
 
-  useEffect(() => () => {
-    if (autoCloseTimerRef.current !== null) clearTimeout(autoCloseTimerRef.current);
+  useEffect(() => {
+    function closeOnOutsidePointerDown(event: PointerEvent) {
+      if (!sidebarStateRef.current.isExpanded || sidebarStateRef.current.isPinned) return;
+      if (event.target instanceof Node && sidebarRef.current?.contains(event.target)) return;
+
+      sidebarStateRef.current = { isExpanded: false, isPinned: false };
+      setIsExpanded(false);
+      if (autoCloseTimerRef.current !== null) {
+        clearTimeout(autoCloseTimerRef.current);
+        autoCloseTimerRef.current = null;
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+      if (autoCloseTimerRef.current !== null) clearTimeout(autoCloseTimerRef.current);
+    };
   }, []);
 
   return (
@@ -87,6 +104,7 @@ export function DesktopAppShell({
         email={email}
         isExpanded={isExpanded}
         isPinned={isPinned}
+        sidebarRef={sidebarRef}
         onInteract={onSidebarInteraction}
         onLogoClick={toggleLogo}
         onPinClick={togglePin}

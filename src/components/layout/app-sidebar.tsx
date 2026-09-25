@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type RefObject } from "react";
 
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { clearAppearanceIdentity } from "@/lib/appearance/preferences";
@@ -96,6 +96,7 @@ export function AppSidebar({
   avatar,
   isExpanded = false,
   isPinned = false,
+  sidebarRef,
   onInteract,
   onLogoClick,
   onPinClick,
@@ -105,6 +106,7 @@ export function AppSidebar({
   avatar: ProfileAvatar;
   isExpanded?: boolean;
   isPinned?: boolean;
+  sidebarRef?: RefObject<HTMLElement | null>;
   onInteract?: () => void;
   onLogoClick?: () => void;
   onPinClick?: () => void;
@@ -135,6 +137,7 @@ export function AppSidebar({
       className={`${styles.sidebar} ${isExpanded ? styles.expanded : ""}`}
       data-expanded={isExpanded}
       data-pinned={isPinned}
+      ref={sidebarRef}
       onClickCapture={onInteract}
       onKeyDownCapture={onInteract}
       onPointerDownCapture={onInteract}
@@ -143,10 +146,11 @@ export function AppSidebar({
       <header className={styles.profile}>
         <button
           aria-expanded={isExpanded}
-          aria-label={isPinned ? "側邊欄已固定" : isExpanded ? "收合側邊欄" : "展開側邊欄"}
+          aria-label={isPinned ? "側邊欄已固定" : isExpanded ? "側邊欄已展開，點擊外側收合" : "展開側邊欄"}
           className={styles.avatar}
+          disabled={isExpanded}
           onClick={onLogoClick}
-          title={isPinned ? "側邊欄已固定" : isExpanded ? "收合側邊欄" : "展開側邊欄"}
+          title={isPinned ? "側邊欄已固定" : isExpanded ? "點擊側邊欄外側收合" : "展開側邊欄"}
           type="button"
         >
           {avatarContent}

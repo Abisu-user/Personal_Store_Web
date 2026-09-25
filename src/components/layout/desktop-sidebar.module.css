@@ -155,6 +155,10 @@
     content: "";
   }
 
+  .avatar:disabled {
+    cursor: default;
+  }
+
   .profileCopy {
     display: grid;
     min-width: 0;
