@@ -1982,3 +1982,59 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-dashboard .anime-card, .anime-dashboard .anime-catalogue-card { transition: none; }
   .modal-dialog-backdrop > .anime-discovery-filter-dialog { animation: none; }
 }
+
+/* Discovery uses one catalogue surface; on desktop the filters scroll independently. */
+.anime-discovery-layout, .anime-discovery-results { min-width: 0; }
+.anime-discovery-results { display: grid; align-content: start; gap: 12px; }
+.anime-discovery-filter-rail h3 { margin: 0; color: var(--ink); font-size: .8rem; }
+.anime-discovery-rail-options { display: grid; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.anime-discovery-rail-options button { min-height: 34px; padding: 6px 9px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; font: inherit; font-size: .77rem; text-align: left; cursor: pointer; }
+.anime-discovery-rail-options button:hover, .anime-discovery-rail-options button.active { border-color: color-mix(in srgb, var(--brand) 36%, var(--line)); color: var(--brand); background: var(--brand-soft); }
+.anime-schedule-summary { margin: 0; color: var(--muted); font-size: .83rem; font-weight: 750; }
+.anime-catalogue-end .secondary-button { margin-top: 10px; }
+.anime-discovery-schedule-filter { display: none; }
+.anime-desktop-filter-rail, .anime-workspace .responsive-chip-overflow.scrollable-desktop, .anime-rail, .anime-discovery-tabs, .anime-schedule-days { scrollbar-width: none; }
+.anime-desktop-filter-rail::-webkit-scrollbar, .anime-workspace .responsive-chip-overflow.scrollable-desktop::-webkit-scrollbar, .anime-rail::-webkit-scrollbar, .anime-discovery-tabs::-webkit-scrollbar, .anime-schedule-days::-webkit-scrollbar { width: 0; height: 0; }
+.anime-workspace .anime-tabs, .anime-workspace .anime-filter-scroll, .anime-workspace .anime-category-scroll, .anime-discovery-filter-dialog { scrollbar-width: none; }
+.anime-workspace .anime-tabs::-webkit-scrollbar, .anime-workspace .anime-filter-scroll::-webkit-scrollbar, .anime-workspace .anime-category-scroll::-webkit-scrollbar, .anime-discovery-filter-dialog::-webkit-scrollbar { width: 0; height: 0; }
+.modal-dialog-backdrop:has(.anime-category-dialog) .modal-dialog-content,
+.modal-dialog-backdrop:has(.collection-category-manager) .modal-dialog-content,
+.modal-dialog-backdrop:has(.anime-category-dialog) .taxonomy-manager-list,
+.modal-dialog-backdrop:has(.collection-category-manager) .taxonomy-manager-list { scrollbar-width: none; }
+.modal-dialog-backdrop:has(.anime-category-dialog) .modal-dialog-content::-webkit-scrollbar,
+.modal-dialog-backdrop:has(.collection-category-manager) .modal-dialog-content::-webkit-scrollbar,
+.modal-dialog-backdrop:has(.anime-category-dialog) .taxonomy-manager-list::-webkit-scrollbar,
+.modal-dialog-backdrop:has(.collection-category-manager) .taxonomy-manager-list::-webkit-scrollbar { width: 0; height: 0; }
+@media (min-width: 701px) {
+  .anime-discovery-layout { display: grid; grid-template-columns: clamp(190px, 20vw, 245px) minmax(0, 1fr); align-items: start; gap: clamp(14px, 2vw, 24px); }
+  .anime-desktop-filter-rail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+  .anime-discovery-filter-rail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+  .anime-discovery-mobile-filter, .anime-discovery-results > .anime-schedule-days { display: none; }
+  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] { display: grid; gap: 8px; }
+  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > header,
+  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > .responsive-chip-overflow { display: flex; }
+  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > .responsive-chip-overflow { display: block; }
+  .anime-workspace .responsive-chip-overflow.scrollable-desktop { overflow-x: auto; overflow-y: hidden; }
+  .anime-workspace .responsive-chip-overflow.scrollable-desktop > .responsive-chip-overflow-row:not(.responsive-chip-overflow-measure) { width: max-content; max-width: none; min-width: 100%; overflow: visible !important; }
+  .anime-library-main > .anime-filter-bar .anime-library-search-mobile:not(.anime-library-search-trash) { display: none; }
+  .anime-bulk-toolbar-search { flex: 0 1 390px; min-width: 200px; margin-left: auto; }
+  .anime-bulk-toolbar-search input { width: 100%; }
+}
+@media (min-width: 821px) {
+  .anime-standard-library-layout .anime-library-primary-filter-bar { display: none; }
+}
+@media (min-width: 701px) and (max-width: 820px) {
+  .anime-discovery-layout { grid-template-columns: minmax(0, 1fr); }
+  .anime-discovery-filter-rail { display: none; }
+  .anime-discovery-mobile-filter, .anime-discovery-results > .anime-schedule-days { display: flex; }
+  .anime-discovery-schedule-filter { display: inline-flex; }
+  .anime-standard-library-layout { grid-template-columns: minmax(0, 1fr); }
+  .anime-standard-library-layout > .anime-desktop-filter-rail { display: none; }
+  .anime-standard-library-layout .anime-library-main > .anime-filter-bar > .anime-filter-scroll { display: flex; }
+  .anime-standard-library-layout .anime-mobile-filter { display: inline-grid; place-items: center; }
+}
+@media (max-width: 700px) {
+  .anime-discovery-results > .anime-schedule-days { display: flex; }
+  .anime-discovery-schedule-filter { display: inline-flex; }
+  .anime-bulk-toolbar-search { display: none; }
+}

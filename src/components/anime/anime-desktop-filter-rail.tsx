@@ -22,6 +22,7 @@ export function AnimeDesktopFilterRail({
   onStatusChange,
   onTrash,
   selectedStatus,
+  showFolders = true,
   trashCount,
   trashSelected,
 }: {
@@ -39,6 +40,7 @@ export function AnimeDesktopFilterRail({
   onStatusChange?: (value: StatusFilter) => void;
   onTrash: () => void;
   selectedStatus?: StatusFilter;
+  showFolders?: boolean;
   trashCount: number;
   trashSelected: boolean;
 }) {
@@ -68,7 +70,7 @@ export function AnimeDesktopFilterRail({
           ))}
         </section>
       )}
-      <section className="anime-filter-rail-group">
+      {showFolders && <section className="anime-filter-rail-group">
         <header><h2>資料夾</h2><div><button aria-label="新增動漫資料夾" onClick={onAddFolder} type="button">＋</button><button aria-label="管理動漫資料夾" onClick={onManageFolders} type="button">管理</button></div></header>
         <button aria-pressed={!trashSelected && !folderFilters.length} className={!trashSelected && !folderFilters.length ? "active" : ""} onClick={() => onFolderChange([])} type="button">
           <span><AppIcon name="folder" />所有資料夾</span>
@@ -80,7 +82,7 @@ export function AnimeDesktopFilterRail({
           </button>
         ))}
         {visibleFolders.length > 7 && <button className="anime-filter-rail-more" onClick={() => setAllFoldersOpen((open) => !open)} type="button">{allFoldersOpen ? "收起資料夾" : "更多資料夾 ›"}</button>}
-      </section>
+      </section>}
       <section className="anime-filter-rail-group">
         <header><h2>類別</h2><div><button aria-label="新增動漫類別" onClick={onAddCategory} type="button">＋</button><button aria-label="管理動漫類別" onClick={onManageCategories} type="button">管理</button></div></header>
         <button aria-pressed={!trashSelected && !categoryFilters.length} className={!trashSelected && !categoryFilters.length ? "active" : ""} onClick={() => onCategoryChange([])} type="button">

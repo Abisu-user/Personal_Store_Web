@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const seasons = new Set(["WINTER", "SPRING", "SUMMER", "FALL"]);
-const formats = new Set(["TV", "MOVIE", "OVA", "ONA", "SPECIAL"]);
+const formats = new Set(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL"]);
 const statuses = new Set(["RELEASING", "FINISHED", "NOT_YET_RELEASED"]);
 const sorts = new Set([
   "POPULARITY_DESC",
@@ -120,6 +120,9 @@ export async function GET(request: NextRequest) {
     tag: clean(params.get("tag")),
     format,
     status,
+    minimumScore: ["7", "8", "9"].includes(params.get("minimumScore") ?? "")
+      ? Number(params.get("minimumScore"))
+      : undefined,
     sort,
     includeAdult,
     search: clean(params.get("search")),

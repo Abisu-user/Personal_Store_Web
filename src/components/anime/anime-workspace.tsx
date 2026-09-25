@@ -5,7 +5,7 @@ import { AppIcon } from "@/components/ui/app-icon";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
-import { type FormEvent, type KeyboardEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type PointerEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   CoverImageField,
@@ -473,6 +473,7 @@ function AnimeFolderNavigation({
         activeIds={selectedIds}
         className={`anime-category-scroll${collectionLayout ? " bookmark-view-tabs collection-category-strip" : ""}`}
         items={visible}
+        scrollOnDesktop={collectionLayout}
         trailingCount={onTrash ? (collectionLayout ? 1 : 3) : (collectionLayout ? 0 : 2)}
         itemId={(folder) => folder.id}
         itemMeasureKey={(folder) => folder.name}
@@ -687,6 +688,7 @@ function AnimeCollectionList({
   onMutated,
   onOpen,
   onStatusChange,
+  searchInput,
   scope,
   trashed = false,
 }: {
@@ -699,6 +701,7 @@ function AnimeCollectionList({
   onMutated: () => Promise<void>;
   onOpen: (anime: AnimeLibraryItem) => void;
   onStatusChange?: (anime: AnimeLibraryItem, status: Exclude<AnimeWatchStatus, "paused">) => void;
+  searchInput?: ReactNode;
   scope: CategoryScope;
   trashed?: boolean;
 }) {
@@ -793,6 +796,7 @@ function AnimeCollectionList({
         {selecting && (
           <label><input checked={allSelected} onChange={() => setSelectedIds(allSelected ? [] : visibleItems.map((anime) => anime.id))} type="checkbox" />全選目前清單</label>
         )}
+        {searchInput && <div className="anime-bulk-toolbar-search">{searchInput}</div>}
       </div>
       <BatchActionBar count={selectedIds.length} onCancel={() => { setSelectedIds([]); setSelecting(false); }}>
         {trashed ? (<>
@@ -924,7 +928,7 @@ export function AnimeWorkspace({
   const initialAdultHandled = useRef(false);
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [tab, setTab] = useState<Tab>("home");
-  const [discoveryView, setDiscoveryView] = useState<"season" | "updates" | "schedule">("season");
+  const [discoveryView, setDiscoveryView] = useState<"explore" | "schedule">("explore");
   const [filter, setFilter] = useState<Filter>("all");
   const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [folderFilters, setFolderFilters] = useState<string[]>([]);
@@ -942,6 +946,7 @@ export function AnimeWorkspace({
   const [query, setQuery] = useState("");
   const librarySearch = useRef<HTMLInputElement>(null);
   const desktopLibrarySearch = useRef<HTMLInputElement>(null);
+  const mobileLibrarySearch = useRef<HTMLInputElement>(null);
   const adultLibrarySearch = useRef<HTMLInputElement>(null);
   const [librarySearchOpen, setLibrarySearchOpen] = useState(false);
   const [adultQuery, setAdultQuery] = useState("");
@@ -1713,7 +1718,12 @@ export function AnimeWorkspace({
             window.requestAnimationFrame(() => adultLibrarySearch.current?.focus());
           } else {
             setTab("library");
-            window.requestAnimationFrame(() => desktopLibrarySearch.current?.focus());
+            window.requestAnimationFrame(() => {
+              const target = window.matchMedia("(max-width: 700px)").matches
+                ? mobileLibrarySearch.current
+                : desktopLibrarySearch.current ?? mobileLibrarySearch.current;
+              target?.focus();
+            });
           }
         }}
         onSelectTab={setTab}
@@ -1736,7 +1746,7 @@ export function AnimeWorkspace({
           onAdd={(anime) => quickAddExternal(anime)}
           onOpenLibrary={() => setTab("library")}
           onOpenSchedule={() => { setDiscoveryView("schedule"); setTab("discover"); }}
-          onOpenSeason={() => { setDiscoveryView("season"); setTab("discover"); }}
+          onOpenSeason={() => { setDiscoveryView("explore"); setTab("discover"); }}
         />
       )}
       {tab === "discover" && (
@@ -2065,7 +2075,7 @@ export function AnimeWorkspace({
       )}
       {tab === "library" && (
         <>
-          <div className="anime-library-layout">
+          <div className="anime-library-layout anime-standard-library-layout">
           <AnimeDesktopFilterRail
             categoryFilters={categoryFilters}
             categories={standardScopedTags}
@@ -2081,43 +2091,11 @@ export function AnimeWorkspace({
             onStatusChange={selectLibraryStatus}
             onTrash={() => { setFilter("all"); setFolderFilters([]); setCategoryFilters([]); void openTrash("standard"); }}
             selectedStatus={filter}
+            showFolders={false}
             trashCount={trashData?.library.length ?? 0}
             trashSelected={libraryView === "trash"}
           />
           <div className="anime-library-main">
-          <div className="anime-filter-bar">
-            <div className="anime-filter-scroll bookmark-view-tabs">
-              {visibleFilters.map((value) => (
-                <button
-                  className={
-                    `${value !== "all" && value !== "planning" ? "anime-status-filter-extra " : ""}${libraryView === "library" && !folderFilters.length && filter === value ? "active" : ""}`
-                  }
-                  key={value}
-                  onClick={() => selectLibraryStatus(value)}
-                  type="button"
-                >
-                  {value === "all" ? "全部" : animeStatusLabels[value]}
-                </button>
-              ))}
-              <button
-                aria-expanded={filterOpen}
-                className="secondary-button compact anime-mobile-filter"
-                onClick={openLibraryFilters}
-                type="button"
-              >
-                <AppIcon name="organize" />
-                篩選
-              </button>
-            </div>
-            <input
-              aria-label="搜尋自己的動漫"
-              className="anime-library-search-field"
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜尋名稱、類別或備註"
-              ref={desktopLibrarySearch}
-              value={query}
-            />
-          </div>
           <AnimeFolderNavigation
             addSignal={folderAddSignal}
             collectionLayout
@@ -2143,6 +2121,39 @@ export function AnimeWorkspace({
             trashCount={trashData?.library.length ?? 0}
             trashSelected={libraryView === "trash"}
           />
+          <div className={`anime-filter-bar${libraryView === "library" ? " anime-library-primary-filter-bar" : ""}`}>
+            <div className="anime-filter-scroll bookmark-view-tabs">
+              {visibleFilters.map((value) => (
+                <button
+                  className={
+                    `${value !== "all" && value !== "planning" ? "anime-status-filter-extra " : ""}${libraryView === "library" && !folderFilters.length && filter === value ? "active" : ""}`
+                  }
+                  key={value}
+                  onClick={() => selectLibraryStatus(value)}
+                  type="button"
+                >
+                  {value === "all" ? "全部" : animeStatusLabels[value]}
+                </button>
+              ))}
+              <button
+                aria-expanded={filterOpen}
+                className="secondary-button compact anime-mobile-filter"
+                onClick={openLibraryFilters}
+                type="button"
+              >
+                <AppIcon name="organize" />
+                篩選
+              </button>
+            </div>
+            <input
+              aria-label="搜尋自己的動漫"
+              className={`anime-library-search-field anime-library-search-mobile${libraryView === "trash" ? " anime-library-search-trash" : ""}`}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜尋名稱、類別或備註"
+              ref={mobileLibrarySearch}
+              value={query}
+            />
+          </div>
           {libraryView === "library" ? (
             <>
               <section className="anime-category-bar collection-navigation-section" aria-label="動漫類別" data-anime-scope="standard" data-chip-overflow-container>
@@ -2172,6 +2183,7 @@ export function AnimeWorkspace({
                   className="anime-category-scroll bookmark-view-tabs collection-category-strip"
                   leadingCount={1}
                   items={standardScopedTags}
+                  scrollOnDesktop
                   itemId={(category) => category.id}
                   itemMeasureKey={(category) => `${category.name}|${data.library.filter((anime) => anime.tags.some((item) => item.id === category.id)).length}`}
                   leading={<button className={!categoryFilters.length ? "active" : ""} onClick={() => setCategoryFilters([])} type="button">所有類別</button>}
@@ -2196,6 +2208,14 @@ export function AnimeWorkspace({
                     setSelected(anime);
                   }}
                   onStatusChange={updateWatchStatus}
+                  searchInput={<input
+                    aria-label="搜尋自己的動漫"
+                    className="anime-library-search-field"
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="搜尋名稱、類別或備註"
+                    ref={desktopLibrarySearch}
+                    value={query}
+                  />}
                   scope="standard"
                 />
               )}

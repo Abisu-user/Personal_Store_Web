@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimeHorizontalScroller } from "@/components/anime/anime-horizontal-scroller";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 
@@ -10,7 +9,6 @@ type Sort =
   | "POPULARITY_DESC"
   | "SCORE_DESC"
   | "START_DATE_DESC"
-  | "NEXT_AIRING_EPISODE_DESC"
   | "TITLE_ROMAJI"
   | "FAVOURITES_DESC";
 type Catalogue = {
@@ -21,14 +19,6 @@ type Catalogue = {
   totalExact?: boolean;
 };
 type Taxonomy = { genres: string[]; tags: string[] };
-type DiscoveryHome = {
-  current: Catalogue;
-  upcoming: Catalogue;
-  popular: Catalogue;
-  top: Catalogue;
-  taxonomy: Taxonomy;
-  unavailable: string[];
-};
 type Filters = {
   year: number | null;
   season: Season | "";
@@ -36,16 +26,10 @@ type Filters = {
   tag: string;
   format: string;
   status: string;
+  minimumScore: number | null;
   sort: Sort;
 };
-type DiscoveryView = "season" | "updates" | "schedule";
-type SearchPage = {
-  results?: ExternalAnime[];
-  items?: ExternalAnime[];
-  page?: number;
-  hasNextPage?: boolean;
-  total?: number;
-};
+type DiscoveryView = "explore" | "schedule";
 const seasons: { key: Season; label: string }[] = [
   { key: "WINTER", label: "冬番" },
   { key: "SPRING", label: "春番" },
@@ -55,6 +39,7 @@ const seasons: { key: Season; label: string }[] = [
 const formats = [
   ["", "全部格式"],
   ["TV", "電視動畫"],
+  ["TV_SHORT", "短篇電視動畫"],
   ["MOVIE", "劇場版"],
   ["OVA", "原創動畫錄影帶"],
   ["ONA", "網路動畫"],
@@ -70,7 +55,6 @@ const sorts: [Sort, string][] = [
   ["POPULARITY_DESC", "熱門"],
   ["SCORE_DESC", "評分最高"],
   ["START_DATE_DESC", "最新"],
-  ["NEXT_AIRING_EPISODE_DESC", "最近播出"],
   ["TITLE_ROMAJI", "名稱"],
   ["FAVOURITES_DESC", "人氣"],
 ];
@@ -279,14 +263,6 @@ function nowSeason() {
     year: date.getFullYear(),
   };
 }
-function followingSeason() {
-  const current = nowSeason();
-  const at = seasons.findIndex((item) => item.key === current.season);
-  return {
-    season: seasons[(at + 1) % seasons.length]!.key,
-    year: current.year + (current.season === "FALL" ? 1 : 0),
-  };
-}
 function seasonName(value: Season, year: number | null) {
   return year
     ? String(year) +
@@ -315,7 +291,7 @@ export function AnimeDiscovery({
   library,
   onAdd,
   adultMode = false,
-  initialView = "season",
+  initialView = "explore",
 }: {
   library: AnimeLibraryItem[];
   onAdd: (anime: ExternalAnime) => void | Promise<void>;
@@ -323,7 +299,6 @@ export function AnimeDiscovery({
   initialView?: DiscoveryView;
 }) {
   const current = useMemo(() => nowSeason(), []);
-  const next = useMemo(() => followingSeason(), []);
   const seasonChoices = useMemo(() => {
     const keys = seasons.map((item) => item.key);
     const currentIndex = current.year * 4 + keys.indexOf(current.season);
@@ -332,50 +307,27 @@ export function AnimeDiscovery({
       return { year: Math.floor(index / 4), season: keys[((index % 4) + 4) % 4] };
     });
   }, [current]);
-  const [thisSeason, setThisSeason] = useState<ExternalAnime[]>([]);
-  const [nextSeason, setNextSeason] = useState<ExternalAnime[]>([]);
-  const [popular, setPopular] = useState<ExternalAnime[]>([]);
-  const [highest, setHighest] = useState<ExternalAnime[]>([]);
   const [taxonomy, setTaxonomy] = useState<Taxonomy>({ genres: [], tags: [] });
-  const initialFilters: Filters =
-    initialView === "updates"
-      ? {
-          year: null,
-          season: "",
-          genre: "",
-          tag: "",
-          format: "",
-          status: "RELEASING",
-          sort: "NEXT_AIRING_EPISODE_DESC",
-        }
-      : initialView === "schedule"
-        ? {
-            year: current.year,
-            season: current.season,
-            genre: "",
-            tag: "",
-            format: "",
-            status: "RELEASING",
-            sort: "NEXT_AIRING_EPISODE_DESC",
-          }
-        : {
-            year: null,
-            season: "",
-            genre: "",
-            tag: "",
-            format: "",
-            status: "",
-            sort: "POPULARITY_DESC",
-          };
-  const [screen, setScreen] = useState<"home" | "all">(
-    adultMode || initialView !== "season" ? "all" : "home",
-  );
+  const initialFilters: Filters = {
+    year: current.year,
+    season: current.season,
+    genre: "",
+    tag: "",
+    format: "",
+    status: "",
+    minimumScore: null,
+    sort: "POPULARITY_DESC",
+  };
   const [discoveryView, setDiscoveryView] =
     useState<DiscoveryView>(initialView);
   const [scheduleDay, setScheduleDay] = useState(() => new Date().getDay());
+  const [scheduleStatus, setScheduleStatus] = useState<"all" | "releasing" | "collected" | "uncollected">("all");
+  const [scheduleFormat, setScheduleFormat] = useState("");
+  const [scheduleFilterOpen, setScheduleFilterOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [filterDraft, setFilterDraft] = useState<Filters>(initialFilters);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [showAllGenres, setShowAllGenres] = useState(false);
   const [all, setAll] = useState<ExternalAnime[]>([]);
   const [scheduleItems, setScheduleItems] = useState<ExternalAnime[]>([]);
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -384,18 +336,9 @@ export function AnimeDiscovery({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ExternalAnime | null>(null);
-  const [homeLoading, setHomeLoading] = useState(true);
   const [catalogueSearchInput, setCatalogueSearchInput] = useState("");
   const [catalogueSearch, setCatalogueSearch] = useState("");
-  const [catalogueSearchResults, setCatalogueSearchResults] = useState<
-    ExternalAnime[]
-  >([]);
-  const [catalogueSearching, setCatalogueSearching] = useState(false);
-  const [catalogueSearchPage, setCatalogueSearchPage] = useState(1);
-  const [catalogueSearchHasMore, setCatalogueSearchHasMore] = useState(false);
-  const searchAbort = useRef<AbortController | null>(null);
-  const searchInFlight = useRef(false);
-  const searchRequestId = useRef(0);
+  const catalogueRequestId = useRef(0);
   const seen = useRef("");
   const sentinel = useRef<HTMLDivElement>(null);
   // Older records saved provider metadata but not its source ID. Compare every
@@ -413,37 +356,24 @@ export function AnimeDiscovery({
     [library],
   );
 
-  const reloadHome = useCallback(async () => {
+  const reloadTaxonomy = useCallback(async () => {
     try {
-      setError(null);
-      setHomeLoading(true);
-      const answer = await get<DiscoveryHome>("/api/anime/catalogue?view=home");
-      setThisSeason(answer.current.items);
-      setNextSeason(answer.upcoming.items);
-      setPopular(answer.popular.items);
-      setHighest(answer.top.items);
-      setTaxonomy(answer.taxonomy);
-      if (answer.unavailable.length === 5)
-        setError("動漫資料暫時無法載入，請稍後再試。");
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "動漫資料暫時無法載入。",
-      );
-    } finally {
-      setHomeLoading(false);
-    }
+      setTaxonomy(await get<Taxonomy>("/api/anime/catalogue?resource=taxonomy"));
+    } catch { /* Results remain usable if optional taxonomy labels are unavailable. */ }
   }, []);
   useEffect(() => {
     if (adultMode) return;
-    const timer = window.setTimeout(() => {
-      void reloadHome();
-    }, 0);
+    const timer = window.setTimeout(() => void reloadTaxonomy(), 0);
     return () => window.clearTimeout(timer);
-  }, [adultMode, reloadHome]);
+  }, [adultMode, reloadTaxonomy]);
 
   const load = useCallback(
     async (requestedPage: number, replace = false) => {
-      if (loading) return;
+      const requestId = ++catalogueRequestId.current;
+      if (replace) {
+        setAll([]);
+        setHasMore(false);
+      }
       setLoading(true);
       setError(null);
       try {
@@ -458,10 +388,13 @@ export function AnimeDiscovery({
               tag: filters.tag || undefined,
               format: filters.format || undefined,
               status: filters.status || undefined,
+              minimumScore: filters.minimumScore ?? undefined,
               sort: filters.sort,
+              search: catalogueSearch || undefined,
               adult: adultMode ? 1 : undefined,
             }),
         );
+        if (requestId !== catalogueRequestId.current) return;
         setAll((currentRows) =>
           replace
             ? response.items
@@ -474,31 +407,24 @@ export function AnimeDiscovery({
         setPage(response.page);
         setHasMore(response.hasNextPage);
       } catch (cause) {
-        setError(
-          cause instanceof Error ? cause.message : "動漫資料暫時無法載入。",
-        );
+        if (requestId === catalogueRequestId.current)
+          setError(cause instanceof Error ? cause.message : "動漫資料暫時無法載入。");
       } finally {
-        setLoading(false);
+        if (requestId === catalogueRequestId.current) setLoading(false);
       }
     },
-    [adultMode, filters, loading],
+    [adultMode, catalogueSearch, filters],
   );
-  const filterHash = JSON.stringify(filters);
+  const filterHash = JSON.stringify({ filters, catalogueSearch });
   useEffect(() => {
-    if (
-      screen !== "all" ||
-      discoveryView === "schedule" ||
-      seen.current === filterHash
-    )
-      return;
+    if (discoveryView === "schedule" || seen.current === filterHash) return;
     seen.current = filterHash;
-    void load(1, true);
-  }, [discoveryView, filterHash, load, screen]);
+    const timer = window.setTimeout(() => void load(1, true), 180);
+    return () => window.clearTimeout(timer);
+  }, [discoveryView, filterHash, load]);
   useEffect(() => {
     if (
-      screen !== "all" ||
       discoveryView === "schedule" ||
-      catalogueSearch ||
       !hasMore ||
       loading ||
       !sentinel.current
@@ -512,7 +438,7 @@ export function AnimeDiscovery({
     );
     observer.observe(sentinel.current);
     return () => observer.disconnect();
-  }, [catalogueSearch, discoveryView, hasMore, load, loading, page, screen]);
+  }, [discoveryView, hasMore, load, loading, page]);
 
   const loadSchedule = useCallback(async () => {
     setScheduleLoading(true);
@@ -531,15 +457,11 @@ export function AnimeDiscovery({
     }
   }, []);
   useEffect(() => {
-    if (
-      screen === "all" &&
-      discoveryView === "schedule" &&
-      !scheduleItems.length
-    ) {
+    if (discoveryView === "schedule" && !scheduleItems.length) {
       const timer = window.setTimeout(() => void loadSchedule(), 0);
       return () => window.clearTimeout(timer);
     }
-  }, [discoveryView, loadSchedule, scheduleItems.length, screen]);
+  }, [discoveryView, loadSchedule, scheduleItems.length]);
   const apply = () => {
     setFilters(filterDraft);
     seen.current = "";
@@ -547,118 +469,40 @@ export function AnimeDiscovery({
   };
   const selectDiscoveryView = (view: DiscoveryView) => {
     setDiscoveryView(view);
-    if (view === "schedule") {
-      searchAbort.current?.abort();
-      setCatalogueSearch("");
-      setCatalogueSearchInput("");
-      setCatalogueSearchResults([]);
-      setCatalogueSearchHasMore(false);
-    }
-    if (view === "season") {
-      setScreen("home");
-      return;
-    }
-    const value: Filters =
-      view === "updates"
-        ? {
-            year: null,
-            season: "",
-            genre: "",
-            tag: "",
-            format: "",
-            status: "RELEASING",
-            sort: "NEXT_AIRING_EPISODE_DESC",
-          }
-        : {
-            year: current.year,
-            season: current.season,
-            genre: "",
-            tag: "",
-            format: "",
-            status: "RELEASING",
-            sort: "NEXT_AIRING_EPISODE_DESC",
-          };
-    setFilters(value);
-    setFilterDraft(value);
-    seen.current = "";
-    setScreen("all");
   };
-  const runCatalogueSearch = useCallback(
-    async (value: string, requestedPage = 1, append = false) => {
-      if (value.length < 2 || searchInFlight.current) return;
-      searchInFlight.current = true;
-      const requestId = ++searchRequestId.current;
-      searchAbort.current?.abort();
-      const controller = new AbortController();
-      searchAbort.current = controller;
-      setCatalogueSearching(true);
-      setError(null);
-      setCatalogueSearch(value);
-      try {
-        const endpoint = adultMode
-          ? `/api/anime/catalogue?${query({ page: requestedPage, perPage: 24, adult: 1, search: value })}`
-          : `/api/anime/search?q=${encodeURIComponent(value)}&page=${requestedPage}`;
-        const response = await fetch(endpoint, { signal: controller.signal });
-        const answer = (await response
-          .json()
-          .catch(() => ({}))) as SearchPage & { error?: string };
-        if (!response.ok)
-          throw new Error(answer.error || "搜尋失敗，請稍後再試。");
-        if (requestId !== searchRequestId.current) return;
-        const items = answer.results ?? answer.items ?? [];
-        setCatalogueSearchResults((currentRows) =>
-          append
-            ? currentRows.concat(
-                items.filter(
-                  (anime) => !currentRows.some((row) => row.id === anime.id),
-                ),
-              )
-            : items,
-        );
-        setCatalogueSearchPage(answer.page ?? requestedPage);
-        setCatalogueSearchHasMore(Boolean(answer.hasNextPage));
-      } catch (cause) {
-        if (
-          !(cause instanceof DOMException && cause.name === "AbortError") &&
-          requestId === searchRequestId.current
-        )
-          setError(
-            cause instanceof Error ? cause.message : "搜尋失敗，請稍後再試。",
-          );
-      } finally {
-        if (requestId === searchRequestId.current) {
-          searchInFlight.current = false;
-          setCatalogueSearching(false);
-        }
-      }
-    },
-    [adultMode],
-  );
   const submitCatalogueSearch = () => {
     const value = catalogueSearchInput.trim();
-    if (!value) {
-      searchAbort.current?.abort();
-      searchRequestId.current += 1;
-      searchInFlight.current = false;
-      setCatalogueSearching(false);
-      setCatalogueSearch("");
-      setCatalogueSearchResults([]);
-      setCatalogueSearchHasMore(false);
-      setError(null);
-      return;
-    }
-    if (value.length < 2) {
+    if (value && value.length < 2) {
       setError("請至少輸入 2 個字再搜尋。");
       return;
     }
-    void runCatalogueSearch(value, 1, false);
+    setCatalogueSearch(value);
+    seen.current = "";
+    setError(null);
+    if (value === catalogueSearch) void load(1, true);
   };
-  useEffect(
-    () => () => {
-      searchAbort.current?.abort();
-    },
-    [],
-  );
+  const updateFilters = (value: Partial<Filters>) => {
+    setFilters((previous) => ({ ...previous, ...value }));
+    setFilterDraft((previous) => ({ ...previous, ...value }));
+    seen.current = "";
+  };
+  const clearSearchOrFilters = () => {
+    if (catalogueSearch) {
+      setCatalogueSearch("");
+      setCatalogueSearchInput("");
+      return;
+    }
+    updateFilters({
+      year: null,
+      season: "",
+      genre: "",
+      tag: "",
+      format: "",
+      status: "",
+      minimumScore: null,
+      sort: "POPULARITY_DESC",
+    });
+  };
 
   const displayedAll =
     discoveryView === "schedule"
@@ -666,7 +510,12 @@ export function AnimeDiscovery({
           (anime) =>
             anime.nextAiringEpisode &&
             new Date(anime.nextAiringEpisode.airingAt * 1000).getDay() ===
-              scheduleDay,
+              scheduleDay &&
+            (scheduleStatus === "all" ||
+              (scheduleStatus === "releasing" && anime.broadcastStatus === "RELEASING") ||
+              (scheduleStatus === "collected" && hasItem(anime)) ||
+              (scheduleStatus === "uncollected" && !hasItem(anime))) &&
+            (!scheduleFormat || anime.animeType === scheduleFormat),
         )
       : all;
   return (
@@ -674,15 +523,8 @@ export function AnimeDiscovery({
       {!adultMode && (
         <div className="anime-discovery-tabs anime-discovery-view-tabs">
           <button
-            className={discoveryView === "season" ? "active" : ""}
-            onClick={() => selectDiscoveryView("season")}
-            type="button"
-          >
-            本季新番
-          </button>
-          <button
-            className={discoveryView === "updates" ? "active" : ""}
-            onClick={() => selectDiscoveryView("updates")}
+            className={discoveryView === "explore" ? "active" : ""}
+            onClick={() => selectDiscoveryView("explore")}
             type="button"
           >
             探索動漫
@@ -696,44 +538,13 @@ export function AnimeDiscovery({
           </button>
         </div>
       )}
-      {!adultMode && discoveryView === "season" && (
-        <nav aria-label="切換新番季度" className="anime-season-switcher">
-          <span>季度速覽</span>
-          <div>
-            {seasonChoices.map(({ year, season }) => (
-              <button
-                aria-current={screen === "all" && filters.year === year && filters.season === season ? "page" : undefined}
-                className={screen === "all" && filters.year === year && filters.season === season ? "active" : ""}
-                key={`${year}-${season}`}
-                onClick={() => {
-                  const value: Filters = { year, season, genre: "", tag: "", format: "", status: "", sort: "POPULARITY_DESC" };
-                  setCatalogueSearch("");
-                  setCatalogueSearchInput("");
-                  setFilters(value);
-                  setFilterDraft(value);
-                  seen.current = "";
-                  setScreen("all");
-                }}
-                type="button"
-              >
-                {seasonName(season, year)}
-              </button>
-            ))}
-            {screen === "all" && <button onClick={() => selectDiscoveryView("season")} type="button">返回本季概覽</button>}
-          </div>
-        </nav>
-      )}
       {error && (
         <div className="notice error anime-catalogue-error">
           <span>{error}</span>
           <button
             className="secondary-button compact"
             onClick={() =>
-              void (screen === "home"
-                ? reloadHome()
-                : discoveryView === "schedule"
-                  ? loadSchedule()
-                  : load(1, true))
+              void (discoveryView === "schedule" ? loadSchedule() : load(1, true))
             }
             type="button"
           >
@@ -741,71 +552,88 @@ export function AnimeDiscovery({
           </button>
         </div>
       )}
-      {screen === "home" && !adultMode && (
-        <>
-          <Rail
-            loading={homeLoading}
-            title={"本季新番 · " + seasonName(current.season, current.year)}
-            items={thisSeason}
-            hasItem={hasItem}
-            onAdd={onAdd}
-            onDetail={setDetail}
-          />
-          <Rail
-            loading={homeLoading}
-            title={"下季新番 · " + seasonName(next.season, next.year)}
-            items={nextSeason}
-            hasItem={hasItem}
-            onAdd={onAdd}
-            onDetail={setDetail}
-          />
-          <Rail
-            loading={homeLoading}
-            title="熱門動漫"
-            items={popular}
-            hasItem={hasItem}
-            onAdd={onAdd}
-            onDetail={setDetail}
-          />
-          <Rail
-            loading={homeLoading}
-            title="高評分動漫"
-            items={highest}
-            hasItem={hasItem}
-            onAdd={onAdd}
-            onDetail={setDetail}
-          />
-        </>
-      )}
-      {screen === "all" && (
-        <>
+      <div className="anime-discovery-layout">
+        {!adultMode && (
+          <aside aria-label={discoveryView === "schedule" ? "時間表篩選" : "探索篩選"} className="anime-desktop-filter-rail anime-discovery-filter-rail">
+            {discoveryView === "schedule" ? (
+              <>
+                <h3>播出星期</h3>
+                <div className="anime-discovery-rail-options">
+                  {["日", "一", "二", "三", "四", "五", "六"].map((label, index) => (
+                    <button className={scheduleDay === index ? "active" : ""} key={label} onClick={() => setScheduleDay(index)} type="button">週{label}</button>
+                  ))}
+                </div>
+                <h3>播出狀態</h3>
+                <div className="anime-discovery-rail-options">
+                  {([["all", "全部"], ["releasing", "連載中"], ["collected", "已收藏"], ["uncollected", "未收藏"]] as const).map(([value, label]) => (
+                    <button className={scheduleStatus === value ? "active" : ""} key={value} onClick={() => setScheduleStatus(value)} type="button">{label}</button>
+                  ))}
+                </div>
+                <h3>格式</h3>
+                <div className="anime-discovery-rail-options">
+                  {formats.map(([value, label]) => <button className={scheduleFormat === value ? "active" : ""} key={value} onClick={() => setScheduleFormat(value)} type="button">{label}</button>)}
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>季度</h3>
+                <div className="anime-discovery-rail-options">
+                  <button className={!filters.season ? "active" : ""} onClick={() => updateFilters({ year: null, season: "" })} type="button">全部季度</button>
+                  {seasonChoices.map(({ year, season }) => <button className={filters.year === year && filters.season === season ? "active" : ""} key={`${year}-${season}`} onClick={() => updateFilters({ year, season })} type="button">{seasonName(season, year)}</button>)}
+                </div>
+                <h3>播出狀態</h3>
+                <div className="anime-discovery-rail-options">
+                  {statuses.map(([value, label]) => <button className={filters.status === value ? "active" : ""} key={value} onClick={() => updateFilters({ status: value })} type="button">{label}</button>)}
+                </div>
+                <h3>類型</h3>
+                <div className="anime-discovery-rail-options">
+                  <button className={!filters.genre ? "active" : ""} onClick={() => updateFilters({ genre: "", tag: "" })} type="button">全部類型</button>
+                  {(showAllGenres ? taxonomy.genres : taxonomy.genres.slice(0, 8)).map((genre) => <button className={filters.genre === genre ? "active" : ""} key={genre} onClick={() => updateFilters({ genre: filters.genre === genre ? "" : genre, tag: "" })} type="button">{cn(genre)}</button>)}
+                  {taxonomy.genres.length > 8 && <button onClick={() => setShowAllGenres((value) => !value)} type="button">{showAllGenres ? "收起" : "更多分類"}</button>}
+                </div>
+                <h3>最低評分</h3>
+                <div className="anime-discovery-rail-options">
+                  {([null, 7, 8, 9] as const).map((value) => <button className={filters.minimumScore === value ? "active" : ""} key={value ?? "all"} onClick={() => updateFilters({ minimumScore: value })} type="button">{value ? `${value} 分以上` : "不限評分"}</button>)}
+                </div>
+                <h3>格式</h3>
+                <div className="anime-discovery-rail-options">
+                  {formats.map(([value, label]) => <button className={filters.format === value ? "active" : ""} key={value} onClick={() => updateFilters({ format: value })} type="button">{label}</button>)}
+                </div>
+                <h3>排序</h3>
+                <div className="anime-discovery-rail-options">
+                  {sorts.map(([value, label]) => <button className={filters.sort === value ? "active" : ""} key={value} onClick={() => updateFilters({ sort: value })} type="button">{label}</button>)}
+                </div>
+              </>
+            )}
+          </aside>
+        )}
+        <div className="anime-discovery-results">
           <div className="anime-all-heading">
             <div>
               <p className="eyebrow">動漫資料庫</p>
               <h2>
                 {discoveryView === "schedule"
                   ? "本週播出時間表"
-                  : discoveryView === "updates"
-                    ? "探索動漫"
-                    : filters.season && filters.year
-                      ? seasonName(filters.season, filters.year)
-                      : "搜尋與全部動漫"}
+                  : "探索動漫"}
               </h2>
               <p>
                 {discoveryView === "schedule"
-                  ? "依星期查看本季即將播出的作品。"
-                  : "可搜尋特定作品，或以篩選條件瀏覽完整動漫資料庫。"}
+                  ? "依星期查看本週即將播出的作品。"
+                  : filters.season && filters.year
+                    ? `本季新番 · ${seasonName(filters.season, filters.year)}`
+                    : "搜尋或篩選動漫資料庫。"}
               </p>
             </div>
             {discoveryView !== "schedule" && (
               <button
-                className="secondary-button"
+                className="secondary-button anime-discovery-mobile-filter"
                 onClick={() => setFilterOpen(true)}
                 type="button"
               >
                 篩選與排序
               </button>
             )}
+            {discoveryView === "schedule" && <button className="secondary-button anime-discovery-schedule-filter" onClick={() => setScheduleFilterOpen(true)} type="button">篩選</button>}
           </div>
           {discoveryView === "schedule" && (
             <div className="anime-schedule-days" aria-label="選擇星期">
@@ -823,6 +651,7 @@ export function AnimeDiscovery({
               )}
             </div>
           )}
+          {discoveryView === "schedule" && <p className="anime-schedule-summary">週{["日", "一", "二", "三", "四", "五", "六"][scheduleDay]} · {displayedAll.length} 部作品</p>}
           {discoveryView !== "schedule" && (
             <form
               className="anime-search-box anime-catalogue-search"
@@ -839,85 +668,31 @@ export function AnimeDiscovery({
                 placeholder="搜尋動漫名稱"
                 value={catalogueSearchInput}
               />
-              <button aria-label="搜尋動漫" className="button compact" disabled={catalogueSearching} type="submit">{catalogueSearching ? "搜尋中…" : "搜尋"}</button>
+              <button aria-label="搜尋動漫" className="button compact" type="submit">搜尋</button>
             </form>
           )}
-          {catalogueSearch && (
+          {catalogueSearch && discoveryView !== "schedule" && (
             <div className="anime-search-result-heading">
-              <p>
-                {catalogueSearching
-                  ? "正在搜尋 AniList…"
-                  : `「${catalogueSearch}」的搜尋結果`}
-              </p>
+              <p>「{catalogueSearch}」的搜尋結果</p>
               <button
                 className="secondary-button compact"
                 onClick={() => {
-                  searchAbort.current?.abort();
-                  searchRequestId.current += 1;
-                  searchInFlight.current = false;
-                  setCatalogueSearching(false);
                   setCatalogueSearch("");
                   setCatalogueSearchInput("");
-                  setCatalogueSearchResults([]);
-                  setCatalogueSearchHasMore(false);
+                  seen.current = "";
                 }}
                 type="button"
               >
-                返回全部動漫
+                清除搜尋
               </button>
             </div>
           )}
-          {catalogueSearch ? (
-            <>
-              <div className="anime-discovery-grid">
-                {catalogueSearchResults.map((anime) => (
-                  <Card
-                    anime={anime}
-                    added={hasItem(anime)}
-                    key={anime.id}
-                    onAdd={onAdd}
-                    onDetail={setDetail}
-                  />
-                ))}
-                {catalogueSearching &&
-                  !catalogueSearchResults.length &&
-                  Array.from({ length: 6 }, (_, index) => (
-                    <div
-                      aria-hidden="true"
-                      className="anime-catalogue-card anime-catalogue-skeleton"
-                      key={index}
-                    />
-                  ))}
-              </div>
-              {catalogueSearchHasMore && (
-                <div className="anime-search-load-more">
-                  <button
-                    className="secondary-button"
-                    disabled={catalogueSearching}
-                    onClick={() =>
-                      void runCatalogueSearch(
-                        catalogueSearch,
-                        catalogueSearchPage + 1,
-                        true,
-                      )
-                    }
-                    type="button"
-                  >
-                    {catalogueSearching ? "載入中…" : "載入更多"}
-                  </button>
-                </div>
-              )}
-              {!catalogueSearching && !catalogueSearchResults.length && (
-                <p className="anime-catalogue-end">找不到符合的動漫。</p>
-              )}
-            </>
-          ) : (
-            <>
               {discoveryView !== "schedule" && (
                 <div className="anime-active-filters">
                   {filters.season && <span>{seasonName(filters.season, filters.year)}</span>}
                   {filters.genre && <span>{cn(filters.genre)}</span>}
                   {filters.tag && <span>#{cn(filters.tag)}</span>}
+                  {filters.minimumScore && <span>{filters.minimumScore} 分以上</span>}
                   <span>{sorts.find((item) => item[0] === filters.sort)?.[1]}</span>
                 </div>
               )}
@@ -931,28 +706,29 @@ export function AnimeDiscovery({
                     onDetail={setDetail}
                   />
                 ))}
+                {(discoveryView === "schedule" ? scheduleLoading : loading) &&
+                  !displayedAll.length &&
+                  Array.from({ length: 6 }, (_, index) => (
+                    <div aria-hidden="true" className="anime-catalogue-card anime-catalogue-skeleton" key={index} />
+                  ))}
               </div>
               {!scheduleLoading &&
                 discoveryView === "schedule" &&
                 !displayedAll.length && (
-                  <p className="anime-catalogue-end">
-                    這一天暫時沒有可顯示的播出資料。
-                  </p>
+                  <div className="anime-catalogue-end">週{["日", "一", "二", "三", "四", "五", "六"][scheduleDay]}目前沒有符合條件的播出作品。<button className="secondary-button compact" onClick={() => setScheduleDay(new Date().getDay())} type="button">回到今天</button></div>
                 )}
-              {(discoveryView === "schedule" ? scheduleLoading : loading) && (
-                <p className="anime-catalogue-loading">正在載入動漫…</p>
-              )}
               {discoveryView !== "schedule" && <div className="anime-catalogue-sentinel" ref={sentinel} />}
               {discoveryView !== "schedule" && !loading && !hasMore && all.length > 0 && (
                 <p className="anime-catalogue-end">已經到底了。</p>
               )}
               {discoveryView !== "schedule" && !loading && !all.length && !error && (
-                <p className="anime-catalogue-end">目前沒有符合條件的動漫，請調整季度或篩選條件。</p>
+                <div className="anime-catalogue-end">
+                  <p>{catalogueSearch ? `找不到「${catalogueSearch}」` : "找不到符合目前篩選條件的動漫。"}</p>
+                  <button className="secondary-button compact" onClick={clearSearchOrFilters} type="button">{catalogueSearch ? "清除搜尋" : "清除篩選"}</button>
+                </div>
               )}
-            </>
-          )}
-        </>
-      )}
+        </div>
+      </div>
       {detail && (
         <Detail
           anime={detail}
@@ -1071,6 +847,23 @@ export function AnimeDiscovery({
             </select>
           </label>
           <label>
+            最低評分
+            <select
+              onChange={(event) =>
+                setFilterDraft((currentFilters) => ({
+                  ...currentFilters,
+                  minimumScore: event.target.value ? Number(event.target.value) : null,
+                }))
+              }
+              value={filterDraft.minimumScore ?? ""}
+            >
+              <option value="">不限評分</option>
+              <option value="7">7 分以上</option>
+              <option value="8">8 分以上</option>
+              <option value="9">9 分以上</option>
+            </select>
+          </label>
+          <label>
             播出狀態
             <select
               onChange={(event) =>
@@ -1117,6 +910,7 @@ export function AnimeDiscovery({
                   tag: "",
                   format: "",
                   status: "",
+                  minimumScore: null,
                   sort: "POPULARITY_DESC",
                 })
               }
@@ -1130,54 +924,28 @@ export function AnimeDiscovery({
           </div>
         </div>
       </ModalDialog>
+      <ModalDialog className="anime-discovery-filter-dialog" onClose={() => setScheduleFilterOpen(false)} open={scheduleFilterOpen} title="篩選時間表">
+        <div className="anime-filter-sheet">
+          <label>播出狀態
+            <select onChange={(event) => setScheduleStatus(event.target.value as typeof scheduleStatus)} value={scheduleStatus}>
+              <option value="all">全部</option>
+              <option value="releasing">連載中</option>
+              <option value="collected">已收藏</option>
+              <option value="uncollected">未收藏</option>
+            </select>
+          </label>
+          <label>格式
+            <select onChange={(event) => setScheduleFormat(event.target.value)} value={scheduleFormat}>
+              {formats.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <div className="dialog-actions"><button className="button" onClick={() => setScheduleFilterOpen(false)} type="button">完成</button></div>
+        </div>
+      </ModalDialog>
     </section>
   );
 }
 
-function Rail({
-  title,
-  items,
-  loading,
-  hasItem,
-  onAdd,
-  onDetail,
-}: {
-  title: string;
-  items: ExternalAnime[];
-  loading: boolean;
-  hasItem: (anime: ExternalAnime) => boolean;
-  onAdd: (anime: ExternalAnime) => void | Promise<void>;
-  onDetail: (anime: ExternalAnime) => void;
-}) {
-  return (
-    <section className="anime-rail-section">
-      <div className="anime-rail-heading">
-        <h2>{title}</h2>
-        <span>
-          {loading
-            ? "載入中…"
-            : items.length
-              ? String(items.length) + " 部"
-              : "目前沒有作品"}
-        </span>
-      </div>
-      <AnimeHorizontalScroller aria-label={title} className="anime-rail">
-        {items.map((anime) => (
-          <Card
-            anime={anime}
-            added={hasItem(anime)}
-            key={anime.id}
-            onAdd={onAdd}
-            onDetail={onDetail}
-          />
-        ))}
-        {!loading && !items.length && (
-          <p className="anime-rail-empty">暫時沒有可顯示的作品。</p>
-        )}
-      </AnimeHorizontalScroller>
-    </section>
-  );
-}
 function Card({
   anime,
   added,

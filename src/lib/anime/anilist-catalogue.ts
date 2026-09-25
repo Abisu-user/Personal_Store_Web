@@ -22,8 +22,9 @@ export type CatalogueFilters = {
   seasonYear?: number;
   genre?: string;
   tag?: string;
-  format?: "TV" | "MOVIE" | "OVA" | "ONA" | "SPECIAL";
+  format?: "TV" | "TV_SHORT" | "MOVIE" | "OVA" | "ONA" | "SPECIAL";
   status?: "RELEASING" | "FINISHED" | "NOT_YET_RELEASED";
+  minimumScore?: number;
   sort?:
     | "POPULARITY_DESC"
     | "SCORE_DESC"
@@ -89,6 +90,7 @@ function buildCatalogueQuery(filters: CatalogueFilters) {
   add("tag", "String", filters.tag);
   add("format", "MediaFormat", filters.format);
   add("status", "MediaStatus", filters.status);
+  add("averageScore_greater", "Int", filters.minimumScore === undefined ? undefined : filters.minimumScore * 10 - 1);
   add("search", "String", filters.search);
 
   return `query AnimeCatalogue(${variableTypes.join(", ")}) {
@@ -245,6 +247,7 @@ export async function getCatalogue(
     tag: filters.tag,
     format: filters.format,
     status: filters.status,
+    averageScore_greater: filters.minimumScore === undefined ? undefined : filters.minimumScore * 10 - 1,
     search: filters.search,
   })) {
     if (value !== undefined && value !== null && value !== "")
@@ -261,7 +264,6 @@ export async function getCatalogue(
         adult: Boolean(filters.includeAdult),
       },
     );
-    if (!filters.includeAdult) throw cause;
     if (filters.includeAdult)
       return getShikimoriCatalogue({ ...filters, page, perPage });
     try {

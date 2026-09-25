@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { useHorizontalWheelScroll } from "./use-horizontal-wheel-scroll";
 
 type ResponsiveChipOverflowProps<T> = {
   activeId?: string | null;
@@ -15,6 +16,7 @@ type ResponsiveChipOverflowProps<T> = {
   renderItem: (item: T) => ReactNode;
   renderMore: (hasHiddenActive: boolean) => ReactNode;
   rowClassName?: string;
+  scrollOnDesktop?: boolean;
   /** Number of fixed chips rendered after items (for example: 垃圾桶). */
   trailingCount?: number;
   trailing?: ReactNode;
@@ -26,8 +28,9 @@ type ResponsiveChipOverflowProps<T> = {
  * calculation, so changing the visible row can never lose the dimensions that
  * are needed to decide whether the "更多" button is required.
  */
-export function ResponsiveChipOverflow<T>({ activeId, activeIds = [], className, leading, leadingCount = 0, items, itemId, itemMeasureKey, renderItem, renderMore, rowClassName, trailing, trailingCount = 0 }: ResponsiveChipOverflowProps<T>) {
+export function ResponsiveChipOverflow<T>({ activeId, activeIds = [], className, leading, leadingCount = 0, items, itemId, itemMeasureKey, renderItem, renderMore, rowClassName, scrollOnDesktop = false, trailing, trailingCount = 0 }: ResponsiveChipOverflowProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
+  useHorizontalWheelScroll(rootRef, scrollOnDesktop);
   const measureRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(items.length);
   const signature = items.map((item) => `${itemId(item)}:${itemMeasureKey?.(item) ?? ""}`).join("|");
@@ -40,6 +43,10 @@ export function ResponsiveChipOverflow<T>({ activeId, activeIds = [], className,
     const scope = root.closest<HTMLElement>("[data-chip-overflow-container]") ?? root.parentElement;
     const actions = scope?.querySelector<HTMLElement>("[data-chip-overflow-actions]") ?? null;
     const recalculate = () => {
+      if (scrollOnDesktop && window.matchMedia("(min-width: 701px)").matches) {
+        setVisibleCount((current) => current === items.length ? current : items.length);
+        return;
+      }
       const rootBox = root.getBoundingClientRect();
       const sharesRailWithActions = Boolean(actions && actions.parentElement === root.parentElement);
       const actionWidth = sharesRailWithActions ? actions?.getBoundingClientRect().width ?? 0 : 0;
@@ -85,9 +92,9 @@ export function ResponsiveChipOverflow<T>({ activeId, activeIds = [], className,
     let active = true;
     void document.fonts?.ready.then(() => { if (active) recalculate(); });
     return () => { active = false; observer.disconnect(); };
-  }, [leadingCount, items.length, signature, trailingCount]);
+  }, [leadingCount, items.length, scrollOnDesktop, signature, trailingCount]);
 
-  return <div className={`responsive-chip-overflow${className ? ` ${className}` : ""}`} ref={rootRef}>
+  return <div className={`responsive-chip-overflow${scrollOnDesktop ? " scrollable-desktop" : ""}${className ? ` ${className}` : ""}`} ref={rootRef}>
     <div className={`responsive-chip-overflow-row${rowClassName ? ` ${rowClassName}` : ""}`}>
       {leading}
       {items.slice(0, visibleCount).map(renderItem)}
