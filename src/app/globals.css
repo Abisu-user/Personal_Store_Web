@@ -2007,8 +2007,7 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 .modal-dialog-backdrop:has(.collection-category-manager) .taxonomy-manager-list::-webkit-scrollbar { width: 0; height: 0; }
 @media (min-width: 701px) {
   .anime-discovery-layout { display: grid; grid-template-columns: clamp(190px, 20vw, 245px) minmax(0, 1fr); align-items: start; gap: clamp(14px, 2vw, 24px); }
-  .anime-desktop-filter-rail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
-  .anime-discovery-filter-rail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+  .anime-desktop-filter-rail { position: sticky; top: 16px; max-height: min(72dvh, calc(100dvh - 32px)); overflow-y: auto; overscroll-behavior: contain; }
   .anime-discovery-mobile-filter, .anime-discovery-results > .anime-schedule-days { display: none; }
   .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] { display: grid; gap: 8px; }
   .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > header,
@@ -2017,8 +2016,11 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-workspace .responsive-chip-overflow.scrollable-desktop { overflow-x: auto; overflow-y: hidden; }
   .anime-workspace .responsive-chip-overflow.scrollable-desktop > .responsive-chip-overflow-row:not(.responsive-chip-overflow-measure) { width: max-content; max-width: none; min-width: 100%; overflow: visible !important; }
   .anime-library-main > .anime-filter-bar .anime-library-search-mobile:not(.anime-library-search-trash) { display: none; }
-  .anime-bulk-toolbar-search { flex: 0 1 390px; min-width: 200px; margin-left: auto; }
-  .anime-bulk-toolbar-search input { width: 100%; }
+  .anime-bulk-toolbar-search { flex: 1 1 220px; min-width: 0; margin-left: auto; }
+  .anime-library-search-box { width: 100%; max-width: none; min-height: 46px; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; padding: 0 12px; border-color: var(--line); border-radius: 13px; background: color-mix(in srgb, var(--surface) 91%, transparent); transition: border-color 180ms ease, box-shadow 180ms ease; }
+  .anime-library-search-box:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent); }
+  .anime-library-search-box > .app-icon { width: 18px; height: 18px; }
+  .anime-library-search-box input { width: 100%; min-width: 0; min-height: 44px; padding: 0; outline: 0; }
 }
 @media (min-width: 821px) {
   .anime-standard-library-layout .anime-library-primary-filter-bar { display: none; }

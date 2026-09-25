@@ -2208,14 +2208,17 @@ export function AnimeWorkspace({
                     setSelected(anime);
                   }}
                   onStatusChange={updateWatchStatus}
-                  searchInput={<input
-                    aria-label="搜尋自己的動漫"
-                    className="anime-library-search-field"
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="搜尋名稱、類別或備註"
-                    ref={desktopLibrarySearch}
-                    value={query}
-                  />}
+                  searchInput={<div className="anime-search-box anime-library-search-box">
+                    <AppIcon name="search" />
+                    <input
+                      aria-label="搜尋自己的動漫"
+                      className="anime-library-search-field"
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="搜尋名稱、類別或備註"
+                      ref={desktopLibrarySearch}
+                      value={query}
+                    />
+                  </div>}
                   scope="standard"
                 />
               )}

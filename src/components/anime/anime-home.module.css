@@ -132,31 +132,25 @@
   .card { transition: transform 190ms cubic-bezier(.2,.8,.2,1), box-shadow 190ms cubic-bezier(.2,.8,.2,1); }
   .card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px color-mix(in srgb, var(--ink) 14%, transparent); }
   .rail {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+    display: flex;
+    flex-flow: row nowrap;
     align-items: stretch;
     gap: 12px;
-    overflow: visible;
-    padding: 2px;
-    scroll-snap-type: none;
-    touch-action: auto;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 12px 8px 2px;
+    scroll-snap-type: x proximity;
   }
-  .rail > :nth-child(n + 7) { display: none; }
   .rail .card, .rail .skeleton {
-    width: auto;
-    min-width: 0;
-    height: 100%;
-    flex: none;
-    scroll-snap-align: none;
+    width: 210px;
+    min-width: 210px;
+    flex: 0 0 210px;
   }
   .rail .cover { aspect-ratio: 16 / 9; }
 }
 @media (max-width: 700px) {
   .heroActions { display: none; }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 701px) and (max-width: 1100px) {
-  .rail > :nth-child(n + 5) { display: none; }
 }
 .card {
   display: grid;
