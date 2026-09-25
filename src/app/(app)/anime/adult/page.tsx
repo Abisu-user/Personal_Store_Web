@@ -14,5 +14,5 @@ export default async function AdultAnimePage() {
   const permissions = await getAdultContentPermissions(user.id);
   if (!permissions.adultContentAccess) redirect("/anime");
 
-  return <main className={`dashboard anime-dashboard ${collectionStyles.collectionPage} ${styles.animePage}`}><section className="dashboard-card"><div className="page-heading anime-page-heading"><div><p className="eyebrow">ANIME LIBRARY</p><h1>動漫收藏</h1><p>搜尋 Anime Database，一鍵加入並記錄每一部作品的觀看進度。</p></div></div><AnimeWorkspace initialAdultOpen /></section></main>;
+  return <main className={`dashboard anime-dashboard ${collectionStyles.collectionPage} ${styles.animePage}`}><section className="dashboard-card"><AnimeWorkspace initialAdultOpen /></section></main>;
 }

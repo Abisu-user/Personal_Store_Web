@@ -53,6 +53,8 @@
   gap: 9px;
   margin: 0;
 }
+.heroActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.heroActions button { min-height: 38px; }
 .stats div {
   min-width: 0;
   padding: 12px 14px;
@@ -124,7 +126,37 @@
   display: none;
 }
 @media (min-width: 701px) {
-  .rail { scroll-snap-type: x proximity; }
+  .home { width: min(100%, 1520px); }
+  .hero { padding: 18px 22px; }
+  .hero h2 { font-size: clamp(1.45rem, 2vw, 1.9rem); }
+  .card { transition: transform 190ms cubic-bezier(.2,.8,.2,1), box-shadow 190ms cubic-bezier(.2,.8,.2,1); }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px color-mix(in srgb, var(--ink) 14%, transparent); }
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+    align-items: stretch;
+    gap: 12px;
+    overflow: visible;
+    padding: 2px;
+    scroll-snap-type: none;
+    touch-action: auto;
+  }
+  .rail > :nth-child(n + 7) { display: none; }
+  .rail .card, .rail .skeleton {
+    width: auto;
+    min-width: 0;
+    height: 100%;
+    flex: none;
+    scroll-snap-align: none;
+  }
+  .rail .cover { aspect-ratio: 16 / 9; }
+}
+@media (max-width: 700px) {
+  .heroActions { display: none; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  .rail > :nth-child(n + 5) { display: none; }
 }
 .card {
   display: grid;

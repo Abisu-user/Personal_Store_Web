@@ -324,6 +324,14 @@ export function AnimeDiscovery({
 }) {
   const current = useMemo(() => nowSeason(), []);
   const next = useMemo(() => followingSeason(), []);
+  const seasonChoices = useMemo(() => {
+    const keys = seasons.map((item) => item.key);
+    const currentIndex = current.year * 4 + keys.indexOf(current.season);
+    return [-2, -1, 0, 1, 2].map((offset) => {
+      const index = currentIndex + offset;
+      return { year: Math.floor(index / 4), season: keys[((index % 4) + 4) % 4] };
+    });
+  }, [current]);
   const [thisSeason, setThisSeason] = useState<ExternalAnime[]>([]);
   const [nextSeason, setNextSeason] = useState<ExternalAnime[]>([]);
   const [popular, setPopular] = useState<ExternalAnime[]>([]);
@@ -688,6 +696,33 @@ export function AnimeDiscovery({
           </button>
         </div>
       )}
+      {!adultMode && discoveryView === "season" && (
+        <nav aria-label="切換新番季度" className="anime-season-switcher">
+          <span>季度速覽</span>
+          <div>
+            {seasonChoices.map(({ year, season }) => (
+              <button
+                aria-current={screen === "all" && filters.year === year && filters.season === season ? "page" : undefined}
+                className={screen === "all" && filters.year === year && filters.season === season ? "active" : ""}
+                key={`${year}-${season}`}
+                onClick={() => {
+                  const value: Filters = { year, season, genre: "", tag: "", format: "", status: "", sort: "POPULARITY_DESC" };
+                  setCatalogueSearch("");
+                  setCatalogueSearchInput("");
+                  setFilters(value);
+                  setFilterDraft(value);
+                  seen.current = "";
+                  setScreen("all");
+                }}
+                type="button"
+              >
+                {seasonName(season, year)}
+              </button>
+            ))}
+            {screen === "all" && <button onClick={() => selectDiscoveryView("season")} type="button">返回本季概覽</button>}
+          </div>
+        </nav>
+      )}
       {error && (
         <div className="notice error anime-catalogue-error">
           <span>{error}</span>
@@ -752,7 +787,9 @@ export function AnimeDiscovery({
                   ? "本週播出時間表"
                   : discoveryView === "updates"
                     ? "探索動漫"
-                    : "搜尋與全部動漫"}
+                    : filters.season && filters.year
+                      ? seasonName(filters.season, filters.year)
+                      : "搜尋與全部動漫"}
               </h2>
               <p>
                 {discoveryView === "schedule"
@@ -909,6 +946,9 @@ export function AnimeDiscovery({
               {discoveryView !== "schedule" && !loading && !hasMore && all.length > 0 && (
                 <p className="anime-catalogue-end">已經到底了。</p>
               )}
+              {discoveryView !== "schedule" && !loading && !all.length && !error && (
+                <p className="anime-catalogue-end">目前沒有符合條件的動漫，請調整季度或篩選條件。</p>
+              )}
             </>
           )}
         </>
@@ -925,6 +965,7 @@ export function AnimeDiscovery({
         />
       )}
       <ModalDialog
+        className="anime-discovery-filter-dialog"
         onClose={() => setFilterOpen(false)}
         open={filterOpen}
         title="篩選動漫"

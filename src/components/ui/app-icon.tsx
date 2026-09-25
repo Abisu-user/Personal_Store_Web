@@ -4,7 +4,7 @@ export type AppIconName =
   | "anime" | "appearance" | "bookmark" | "calendar" | "code"
   | "database" | "download" | "file" | "folder" | "home" | "lock" | "logout" | "more"
   | "music" | "note" | "organize" | "photo" | "plus" | "profile" | "search"
-  | "security" | "settings" | "storage" | "tag" | "vocabulary";
+  | "security" | "settings" | "storage" | "tag" | "trash" | "vocabulary";
 
 const paths: Record<AppIconName, React.ReactNode> = {
   home: <><path d="M3 10.8 12 3l9 7.8"/><path d="M5.4 9.4V21h13.2V9.4M9 21v-7h6v7"/></>,
@@ -14,6 +14,7 @@ const paths: Record<AppIconName, React.ReactNode> = {
   file: <><path d="M5 2h9l5 5v15H5z"/><path d="M14 2v6h5M8 13h8M8 17h8"/></>,
   folder: <path d="M3 7a2.5 2.5 0 0 1 2.5-2.5H10l2 2h6.5A2.5 2.5 0 0 1 21 9v8.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5Z"/>,
   tag: <><path d="M3 11V4h7l11 11-7 7Z"/><circle cx="7.5" cy="8" r="1"/></>,
+  trash: <><path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6"/></>,
   photo: <><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m4 17 5-5 3.5 3.5 2.5-2.5 5 5"/></>,
   vocabulary: <><path d="M4 5h7v14H4zM13 5h7v14h-7z"/><path d="M7.5 8v8M16.5 8v8M5.5 11h4M14.5 12h4"/></>,
   anime: <><rect x="3" y="4" width="18" height="16" rx="3"/><path d="m10 9 6 3-6 3Z"/></>,

@@ -73,11 +73,13 @@ function isToday(timestamp: number | undefined) {
 export function AnimeHome({
   library,
   onAdd,
+  onOpenLibrary,
   onOpenSchedule,
   onOpenSeason,
 }: {
   library: AnimeLibraryItem[];
   onAdd: (anime: ExternalAnime) => void | Promise<void>;
+  onOpenLibrary: () => void;
   onOpenSchedule: () => void;
   onOpenSeason: () => void;
 }) {
@@ -148,6 +150,10 @@ export function AnimeHome({
           </p>
           <h2>本季新番與追番資訊</h2>
           <p>快速查看近期播出、今天更新與自己追蹤中的作品。</p>
+          <div className={styles.heroActions}>
+            <button className="button compact" onClick={onOpenSeason} type="button">查看本季新番</button>
+            <button className="secondary-button compact" onClick={onOpenLibrary} type="button">我的收藏</button>
+          </div>
         </div>
         <dl className={styles.stats}>
           <div>

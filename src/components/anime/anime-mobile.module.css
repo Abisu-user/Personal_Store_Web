@@ -23,9 +23,9 @@
   .animePage :global(.anime-toolbar > .anime-tabs) { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; width: 100%; padding: 0; overflow: visible; }
   .animePage :global(.anime-toolbar > .anime-tabs.has-adult) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .animePage :global(.anime-toolbar > .anime-tabs button) { width: 100%; min-height: 44px; min-width: 0; padding: 0 3px; border-radius: 12px; font-size: clamp(.67rem, 2.7vw, .76rem); white-space: nowrap; }
-  .animePage :global(.anime-workspace > .anime-filter-bar) { gap: 8px; }
-  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-filter-scroll) { gap: 5px; padding: 0; }
-  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-filter-scroll > button) { min-height: 44px; min-width: 44px; padding: 0 10px; border-radius: 999px; font-size: .73rem; }
+  .animePage :global(.anime-library-main > .anime-filter-bar) { gap: 8px; }
+  .animePage :global(.anime-library-main > .anime-filter-bar > .anime-filter-scroll) { gap: 5px; padding: 0; }
+  .animePage :global(.anime-library-main > .anime-filter-bar > .anime-filter-scroll > button) { min-height: 44px; min-width: 44px; padding: 0 10px; border-radius: 999px; font-size: .73rem; }
   .animePage :global(.anime-grid) { gap: 10px; }
   .animePage :global(.anime-grid > .anime-card) { border-radius: 18px; box-shadow: var(--shadow-card); }
   .animePage :global(.anime-card-main) { padding: 7px; gap: 8px; }
@@ -40,12 +40,14 @@
   .animePage :global(.anime-card-source-links .anime-card-link) { margin: 0; }
   .episodeProgress { display: block; margin-top: 6px; color: var(--muted); font-size: .68rem; }
   :global(html[data-density="compact"]) .animePage :global(.anime-grid) { gap: 8px; }
-  .animePage :global(.anime-workspace > .anime-folder-navigation[data-anime-scope="standard"]),
-  .animePage :global(.anime-workspace > .anime-category-bar[data-anime-scope="standard"]) { display: none; }
-  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-filter-scroll > .anime-mobile-filter) { display: inline-flex !important; min-width: max-content; min-height: 44px; align-items: center; justify-content: center; gap: 5px; padding-inline: 11px; }
+  .animePage :global(.anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > header),
+  .animePage :global(.anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > .responsive-chip-overflow),
+  .animePage :global(.anime-library-main > .anime-category-bar[data-anime-scope="standard"]) { display: none; }
+  .animePage :global(.anime-library-main > .anime-folder-navigation[data-anime-scope="standard"]) { display: contents; }
+  .animePage :global(.anime-library-main > .anime-filter-bar > .anime-filter-scroll > .anime-mobile-filter) { display: inline-flex !important; min-width: max-content; min-height: 44px; align-items: center; justify-content: center; gap: 5px; padding-inline: 11px; }
   .animePage :global(.anime-filter-scroll > .anime-mobile-filter .app-icon) { width: 15px; height: 15px; }
-  .animePage :global(.anime-workspace > .anime-filter-bar > input) { grid-column: 1; min-height: 44px; }
-  .animePage :global(.anime-workspace > .anime-filter-bar > .anime-library-search-field) { display: none; }
+  .animePage :global(.anime-library-main > .anime-filter-bar > input) { grid-column: 1; min-height: 44px; }
+  .animePage :global(.anime-library-main > .anime-filter-bar > .anime-library-search-field) { display: none; }
   .animePage :global(.anime-card-quick-status) { padding: 0 8px 8px; }
   .animePage :global(.anime-card-quick-status label) { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px; color: var(--muted); font-size: .67rem; font-weight: 750; }
   .animePage :global(.anime-card-quick-status select) { min-width: 0; min-height: 36px; padding: 0 23px 0 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: var(--surface); font: inherit; font-size: .7rem; }

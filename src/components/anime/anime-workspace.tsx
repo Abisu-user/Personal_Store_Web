@@ -14,6 +14,8 @@ import {
 } from "@/components/content/cover-image-field";
 import { AnimeDiscovery } from "@/components/anime/anime-discovery";
 import { AnimeHome } from "@/components/anime/anime-home";
+import { AnimeHeader } from "@/components/anime/anime-header";
+import { AnimeDesktopFilterRail } from "@/components/anime/anime-desktop-filter-rail";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { ResponsiveChipOverflow } from "@/components/ui/responsive-chip-overflow";
@@ -294,6 +296,7 @@ function AnimeFolderNavigation({
   collectionLayout = false,
   compactOnMobile = false,
   manageSignal = 0,
+  addSignal = 0,
   trashCount = 0,
   trashSelected = false,
 }: {
@@ -310,6 +313,7 @@ function AnimeFolderNavigation({
   compactOnMobile?: boolean;
   /** Allows the mobile filter sheet to open the existing manager without duplicating it. */
   manageSignal?: number;
+  addSignal?: number;
   trashCount?: number;
   trashSelected?: boolean;
 }) {
@@ -336,6 +340,10 @@ function AnimeFolderNavigation({
     setError(null);
     setManaging(true);
   };
+  const openAdd = () => {
+    setError(null);
+    setAdding(true);
+  };
   const previousManageSignal = useRef(manageSignal);
   useEffect(() => {
     if (manageSignal === previousManageSignal.current) return;
@@ -344,6 +352,14 @@ function AnimeFolderNavigation({
   // `openManager` intentionally captures the latest folders whenever the signal changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manageSignal]);
+  const previousAddSignal = useRef(addSignal);
+  useEffect(() => {
+    if (addSignal === previousAddSignal.current) return;
+    previousAddSignal.current = addSignal;
+    openAdd();
+  // The action signal intentionally opens this component's existing dialog.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addSignal]);
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!name.trim()) return;
@@ -925,6 +941,8 @@ export function AnimeWorkspace({
   const [adultFolderFilters, setAdultFolderFilters] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const librarySearch = useRef<HTMLInputElement>(null);
+  const desktopLibrarySearch = useRef<HTMLInputElement>(null);
+  const adultLibrarySearch = useRef<HTMLInputElement>(null);
   const [librarySearchOpen, setLibrarySearchOpen] = useState(false);
   const [adultQuery, setAdultQuery] = useState("");
   const [pending, setPending] = useState<string | null>(null);
@@ -948,6 +966,9 @@ export function AnimeWorkspace({
   const [categoryQuery, setCategoryQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
   const [folderManageSignal, setFolderManageSignal] = useState(0);
+  const [adultFolderManageSignal, setAdultFolderManageSignal] = useState(0);
+  const [folderAddSignal, setFolderAddSignal] = useState(0);
+  const [adultFolderAddSignal, setAdultFolderAddSignal] = useState(0);
   const [libraryFilterDraft, setLibraryFilterDraft] = useState<{
     folderIds: string[];
     categoryIds: string[];
@@ -1680,58 +1701,23 @@ export function AnimeWorkspace({
         )}
         </div>
       </div>
-      <div className="anime-toolbar">
-        <div className={`anime-tabs bookmark-view-tabs${hasAdultAccess ? " has-adult" : ""}`} role="tablist" aria-label="動漫功能">
-          <button
-            className={tab === "home" ? "active" : ""}
-            onClick={() => setTab("home")}
-            type="button"
-          >
-            首頁
-          </button>
-          <button
-            className={tab === "library" ? "active" : ""}
-            onClick={() => setTab("library")}
-            type="button"
-          >
-            我的收藏
-          </button>
-          <button
-            className={tab === "discover" ? "active" : ""}
-            onClick={() => setTab("discover")}
-            type="button"
-          >
-            探索
-          </button>
-          <button
-            className={tab === "stats" ? "active" : ""}
-            onClick={() => setTab("stats")}
-            type="button"
-          >
-            統計
-          </button>
-          {hasAdultAccess && (
-            <button
-              className={tab === "adult" ? "active" : ""}
-              onClick={() => void openAdult()}
-              type="button"
-            >
-              成人內容
-            </button>
-          )}
-        </div>
-        <div className="anime-toolbar-actions">
-          {(tab !== "adult" || adultUnlocked) && (
-            <button
-              className="button compact page-create-button anime-create-button"
-              onClick={() => setAdding(true)}
-              type="button"
-            >
-              ＋ {tab === "adult" ? "新增成人作品" : "新增動漫"}
-            </button>
-          )}
-        </div>
-      </div>
+      <AnimeHeader
+        activeTab={tab}
+        adultUnlocked={adultUnlocked}
+        hasAdultAccess={hasAdultAccess}
+        onCreate={() => setAdding(true)}
+        onOpenAdult={() => void openAdult()}
+        onSearch={() => {
+          if (tab === "adult" && adultUnlocked) {
+            setAdultView("library");
+            window.requestAnimationFrame(() => adultLibrarySearch.current?.focus());
+          } else {
+            setTab("library");
+            window.requestAnimationFrame(() => desktopLibrarySearch.current?.focus());
+          }
+        }}
+        onSelectTab={setTab}
+      />
       {notice && (
         <div className="notice success anime-notice">
           <span>{notice}</span>
@@ -1748,6 +1734,7 @@ export function AnimeWorkspace({
         <AnimeHome
           library={data.library}
           onAdd={(anime) => quickAddExternal(anime)}
+          onOpenLibrary={() => setTab("library")}
           onOpenSchedule={() => { setDiscoveryView("schedule"); setTab("discover"); }}
           onOpenSeason={() => { setDiscoveryView("season"); setTab("discover"); }}
         />
@@ -1763,6 +1750,26 @@ export function AnimeWorkspace({
       )}
       {tab === "adult" && !adultLoading && adultUnlocked && adultData && (
         <section className="anime-adult-workspace">
+          <div className={adultView === "library" ? "anime-library-layout" : "anime-adult-explore-layout"}>
+          {adultView === "library" && (
+            <AnimeDesktopFilterRail
+              categoryFilters={adultCategoryFilters}
+              categories={adultScopedTags}
+              folderFilters={adultFolderFilters}
+              folders={adultData.folders}
+              items={adultData.library}
+              onAddCategory={() => setCategoryAddOpen(true)}
+              onAddFolder={() => setAdultFolderAddSignal((value) => value + 1)}
+              onCategoryChange={setAdultCategoryFilters}
+              onFolderChange={(ids) => { setAdultLibraryView("library"); setAdultFolderFilters(ids); }}
+              onManageCategories={() => setCategoryManageScope("adult")}
+              onManageFolders={() => setAdultFolderManageSignal((value) => value + 1)}
+              onTrash={() => { setAdultFolderFilters([]); setAdultCategoryFilters([]); void openTrash("adult"); }}
+              trashCount={adultTrashData?.library.length ?? 0}
+              trashSelected={adultLibraryView === "trash"}
+            />
+          )}
+          <div className="anime-library-main">
           <div className="anime-filter-bar anime-adult-filter-bar">
             <div className="anime-filter-scroll">
               <div
@@ -1808,11 +1815,13 @@ export function AnimeWorkspace({
                   aria-label="搜尋成人動漫"
                   onChange={(event) => setAdultQuery(event.target.value)}
                   placeholder="搜尋成人動漫"
+                  ref={adultLibrarySearch}
                   value={adultQuery}
                 />
             )}
           </div>
           <AnimeFolderNavigation
+            addSignal={adultFolderAddSignal}
             collectionLayout
             folders={adultData.folders}
             inline
@@ -1826,6 +1835,7 @@ export function AnimeWorkspace({
                 current ? { ...current, folders } : current,
               )
             }
+            manageSignal={adultFolderManageSignal}
             onTrash={() => {
               setAdultView("library");
               setAdultFolderFilters([]);
@@ -1944,6 +1954,8 @@ export function AnimeWorkspace({
               onAdd={(anime) => quickAddExternal(anime, true)}
             />
           )}
+          </div>
+          </div>
         </section>
       )}
       {tab === "adult" && adultUnlocked && adultData && (
@@ -2053,6 +2065,26 @@ export function AnimeWorkspace({
       )}
       {tab === "library" && (
         <>
+          <div className="anime-library-layout">
+          <AnimeDesktopFilterRail
+            categoryFilters={categoryFilters}
+            categories={standardScopedTags}
+            folderFilters={folderFilters}
+            folders={data.folders}
+            items={data.library}
+            onAddCategory={() => setCategoryAddOpen(true)}
+            onAddFolder={() => setFolderAddSignal((value) => value + 1)}
+            onCategoryChange={setCategoryFilters}
+            onFolderChange={(ids) => { setLibraryView("library"); setFilter("all"); setFolderFilters(ids); }}
+            onManageCategories={() => setCategoryManageScope("standard")}
+            onManageFolders={() => setFolderManageSignal((value) => value + 1)}
+            onStatusChange={selectLibraryStatus}
+            onTrash={() => { setFilter("all"); setFolderFilters([]); setCategoryFilters([]); void openTrash("standard"); }}
+            selectedStatus={filter}
+            trashCount={trashData?.library.length ?? 0}
+            trashSelected={libraryView === "trash"}
+          />
+          <div className="anime-library-main">
           <div className="anime-filter-bar">
             <div className="anime-filter-scroll bookmark-view-tabs">
               {visibleFilters.map((value) => (
@@ -2082,10 +2114,12 @@ export function AnimeWorkspace({
               className="anime-library-search-field"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜尋名稱、類別或備註"
+              ref={desktopLibrarySearch}
               value={query}
             />
           </div>
           <AnimeFolderNavigation
+            addSignal={folderAddSignal}
             collectionLayout
             folders={data.folders}
             inline
@@ -2278,6 +2312,8 @@ export function AnimeWorkspace({
               trashed
             />
           )}
+          </div>
+          </div>
           <ModalDialog
             className="mobile-sheet-dialog"
             onClose={() => setFilterOpen(false)}
