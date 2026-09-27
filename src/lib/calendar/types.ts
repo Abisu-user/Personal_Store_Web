@@ -6,6 +6,12 @@ export type CalendarEvent = {
   endsAt: string | null;
   color: "indigo" | "blue" | "green" | "amber" | "rose";
   updatedAt: string;
+  eventDate: string;
+  eventTime: string | null;
+  allDay: boolean;
+  recurrenceType: "none" | "yearly";
 };
 
-export type CalendarWorkspaceData = { events: CalendarEvent[] };
+export type CalendarOccurrence = CalendarEvent & { occurrenceDate: string };
+
+export type CalendarWorkspaceData = { events: CalendarEvent[]; range: { from: string; to: string } };
