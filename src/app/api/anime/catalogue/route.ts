@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
   };
   try {
     return NextResponse.json(await getCatalogue(filters), {
-      headers: { "Cache-Control": "private, max-age=900" },
+      headers: { "Cache-Control": includeAdult ? "private, no-store" : "private, max-age=900" },
     });
   } catch (cause) {
     return NextResponse.json(

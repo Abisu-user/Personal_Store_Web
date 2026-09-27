@@ -1,6 +1,7 @@
 import "server-only";
 import type { ExternalAnime } from "@/lib/anime/types";
 import {
+  chineseSearchRelevance,
   isChineseAnimeSearch,
   localizeAnimeTitles,
   searchBangumiChineseCandidates,
@@ -244,7 +245,7 @@ function buildCandidateQuery(candidates: BangumiChineseCandidate[], filters: Cat
     definitions.push(`$${key}: ${candidate.malId ? "Int" : "String"}!`);
     variables[key] = candidate.malId ?? candidate.name;
     const identity = `${candidate.malId ? "idMal" : "search"}: $${key}`;
-    const argumentsList = ["type: ANIME", "countryOfOrigin: JP", "isAdult: false", identity, "sort: [SEARCH_MATCH]", ...mediaArguments];
+    const argumentsList = ["type: ANIME", "countryOfOrigin: JP", `isAdult: ${Boolean(filters.includeAdult)}`, identity, "sort: [SEARCH_MATCH]", ...mediaArguments];
     return `candidate${index}: Page(page: 1, perPage: 4) {
       media(${argumentsList.join(", ")}) { ...CandidateMedia }
     }`;
@@ -265,7 +266,7 @@ async function matchBangumiCandidates(candidates: BangumiChineseCandidate[], fil
       const rows = data[`candidate${index}`]?.media;
       const ranked = (Array.isArray(rows) ? rows : [])
         .map(mapAnime)
-        .filter((anime) => anime.id && !anime.isAdult && anime.countryOfOrigin === "JP")
+        .filter((anime) => anime.id && anime.isAdult === Boolean(filters.includeAdult) && anime.countryOfOrigin === "JP")
         .map((anime) => ({ anime, score: candidateMatchScore(candidate, anime) }))
         .filter(({ score }) => score >= 92)
         .sort((left, right) => right.score - left.score);
@@ -344,8 +345,9 @@ export async function getCatalogue(
     if (value !== undefined && value !== null && value !== "")
       variables[key] = value;
   }
-  const candidatesPromise = !filters.includeAdult && page === 1 && filters.search && isChineseAnimeSearch(filters.search)
-    ? searchBangumiChineseCandidates(filters.search)
+  const adultChineseSearch = Boolean(filters.includeAdult && filters.search && isChineseAnimeSearch(filters.search));
+  const candidatesPromise = (page === 1 || adultChineseSearch) && filters.search && isChineseAnimeSearch(filters.search)
+    ? searchBangumiChineseCandidates(filters.search, filters.includeAdult ? "adult" : "general")
     : null;
   let data: any;
   try {
@@ -383,10 +385,44 @@ export async function getCatalogue(
   const items: ExternalAnime[] = Array.isArray(data?.Page?.media)
     ? data.Page.media
         .map(mapAnime)
-        .filter((item: ExternalAnime) => item.id && item.countryOfOrigin === "JP")
+        .filter((item: ExternalAnime) => item.id && item.countryOfOrigin === "JP" && (!filters.includeAdult || item.isAdult))
     : [];
   const candidates = candidatesPromise ? await candidatesPromise : [];
   const matched = candidates.length ? await matchBangumiCandidates(candidates, filters) : [];
+  if (adultChineseSearch) {
+    const injectedIds = new Set(matched.map((anime) => anime.id));
+    const combined = new Map<string, ExternalAnime>();
+    for (const anime of items) {
+      // The candidate is shown on page one; do not repeat it on later pages.
+      if (page === 1 || !injectedIds.has(anime.id)) combined.set(anime.id, anime);
+    }
+    if (page === 1) {
+      const applied = new Set<string>();
+      for (const anime of matched) {
+        if (applied.has(anime.id)) continue;
+        applied.add(anime.id);
+        const original = combined.get(anime.id);
+        combined.set(anime.id, original ? { ...original, titleChinese: anime.titleChinese ?? original.titleChinese } : anime);
+      }
+    }
+    const localized = await localizeAnimeTitles([...combined.values()]);
+    const scored = page === 1 && filters.sort === "SEARCH_MATCH"
+      ? localized.map((anime, index) => ({
+        anime, index,
+        relevance: Math.max(
+          chineseSearchRelevance(filters.search!, [anime.titleChinese]) * 10,
+          chineseSearchRelevance(filters.search!, buildAnimeTitleAliases(anime)) * 5,
+        ),
+      })).sort((left, right) => right.relevance - left.relevance || left.index - right.index).map(({ anime }) => anime)
+      : localized;
+    return {
+      items: scored,
+      page: Number(info?.currentPage ?? page),
+      hasNextPage: Boolean(info?.hasNextPage),
+      total: Number(info?.total ?? 0) + (page === 1 ? Math.max(0, combined.size - items.length) : 0),
+      totalExact: matched.length === 0,
+    };
+  }
   // Keep every AniList page-one row; adding candidates must not make page two skip any.
   const combined = new Map<string, ExternalAnime>();
   if (filters.sort === "SEARCH_MATCH") matched.forEach((anime) => {

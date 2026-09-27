@@ -60,7 +60,7 @@ test("all six Traditional Chinese queries can add a strictly matched AniList res
   }
 });
 
-test("romanized searches and adult searches keep their original single AniList request", async () => {
+test("romanized searches, including adult, keep their original single AniList request", async () => {
   for (const search of ["Shingeki no Kyojin", "Kimetsu no Yaiba", "Dandadan"]) {
     const { catalogue, calls, bangumiCalls } = catalogueWith([], [media(101, "進撃の巨人", 2013, 25)], []);
     const result = await catalogue.getCatalogue({ search, sort: "SEARCH_MATCH", page: 1, perPage: 24 });
@@ -69,7 +69,7 @@ test("romanized searches and adult searches keep their original single AniList r
     assert.equal(bangumiCalls(), 0, search);
   }
   const adult = catalogueWith([], [media(102, "成人作品", 2024, 1, true)], []);
-  assert.equal((await adult.catalogue.getCatalogue({ search: "成人", includeAdult: true })).items[0].id, "102");
+  assert.equal((await adult.catalogue.getCatalogue({ search: "Adult Romaji", includeAdult: true })).items[0].id, "102");
   assert.equal(adult.calls.length, 1);
   assert.equal(adult.bangumiCalls(), 0);
 });

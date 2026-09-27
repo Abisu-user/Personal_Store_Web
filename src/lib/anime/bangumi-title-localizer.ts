@@ -75,7 +75,18 @@ function chineseRelevance(candidate: BangumiChineseCandidate, query: string) {
   return title.includes(needle) ? 1 : 0;
 }
 
-async function searchBangumiSubjects(keyword: string): Promise<BangumiChineseCandidate[]> {
+/** Shared script-insensitive ranking; identity matching remains separate. */
+export function chineseSearchRelevance(query: string, titles: Array<string | null | undefined>) {
+  const needle = canonical(toSimplified(query));
+  if (!needle) return 0;
+  return Math.max(0, ...titles.map((value) => {
+    const title = value ? canonical(toSimplified(value)) : "";
+    if (!title) return 0;
+    return title === needle ? 4 : title.startsWith(needle) ? 3 : title.includes(needle) ? 2 : 0;
+  }));
+}
+
+async function searchBangumiSubjects(keyword: string, adult: boolean): Promise<BangumiChineseCandidate[]> {
   const response = await fetch(`${BANGUMI_ROOT}/search/subjects?limit=10`, {
     method: "POST",
     headers: {
@@ -83,7 +94,7 @@ async function searchBangumiSubjects(keyword: string): Promise<BangumiChineseCan
       "Content-Type": "application/json",
       "User-Agent": "Personal-Vault/1.0 (traditional-title search)",
     },
-    body: JSON.stringify({ keyword, sort: "match", filter: { type: [2], nsfw: false } }),
+    body: JSON.stringify({ keyword, sort: "match", filter: { type: [2], nsfw: adult } }),
     signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
     cache: "no-store",
   });
@@ -92,7 +103,7 @@ async function searchBangumiSubjects(keyword: string): Promise<BangumiChineseCan
   return (Array.isArray(payload?.data) ? payload.data : []).flatMap((row) => {
     const id = Number(row.id);
     const name = clean(row.name);
-    if (!Number.isSafeInteger(id) || id <= 0 || !name || row.nsfw === true || (row.type != null && row.type !== 2)) return [];
+    if (!Number.isSafeInteger(id) || id <= 0 || !name || (!adult && row.nsfw === true) || (row.type != null && row.type !== 2)) return [];
     const date = clean(row.date);
     const malId = Number(row.mal_id);
     const episodes = Number(row.total_episodes ?? row.eps);
@@ -109,14 +120,14 @@ async function searchBangumiSubjects(keyword: string): Promise<BangumiChineseCan
 }
 
 /** Optional discovery candidates; failures never replace or block AniList results. */
-export function searchBangumiChineseCandidates(query: string): Promise<BangumiChineseCandidate[]> {
-  const key = query.trim().normalize("NFKC").toLocaleLowerCase();
+export function searchBangumiChineseCandidates(query: string, scope: "general" | "adult" = "general"): Promise<BangumiChineseCandidate[]> {
+  const key = `${scope}:${query.trim().normalize("NFKC").toLocaleLowerCase()}`;
   const cached = chineseSearchCache.get(key);
   if (cached && cached.until > Date.now()) return Promise.resolve(cached.candidates);
   const active = chineseSearchInFlight.get(key);
   if (active) return active;
   const keywords = unique([query.trim(), toSimplified(query.trim())]);
-  const task = Promise.allSettled(keywords.map(searchBangumiSubjects)).then((results) => {
+  const task = Promise.allSettled(keywords.map((keyword) => searchBangumiSubjects(keyword, scope === "adult"))).then((results) => {
     const found = new Map<number, BangumiChineseCandidate>();
     results.forEach((result) => {
       if (result.status === "fulfilled") result.value.forEach((candidate) => found.set(candidate.id, found.get(candidate.id) ?? candidate));
