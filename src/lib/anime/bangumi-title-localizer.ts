@@ -13,6 +13,8 @@ const LOOKUP_TIMEOUT_MS = 4_000;
 const FOUND_TTL_MS = 7 * 24 * 60 * 60_000;
 const MISS_TTL_MS = 3 * 60 * 60_000;
 const MAX_CONCURRENT_LOOKUPS = 4;
+const CHINESE_SEARCH_TTL_MS = 15 * 60_000;
+const CHINESE_SEARCH_LIMIT = 8;
 
 type LocalizableAnime = {
   id: string;
@@ -27,16 +29,110 @@ type LocalizableAnime = {
 };
 type CacheEntry = { until: number; title: string | null };
 type BangumiSubject = { name?: unknown; name_cn?: unknown };
+type BangumiSearchSubject = BangumiSubject & {
+  id?: unknown;
+  date?: unknown;
+  type?: unknown;
+  nsfw?: unknown;
+  mal_id?: unknown;
+  platform?: unknown;
+  eps?: unknown;
+  total_episodes?: unknown;
+};
+export type BangumiChineseCandidate = {
+  id: number;
+  name: string;
+  nameChinese: string | null;
+  year: number | null;
+  malId: number | null;
+  format: string | null;
+  episodes: number | null;
+};
 
 const toTraditional = OpenCC.Converter({ from: "cn", to: "tw" });
+const toSimplified = OpenCC.Converter({ from: "tw", to: "cn" });
 const titleCache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<string | null>>();
+const chineseSearchCache = new Map<string, { until: number; candidates: BangumiChineseCandidate[] }>();
+const chineseSearchInFlight = new Map<string, Promise<BangumiChineseCandidate[]>>();
 const queue: Array<() => void> = [];
 let activeLookups = 0;
 
 const clean = (value: unknown) => typeof value === "string" && value.trim() ? value.trim() : null;
 const canonical = (value: string) => value.normalize("NFKC").toLocaleLowerCase().replace(/[\s\p{P}\p{S}_]+/gu, "");
 const unique = (values: Array<string | null | undefined>) => [...new Set(values.map(clean).filter((value): value is string => Boolean(value)))];
+
+export function isChineseAnimeSearch(query: string) {
+  return /\p{Script=Han}/u.test(query) && !/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(query);
+}
+
+function chineseRelevance(candidate: BangumiChineseCandidate, query: string) {
+  const needle = canonical(toSimplified(query));
+  const title = canonical(toSimplified(candidate.nameChinese ?? candidate.name));
+  if (!needle || !title) return 0;
+  if (title === needle) return 3;
+  if (title.startsWith(needle)) return 2;
+  return title.includes(needle) ? 1 : 0;
+}
+
+async function searchBangumiSubjects(keyword: string): Promise<BangumiChineseCandidate[]> {
+  const response = await fetch(`${BANGUMI_ROOT}/search/subjects?limit=10`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "Personal-Vault/1.0 (traditional-title search)",
+    },
+    body: JSON.stringify({ keyword, sort: "match", filter: { type: [2], nsfw: false } }),
+    signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`Bangumi search returned ${response.status}`);
+  const payload = await response.json().catch(() => null) as { data?: BangumiSearchSubject[] } | null;
+  return (Array.isArray(payload?.data) ? payload.data : []).flatMap((row) => {
+    const id = Number(row.id);
+    const name = clean(row.name);
+    if (!Number.isSafeInteger(id) || id <= 0 || !name || row.nsfw === true || (row.type != null && row.type !== 2)) return [];
+    const date = clean(row.date);
+    const malId = Number(row.mal_id);
+    const episodes = Number(row.total_episodes ?? row.eps);
+    return [{
+      id,
+      name,
+      nameChinese: clean(row.name_cn) ? toTraditional(clean(row.name_cn)!) : null,
+      year: date && /^\d{4}/.test(date) ? Number(date.slice(0, 4)) : null,
+      malId: Number.isSafeInteger(malId) && malId > 0 ? malId : null,
+      format: clean(row.platform),
+      episodes: Number.isSafeInteger(episodes) && episodes > 0 ? episodes : null,
+    }];
+  });
+}
+
+/** Optional discovery candidates; failures never replace or block AniList results. */
+export function searchBangumiChineseCandidates(query: string): Promise<BangumiChineseCandidate[]> {
+  const key = query.trim().normalize("NFKC").toLocaleLowerCase();
+  const cached = chineseSearchCache.get(key);
+  if (cached && cached.until > Date.now()) return Promise.resolve(cached.candidates);
+  const active = chineseSearchInFlight.get(key);
+  if (active) return active;
+  const keywords = unique([query.trim(), toSimplified(query.trim())]);
+  const task = Promise.allSettled(keywords.map(searchBangumiSubjects)).then((results) => {
+    const found = new Map<number, BangumiChineseCandidate>();
+    results.forEach((result) => {
+      if (result.status === "fulfilled") result.value.forEach((candidate) => found.set(candidate.id, found.get(candidate.id) ?? candidate));
+      else console.warn("[anime-chinese-search] Bangumi candidate search unavailable", { message: result.reason instanceof Error ? result.reason.message : "unknown" });
+    });
+    const candidates = [...found.values()]
+      .filter((candidate) => chineseRelevance(candidate, query) > 0)
+      .sort((left, right) => chineseRelevance(right, query) - chineseRelevance(left, query))
+      .slice(0, CHINESE_SEARCH_LIMIT);
+    if (chineseSearchCache.size >= 100) chineseSearchCache.delete(chineseSearchCache.keys().next().value!);
+    chineseSearchCache.set(key, { until: Date.now() + (found.size ? CHINESE_SEARCH_TTL_MS : MISS_TTL_MS), candidates });
+    return candidates;
+  }).finally(() => chineseSearchInFlight.delete(key));
+  chineseSearchInFlight.set(key, task);
+  return task;
+}
 
 function cacheKey(anime: LocalizableAnime) {
   return `${anime.source ?? anime.externalSource ?? "unknown"}:${anime.externalId ?? anime.id}`;

@@ -1,6 +1,12 @@
 import "server-only";
 import type { ExternalAnime } from "@/lib/anime/types";
-import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
+import {
+  isChineseAnimeSearch,
+  localizeAnimeTitles,
+  searchBangumiChineseCandidates,
+  type BangumiChineseCandidate,
+} from "@/lib/anime/bangumi-title-localizer";
+import { buildAnimeTitleAliases, normalizeAnimeTitle } from "@/lib/anime/anime-title-matcher";
 import {
   getKitsuCatalogue,
   getKitsuTaxonomy,
@@ -67,6 +73,19 @@ const mediaFields = `
  * the active filters so an unfiltered "popular" request does not become an
  * impossible `season = null` query.
  */
+function activeMediaFilters(filters: CatalogueFilters) {
+  return [
+    ["season", "MediaSeason", filters.season],
+    ["seasonYear", "Int", filters.seasonYear],
+    ["genre", "String", filters.genre],
+    ["tag", "String", filters.tag],
+    ["format", "MediaFormat", filters.format],
+    ["status", "MediaStatus", filters.status],
+    ["averageScore_greater", "Int", filters.minimumScore === undefined ? undefined : filters.minimumScore * 10 - 1],
+    ["search", "String", filters.search],
+  ] as const;
+}
+
 function buildCatalogueQuery(filters: CatalogueFilters) {
   const variableTypes = [
     "$page: Int!",
@@ -85,14 +104,7 @@ function buildCatalogueQuery(filters: CatalogueFilters) {
     mediaArguments.push(`${name}: $${name}`);
   };
 
-  add("season", "MediaSeason", filters.season);
-  add("seasonYear", "Int", filters.seasonYear);
-  add("genre", "String", filters.genre);
-  add("tag", "String", filters.tag);
-  add("format", "MediaFormat", filters.format);
-  add("status", "MediaStatus", filters.status);
-  add("averageScore_greater", "Int", filters.minimumScore === undefined ? undefined : filters.minimumScore * 10 - 1);
-  add("search", "String", filters.search);
+  activeMediaFilters(filters).forEach(([name, type, value]) => add(name, type, value));
 
   return `query AnimeCatalogue(${variableTypes.join(", ")}) {
     Page(page: $page, perPage: $perPage) {
@@ -186,6 +198,93 @@ function mapAnime(row: any): ExternalAnime {
   };
 }
 
+function candidateMatchScore(candidate: BangumiChineseCandidate, anime: ExternalAnime) {
+  if (candidate.malId && anime.malId === candidate.malId) return 200;
+  if (candidate.malId && anime.malId && candidate.malId !== anime.malId) return 0;
+  if (candidate.year && anime.releaseYear && Math.abs(candidate.year - anime.releaseYear) > 1) return 0;
+  const platform = candidate.format?.toLocaleLowerCase();
+  const expectedFormat = platform === "tv" ? "TV"
+    : platform === "web" ? "ONA"
+      : platform === "剧场版" || platform === "劇場版" || platform === "movie" ? "MOVIE"
+        : platform === "ova" || platform === "oad" ? "OVA" : null;
+  if (expectedFormat && anime.animeType && anime.animeType !== expectedFormat && !(expectedFormat === "TV" && anime.animeType === "TV_SHORT")) return 0;
+  if (candidate.episodes && anime.episodes && candidate.episodes !== anime.episodes) return 0;
+  const names = [candidate.name, candidate.nameChinese].filter((name): name is string => Boolean(name));
+  let titleScore = 0;
+  const primaryAliases = new Set([anime.titleJapanese, anime.originalTitle, anime.titleEnglish, anime.title, anime.titleChinese]
+    .filter((name): name is string => Boolean(name))
+    .map((name) => normalizeAnimeTitle(name).normalized));
+  const primaryBases = new Set([anime.titleJapanese, anime.originalTitle, anime.titleEnglish, anime.title, anime.titleChinese]
+    .filter((name): name is string => Boolean(name))
+    .map((name) => normalizeAnimeTitle(name).base));
+  for (const name of names) {
+    const subject = normalizeAnimeTitle(name);
+    for (const alias of buildAnimeTitleAliases(anime)) {
+      const provider = normalizeAnimeTitle(alias);
+      if (subject.normalized && subject.normalized === provider.normalized)
+        titleScore = Math.max(titleScore, primaryAliases.has(provider.normalized) ? 100 : expectedFormat && candidate.episodes ? 94 : 0);
+      else if (subject.base && subject.base === provider.base && subject.seasonNumber === provider.seasonNumber)
+        titleScore = Math.max(titleScore, primaryBases.has(provider.base) || expectedFormat && candidate.episodes ? 92 : 0);
+    }
+  }
+  if (!titleScore) return 0;
+  return titleScore + (candidate.year && anime.releaseYear ? 2 - Math.abs(candidate.year - anime.releaseYear) : 0);
+}
+
+function buildCandidateQuery(candidates: BangumiChineseCandidate[], filters: CatalogueFilters) {
+  const activeFilters = activeMediaFilters(filters).filter(([name, , value]) => name !== "search" && value !== undefined && value !== null && value !== "");
+  const definitions = activeFilters.map(([name, type]) => `$${name}: ${type}`);
+  const variables: Record<string, unknown> = {};
+  const mediaArguments = activeFilters.map(([name, , value]) => {
+    variables[name] = value;
+    return `${name}: $${name}`;
+  });
+  const pages = candidates.map((candidate, index) => {
+    const key = candidate.malId ? `malId${index}` : `title${index}`;
+    definitions.push(`$${key}: ${candidate.malId ? "Int" : "String"}!`);
+    variables[key] = candidate.malId ?? candidate.name;
+    const identity = `${candidate.malId ? "idMal" : "search"}: $${key}`;
+    const argumentsList = ["type: ANIME", "countryOfOrigin: JP", "isAdult: false", identity, "sort: [SEARCH_MATCH]", ...mediaArguments];
+    return `candidate${index}: Page(page: 1, perPage: 4) {
+      media(${argumentsList.join(", ")}) { ...CandidateMedia }
+    }`;
+  });
+  return {
+    query: `query ChineseAnimeCandidates(${definitions.join(", ")}) { ${pages.join("\n")} }
+      fragment CandidateMedia on Media { ${mediaFields} }`,
+    variables,
+  };
+}
+
+async function matchBangumiCandidates(candidates: BangumiChineseCandidate[], filters: CatalogueFilters) {
+  if (!candidates.length) return [];
+  const { query, variables } = buildCandidateQuery(candidates, filters);
+  try {
+    const data = await request<Record<string, { media?: unknown[] }>>(query, variables, FILTER_TTL);
+    const matches = candidates.flatMap((candidate, index) => {
+      const rows = data[`candidate${index}`]?.media;
+      const ranked = (Array.isArray(rows) ? rows : [])
+        .map(mapAnime)
+        .filter((anime) => anime.id && !anime.isAdult && anime.countryOfOrigin === "JP")
+        .map((anime) => ({ anime, score: candidateMatchScore(candidate, anime) }))
+        .filter(({ score }) => score >= 92)
+        .sort((left, right) => right.score - left.score);
+      const best = ranked[0];
+      if (!best || (ranked[1] && best.score - ranked[1].score < 2)) return [];
+      return [{ ...best.anime, titleChinese: candidate.nameChinese ?? best.anime.titleChinese }];
+    });
+    const needle = normalizeAnimeTitle(filters.search ?? "").normalized.replace(/\s+/g, "");
+    const relevance = (anime: ExternalAnime) => {
+      const title = normalizeAnimeTitle(anime.titleChinese ?? "").normalized.replace(/\s+/g, "");
+      return title === needle ? 3 : title.startsWith(needle) ? 2 : title.includes(needle) ? 1 : 0;
+    };
+    return matches.sort((left, right) => relevance(right) - relevance(left) || (right.popularity ?? 0) - (left.popularity ?? 0));
+  } catch (cause) {
+    console.warn("[anime-chinese-search] AniList candidate match unavailable", { message: cause instanceof Error ? cause.message : "unknown" });
+    return [];
+  }
+}
+
 async function request<T>(
   query: string,
   variables: Record<string, unknown>,
@@ -241,19 +340,13 @@ export async function getCatalogue(
       ? "START_DATE_DESC"
       : filters.sort ?? "POPULARITY_DESC"],
   };
-  for (const [key, value] of Object.entries({
-    season: filters.season,
-    seasonYear: filters.seasonYear,
-    genre: filters.genre,
-    tag: filters.tag,
-    format: filters.format,
-    status: filters.status,
-    averageScore_greater: filters.minimumScore === undefined ? undefined : filters.minimumScore * 10 - 1,
-    search: filters.search,
-  })) {
+  for (const [key, , value] of activeMediaFilters(filters)) {
     if (value !== undefined && value !== null && value !== "")
       variables[key] = value;
   }
+  const candidatesPromise = !filters.includeAdult && page === 1 && filters.search && isChineseAnimeSearch(filters.search)
+    ? searchBangumiChineseCandidates(filters.search)
+    : null;
   let data: any;
   try {
     data = await request<any>(buildCatalogueQuery(filters), variables, ttl);
@@ -292,13 +385,27 @@ export async function getCatalogue(
         .map(mapAnime)
         .filter((item: ExternalAnime) => item.id && item.countryOfOrigin === "JP")
     : [];
-  const localized = await localizeAnimeTitles(items);
+  const candidates = candidatesPromise ? await candidatesPromise : [];
+  const matched = candidates.length ? await matchBangumiCandidates(candidates, filters) : [];
+  // Keep every AniList page-one row; adding candidates must not make page two skip any.
+  const combined = new Map<string, ExternalAnime>();
+  if (filters.sort === "SEARCH_MATCH") matched.forEach((anime) => {
+    if (!combined.has(anime.id)) combined.set(anime.id, anime);
+  });
+  items.forEach((anime) => {
+    const existing = combined.get(anime.id);
+    combined.set(anime.id, existing ? { ...anime, titleChinese: existing.titleChinese ?? anime.titleChinese } : anime);
+  });
+  if (filters.sort !== "SEARCH_MATCH") matched.forEach((anime) => {
+    if (!combined.has(anime.id)) combined.set(anime.id, anime);
+  });
+  const localized = await localizeAnimeTitles([...combined.values()]);
   return {
     items: localized,
     page: Number(info?.currentPage ?? page),
     hasNextPage: Boolean(info?.hasNextPage),
-    total: Number(info?.total ?? 0),
-    totalExact: true,
+    total: Number(info?.total ?? 0) + Math.max(0, combined.size - items.length),
+    totalExact: combined.size === items.length,
   };
 }
 
