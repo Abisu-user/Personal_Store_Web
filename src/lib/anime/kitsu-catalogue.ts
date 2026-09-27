@@ -19,7 +19,7 @@ function categorySlug(value: string) {
 
 export function buildKitsuCatalogueUrl(filters: CatalogueFilters, page: number, perPage: number) {
   const params = new URLSearchParams({ "page[limit]": String(perPage), "page[offset]": String((page - 1) * perPage) });
-  const sort = ({ POPULARITY_DESC: "-userCount", SCORE_DESC: "-averageRating", START_DATE_DESC: "-startDate", NEXT_AIRING_EPISODE_DESC: "-startDate", TITLE_ROMAJI: "canonicalTitle", FAVOURITES_DESC: "-favoritesCount" } as const)[filters.sort ?? "POPULARITY_DESC"];
+  const sort = ({ POPULARITY_DESC: "-userCount", SEARCH_MATCH: "-userCount", SCORE_DESC: "-averageRating", START_DATE_DESC: "-startDate", NEXT_AIRING_EPISODE_DESC: "-startDate", TITLE_ROMAJI: "canonicalTitle", FAVOURITES_DESC: "-favoritesCount" } as const)[filters.sort ?? "POPULARITY_DESC"];
   params.set("sort", sort);
   params.set("include", "mappings");
   if (filters.search) params.set("filter[text]", filters.search);

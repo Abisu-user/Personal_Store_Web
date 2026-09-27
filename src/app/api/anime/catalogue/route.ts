@@ -18,6 +18,7 @@ const formats = new Set(["TV", "TV_SHORT", "MOVIE", "OVA", "ONA", "SPECIAL"]);
 const statuses = new Set(["RELEASING", "FINISHED", "NOT_YET_RELEASED"]);
 const sorts = new Set([
   "POPULARITY_DESC",
+  "SEARCH_MATCH",
   "SCORE_DESC",
   "START_DATE_DESC",
   "NEXT_AIRING_EPISODE_DESC",

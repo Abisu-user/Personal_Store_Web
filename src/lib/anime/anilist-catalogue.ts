@@ -27,6 +27,7 @@ export type CatalogueFilters = {
   minimumScore?: number;
   sort?:
     | "POPULARITY_DESC"
+    | "SEARCH_MATCH"
     | "SCORE_DESC"
     | "START_DATE_DESC"
     | "NEXT_AIRING_EPISODE_DESC"

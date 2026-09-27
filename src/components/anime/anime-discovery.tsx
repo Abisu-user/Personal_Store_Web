@@ -7,6 +7,7 @@ import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 type Sort =
   | "POPULARITY_DESC"
+  | "SEARCH_MATCH"
   | "SCORE_DESC"
   | "START_DATE_DESC"
   | "TITLE_ROMAJI"
@@ -52,6 +53,7 @@ const statuses = [
   ["NOT_YET_RELEASED", "尚未播出"],
 ];
 const sorts: [Sort, string][] = [
+  ["SEARCH_MATCH", "相關度"],
   ["POPULARITY_DESC", "熱門"],
   ["SCORE_DESC", "評分最高"],
   ["START_DATE_DESC", "最新"],
@@ -326,6 +328,7 @@ export function AnimeDiscovery({
   const [scheduleFilterOpen, setScheduleFilterOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [filterDraft, setFilterDraft] = useState<Filters>(initialFilters);
+  const [seasonFilterExplicit, setSeasonFilterExplicit] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [showAllGenres, setShowAllGenres] = useState(false);
   const [all, setAll] = useState<ExternalAnime[]>([]);
@@ -463,6 +466,8 @@ export function AnimeDiscovery({
     }
   }, [discoveryView, loadSchedule, scheduleItems.length]);
   const apply = () => {
+    if (filterDraft.year !== filters.year || filterDraft.season !== filters.season)
+      setSeasonFilterExplicit(true);
     setFilters(filterDraft);
     seen.current = "";
     setFilterOpen(false);
@@ -470,11 +475,37 @@ export function AnimeDiscovery({
   const selectDiscoveryView = (view: DiscoveryView) => {
     setDiscoveryView(view);
   };
+  const clearCatalogueSearch = () => {
+    setCatalogueSearch("");
+    setCatalogueSearchInput("");
+    const restoreBrowseFilters = (previous: Filters): Filters => ({
+      ...previous,
+      ...(!seasonFilterExplicit ? { year: current.year, season: current.season } : {}),
+      sort: previous.sort === "SEARCH_MATCH" ? "POPULARITY_DESC" : previous.sort,
+    });
+    setFilters(restoreBrowseFilters);
+    setFilterDraft(restoreBrowseFilters);
+    seen.current = "";
+  };
   const submitCatalogueSearch = () => {
     const value = catalogueSearchInput.trim();
     if (value && value.length < 2) {
       setError("請至少輸入 2 個字再搜尋。");
       return;
+    }
+    if (!value) {
+      if (catalogueSearch) clearCatalogueSearch();
+      else void load(1, true);
+      return;
+    }
+    if (!catalogueSearch) {
+      const prepareSearchFilters = (previous: Filters): Filters => ({
+        ...previous,
+        ...(!seasonFilterExplicit ? { year: null, season: "" as const } : {}),
+        sort: "SEARCH_MATCH",
+      });
+      setFilters(prepareSearchFilters);
+      setFilterDraft(prepareSearchFilters);
     }
     setCatalogueSearch(value);
     seen.current = "";
@@ -482,14 +513,14 @@ export function AnimeDiscovery({
     if (value === catalogueSearch) void load(1, true);
   };
   const updateFilters = (value: Partial<Filters>) => {
+    if ("year" in value || "season" in value) setSeasonFilterExplicit(true);
     setFilters((previous) => ({ ...previous, ...value }));
     setFilterDraft((previous) => ({ ...previous, ...value }));
     seen.current = "";
   };
   const clearSearchOrFilters = () => {
     if (catalogueSearch) {
-      setCatalogueSearch("");
-      setCatalogueSearchInput("");
+      clearCatalogueSearch();
       return;
     }
     updateFilters({
@@ -601,7 +632,7 @@ export function AnimeDiscovery({
                 </div>
                 <h3>排序</h3>
                 <div className="anime-discovery-rail-options">
-                  {sorts.map(([value, label]) => <button className={filters.sort === value ? "active" : ""} key={value} onClick={() => updateFilters({ sort: value })} type="button">{label}</button>)}
+                  {sorts.filter(([value]) => catalogueSearch || value !== "SEARCH_MATCH").map(([value, label]) => <button className={filters.sort === value ? "active" : ""} key={value} onClick={() => updateFilters({ sort: value })} type="button">{label}</button>)}
                 </div>
               </>
             )}
@@ -676,11 +707,7 @@ export function AnimeDiscovery({
               <p>「{catalogueSearch}」的搜尋結果</p>
               <button
                 className="secondary-button compact"
-                onClick={() => {
-                  setCatalogueSearch("");
-                  setCatalogueSearchInput("");
-                  seen.current = "";
-                }}
+                onClick={clearCatalogueSearch}
                 type="button"
               >
                 清除搜尋
@@ -892,7 +919,7 @@ export function AnimeDiscovery({
               }
               value={filterDraft.sort}
             >
-              {sorts.map((item) => (
+              {sorts.filter(([value]) => catalogueSearch || value !== "SEARCH_MATCH").map((item) => (
                 <option key={item[0]} value={item[0]}>
                   {item[1]}
                 </option>
