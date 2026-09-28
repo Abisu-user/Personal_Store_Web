@@ -25,6 +25,11 @@
   margin: 5px 0 7px;
 }
 
+@media (min-width: 701px) {
+  .pageHeader { margin-bottom: 14px; padding-bottom: 12px; }
+  .pageHeader h1 { margin: 4px 0 5px; line-height: 1.12; }
+}
+
 .pageHeader > div > p:last-child {
   color: var(--muted);
 }

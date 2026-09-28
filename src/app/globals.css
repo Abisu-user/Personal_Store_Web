@@ -2275,3 +2275,81 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .feature-home-management { display: contents; }
   .feature-home-management[data-active="false"] { display: none; }
 }
+
+/* Shared desktop feature-page rhythm. The outer glass frame and the existing
+   collection scroll containers keep their layout responsibilities. */
+@media (min-width: 701px) {
+  .app-main .dashboard {
+    --feature-page-pad-x: 28px;
+    --feature-page-pad-top: 18px;
+    --feature-section-gap: 16px;
+    padding-block: 16px;
+  }
+
+  .app-main .dashboard > .dashboard-card {
+    padding: var(--feature-page-pad-top) var(--feature-page-pad-x) 24px;
+  }
+
+  .app-main .dashboard > .dashboard-card > .page-heading,
+  .app-main .dashboard > .dashboard-card > .dashboard-header {
+    align-items: flex-end;
+    gap: 20px;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .app-main .dashboard > .dashboard-card .page-heading .eyebrow,
+  .app-main .dashboard > .dashboard-card > .eyebrow {
+    margin: 0 0 4px;
+    font-size: .69rem;
+    line-height: 1.2;
+  }
+
+  .app-main .dashboard > .dashboard-card .page-heading h1,
+  .app-main .dashboard > .dashboard-card > h1 {
+    margin: 0;
+    line-height: 1.12;
+  }
+
+  .app-main .dashboard > .dashboard-card .page-heading p:not(.eyebrow),
+  .app-main .dashboard > .dashboard-card > h1 + p:not(.eyebrow) {
+    margin: 5px 0 0;
+    line-height: 1.5;
+  }
+
+  .app-main .dashboard > .dashboard-card > :is(.bookmarks-workspace, .notes-workspace, .code-workspace, .files-workspace, .library-workspace, .vault-workspace, .vault-panel, .vault-gate, .calendar-workspace, .management-workspace, .appearance-workspace, .passkey-settings, .security-activity) {
+    margin-top: 14px;
+  }
+
+  .app-main .dashboard > .dashboard-header {
+    align-items: flex-end;
+    height: auto;
+    min-height: 0;
+    margin-bottom: 14px;
+  }
+  .app-main .dashboard > .dashboard-header .eyebrow { margin-bottom: 4px; font-size: .69rem; line-height: 1.2; }
+  .app-main .dashboard > .dashboard-header h1 { margin: 0; line-height: 1.12; }
+  .app-main .dashboard > .dashboard-header p:not(.eyebrow) { margin: 5px 0 0; line-height: 1.5; }
+  .app-main .dashboard > .dashboard-header + .profile-workspace { margin-top: 0; }
+
+  .app-main .dashboard > .dashboard-card > .page-heading + :is(.bookmarks-workspace, .notes-workspace, .code-workspace, .files-workspace, .library-workspace) {
+    gap: var(--feature-section-gap);
+  }
+
+  .app-main .anime-dashboard > .dashboard-card { padding: var(--feature-page-pad-top) var(--feature-page-pad-x) 24px; }
+  .anime-dashboard .anime-workspace { gap: var(--feature-section-gap); }
+  .anime-shared-header { gap: 10px 16px; padding-bottom: 12px; }
+  .anime-shared-header .anime-tabs button { min-height: 35px; }
+  .app-main .vocabulary-page > .vocabulary-dashboard-card,
+  .app-main .dashboard.calendar-feature-page > .dashboard-card {
+    padding: 0;
+    border: 0;
+    background: transparent !important;
+    box-shadow: none;
+  }
+}
+
+@media (min-width: 701px) and (max-width: 900px) {
+  .app-main .dashboard { --feature-page-pad-x: 20px; }
+}

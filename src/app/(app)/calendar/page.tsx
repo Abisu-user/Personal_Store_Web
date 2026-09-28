@@ -12,5 +12,5 @@ export default async function CalendarPage() {
   await requireMfaIfEnrolled(user);
   const range = rangeForMonth(new Date());
   const initialData = await getCalendarWorkspaceData(user.id, range.from, range.to);
-  return <main className={`dashboard ${mobileStyles.calendarPage}`}><section className="dashboard-card"><CalendarWorkspace initialData={initialData} /></section></main>;
+  return <main className={`dashboard calendar-feature-page ${mobileStyles.calendarPage}`}><section className="dashboard-card"><CalendarWorkspace initialData={initialData} /></section></main>;
 }

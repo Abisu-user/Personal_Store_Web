@@ -5,3 +5,12 @@
 @media(max-width:1100px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.cards,.photoCards{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:700px){.home{overflow:visible;padding:12px 0 calc(96px + env(safe-area-inset-bottom));gap:20px}.summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{min-height:78px;padding:10px 12px}.bottom{grid-template-columns:minmax(0,1fr)}.cards,.photoCards{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}.cards::-webkit-scrollbar,.photoCards::-webkit-scrollbar{display:none}.cards .card{flex:0 0 min(45vw,180px);scroll-snap-align:start}.photoCards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));overflow:visible}.photoCards .card{min-width:0}.folders{gap:8px}.tabs{margin-block:10px}}
 @media(max-width:700px){.studyCta{grid-template-columns:1fr;padding:14px}.studyCta button{justify-self:start}}
+
+@media (min-width: 701px) {
+  .tabs button { min-height: 34px; padding: 7px 12px; }
+  .home { gap: 16px; padding: 0 2px 24px; }
+  .metric { min-height: 78px; gap: 3px; padding: 11px 14px; }
+  .section { gap: 8px; }
+  .panel .heading { margin-bottom: 8px; }
+  .skeleton, .skeletonCards > div { height: 78px; }
+}

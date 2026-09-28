@@ -126,7 +126,7 @@
   display: none;
 }
 @media (min-width: 701px) {
-  .home { width: min(100%, 1520px); }
+  .home { width: min(100%, 1520px); gap: 16px; }
   .hero { padding: 18px 22px; }
   .hero h2 { font-size: clamp(1.45rem, 2vw, 1.9rem); }
   .card { transition: transform 190ms cubic-bezier(.2,.8,.2,1), box-shadow 190ms cubic-bezier(.2,.8,.2,1); }
