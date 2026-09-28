@@ -51,7 +51,8 @@ async function main() {
       assert.ok(dimensions.page <= width + 1, "horizontal overflow at " + width + ": " + JSON.stringify(dimensions));
       assert.ok(dimensions.grid <= dimensions.gridClient + 1, "calendar grid overflow at " + width);
       assert.equal(dimensions.columns, width <= 700 ? 1 : 2, "layout columns at " + width);
-      assert.ok(await page.locator(".rest").count() > 0, "official rest marker at " + width);
+      assert.equal(await page.locator(".rest").count(), 1, "only connected official rest is marked at " + width);
+      assert.equal(await page.getByText("普通週末").count(), 0, "ordinary weekend is not labeled at " + width);
       assert.match(await page.locator(".selectedMeta").textContent(), /休/, "selected day knows official rest status");
       await page.screenshot({ path: path.join(output, "calendar-" + width + ".png") });
       await page.getByRole("button", { name: "＋ 新行程" }).click();

@@ -65,6 +65,7 @@ export function validateOfficialRows(rows: OfficialRow[], year: number) {
 
 export function buildCalendarDays(from: string, to: string, rowsByYear: Map<number, OfficialRow[] | null>): TaiwanCalendarDay[] {
   const result: TaiwanCalendarDay[] = [];
+  const connectedPeriods = resolveConnectedHolidayPeriods(from, to, rowsByYear);
   const cursor = new Date(from + "T12:00:00Z");
   const end = new Date(to + "T12:00:00Z").getTime();
   while (cursor.getTime() <= end) {
@@ -84,6 +85,8 @@ export function buildCalendarDays(from: string, to: string, rowsByYear: Map<numb
       : weekday === 0 || weekday === 6 ? "weekend" : "special_holiday";
     result.push({
       date, weekday, officialAvailable, isDayOff, dayOffType,
+      isConnectedHoliday: connectedPeriods.has(date),
+      connectedHolidayId: connectedPeriods.get(date) ?? null,
       holidayName: isDayOff ? note : null,
       festivalName: festivalFor(date), note,
     });
@@ -92,12 +95,53 @@ export function buildCalendarDays(from: string, to: string, rowsByYear: Map<numb
   return result;
 }
 
+// A connected period is a maximal run of official days off containing at least
+// one named holiday, official make-up day, or special weekday off. Plain
+// weekends are included only when they touch such an anchor. Government
+// designated Saturday workdays break the run.
+export function resolveConnectedHolidayPeriods(from: string, to: string, rowsByYear: Map<number, OfficialRow[] | null>): Map<string, string> {
+  const periods = new Map<string, string>();
+  const examined = new Set<string>();
+  const dayMs = 86_400_000;
+  const start = Date.parse(from + "T12:00:00Z");
+  const end = Date.parse(to + "T12:00:00Z");
+  const stateAt = (time: number) => {
+    const day = new Date(time);
+    const year = day.getUTCFullYear();
+    const row = rowsByYear.get(year)?.[Math.round((time - Date.UTC(year, 0, 1, 12)) / dayMs)];
+    if (row?.[1] !== 2) return { eligible: false, anchor: false };
+    const weekend = day.getUTCDay() === 0 || day.getUTCDay() === 6;
+    return { eligible: true, anchor: !weekend || Boolean(row[2]) };
+  };
+  for (let time = start; time <= end; time += dayMs) {
+    const key = new Date(time).toISOString().slice(0, 10);
+    if (examined.has(key) || !stateAt(time).eligible) continue;
+    let first = time;
+    while (stateAt(first - dayMs).eligible) first -= dayMs;
+    let last = time;
+    while (stateAt(last + dayMs).eligible) last += dayMs;
+    let hasAnchor = false;
+    const id = new Date(first).toISOString().slice(0, 10);
+    for (let member = first; member <= last; member += dayMs) {
+      const memberKey = new Date(member).toISOString().slice(0, 10);
+      examined.add(memberKey);
+      if (stateAt(member).anchor) hasAnchor = true;
+    }
+    if (hasAnchor) for (let member = first; member <= last; member += dayMs) {
+      const memberKey = new Date(member).toISOString().slice(0, 10);
+      if (memberKey >= from && memberKey <= to) periods.set(memberKey, id);
+    }
+  }
+  return periods;
+}
+
 export function discoverOfficialCsvUrl(html: string, year: number): string | null {
   const rocYear = year - 1911;
-  for (const match of html.matchAll(/<li class="resource-item"[^>]*>([\s\S]*?)<\/li>/g)) {
+  for (const match of html.matchAll(/<li\b[^>]*class="[^"]*\bresource-item\b[^"]*"[^>]*>([\s\S]*?)<\/li>/g)) {
     const item = match[1];
-    if (!new RegExp("<span[^>]*>" + rocYear + "年中華民國政府行政機關辦公日曆表<\\/span>").test(item)) continue;
-    const href = item.match(/<a href="([^"]+)"[^>]*title="CSV下載檔案"/)?.[1]?.replaceAll("&amp;", "&");
+    if (!new RegExp("(?:^|\\D)" + rocYear + "年中華民國政府行政機關辦公日曆表").test(item.replace(/<[^>]+>/g, ""))) continue;
+    const csvAnchor = [...item.matchAll(/<a\b[^>]*>/g)].map(([anchor]) => anchor).find((anchor) => /\btitle="CSV下載檔案"/.test(anchor));
+    const href = csvAnchor?.match(/\bhref="([^"]+)"/)?.[1]?.replaceAll("&amp;", "&");
     if (!href) continue;
     const url = new URL(href);
     if (url.hostname === "www.dgpa.gov.tw" && url.pathname === "/FileConversion" && url.searchParams.get("filename")?.endsWith(".csv")) return url.toString();

@@ -108,7 +108,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
   const monthHolidays = (data.calendarDays ?? []).filter((day) => day.date.startsWith(monthPrefix) && (day.holidayName || day.festivalName));
   const monthOfficialAvailable = (data.calendarDays ?? []).some((day) => day.date.startsWith(monthPrefix) && day.officialAvailable);
   const monthEventCount = occurrences.filter((event) => event.occurrenceDate.startsWith(monthPrefix)).length;
-  const monthHolidayCount = (data.calendarDays ?? []).filter((day) => day.date.startsWith(monthPrefix) && day.isDayOff).length;
+  const monthHolidayCount = (data.calendarDays ?? []).filter((day) => day.date.startsWith(monthPrefix) && day.isConnectedHoliday).length;
 
   const upcoming = useMemo(() => {
     const rows: Upcoming[] = [
@@ -217,7 +217,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         <div className={styles.holidayStrip} aria-label="本月節日">
           {monthHolidays.length ? monthHolidays.flatMap((day) => dayLabels(day).map((label) =>
             <button className={label.kind === "off" ? styles.holidayChipOff : styles.holidayChip} key={day.date + label.label} onClick={() => selectDate(day.date)} type="button">
-              {Number(day.date.slice(8))}日・{label.label}{day.isDayOff ? "・休" : ""}
+              {Number(day.date.slice(8))}日・{label.label}{day.isConnectedHoliday ? "・休" : ""}
             </button>)) : <span className={styles.noHoliday}>{monthOfficialAvailable ? "本月無節日資訊" : "官方休假資料尚未公布"}</span>}
           {!monthOfficialAvailable && monthHolidays.length > 0 && <span className={styles.noHoliday}>官方休假資料尚未公布</span>}
         </div>
@@ -228,7 +228,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
             const items = eventsByDay.get(key) ?? [];
             const calendarDay = calendarDaysByDate.get(key);
             const markers = dayLabels(calendarDay);
-            const off = calendarDay?.isDayOff ?? false;
+            const off = calendarDay?.isConnectedHoliday ?? false;
             const isToday = key === todayKey;
             const classes = [styles.day, day.getMonth() !== month.getMonth() ? styles.outside : "", off ? styles.dayOff : "", key === selectedDay ? styles.selected : "", isToday ? styles.today : ""].filter(Boolean).join(" ");
             const tags = [...markers, ...items.map((item) => ({ label: (item.allDay ? "" : eventTime(item) + " ") + item.title, kind: "event" as const, color: item.color }))];
@@ -246,7 +246,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         <section className={[styles.panel, styles.selectedPanel].join(" ")}>
           <div className={styles.grabber} aria-hidden="true" />
           <div className={styles.selectedHead}>
-            <div><p className={styles.kicker}>SELECTED DAY</p><h2>{formatDate(selectedDay)}</h2><p className={styles.selectedMeta}>{selectedDay === todayKey ? "今天・" : ""}{selectedCalendarDay?.isDayOff ? "休・" : ""}{selectedHolidays.length} 個節日・{selectedEvents.length} 個行程</p></div>
+            <div><p className={styles.kicker}>SELECTED DAY</p><h2>{formatDate(selectedDay)}</h2><p className={styles.selectedMeta}>{selectedDay === todayKey ? "今天・" : ""}{selectedCalendarDay?.isConnectedHoliday ? "休・" : ""}{selectedHolidays.length} 個節日・{selectedEvents.length} 個行程</p></div>
             <button className={styles.addButton} onClick={() => startNew(selectedDay)} type="button">＋ 新行程</button>
           </div>
           {selectedHolidays.length > 0 && <div className={styles.holidayNotes}>{selectedHolidays.map((holiday) => <div className={holiday.kind === "off" ? styles.holidayNoteOff : styles.holidayNote} key={holiday.label}>{holiday.kind === "off" ? "休・" : ""}{holiday.label}</div>)}</div>}

@@ -13,7 +13,13 @@ const bundled = new Map<number, OfficialRow[]>([
 const memory = new Map<number, { rows: OfficialRow[] | null; expiresAt: number }>();
 const pending = new Map<number, Promise<OfficialRow[] | null>>();
 
-for (const [year, rows] of bundled) validateOfficialRows(rows, year);
+// Bundled, validated DGPA years must be available immediately, including the
+// next year. A slow catalogue request must not make a published year appear
+// empty on the first render.
+for (const [year, rows] of bundled) {
+  validateOfficialRows(rows, year);
+  memory.set(year, { rows, expiresAt: Number.POSITIVE_INFINITY });
+}
 
 async function downloadYear(year: number): Promise<OfficialRow[] | null> {
   const catalogue = await fetch(DATASET_URL, { next: { revalidate: REVALIDATE_SECONDS }, signal: AbortSignal.timeout(8000) });
@@ -50,9 +56,16 @@ async function loadYear(year: number): Promise<OfficialRow[] | null> {
 }
 
 export async function getTaiwanCalendarDays(from: string, to: string) {
-  const first = Number(from.slice(0, 4));
-  const last = Number(to.slice(0, 4));
-  const years = Array.from({ length: last - first + 1 }, (_, index) => first + index);
+  const first = new Date(from + "T12:00:00Z");
+  const last = new Date(to + "T12:00:00Z");
+  // Resolve weekends touching a holiday just outside the requested range.
+  first.setUTCDate(first.getUTCDate() - 7);
+  last.setUTCDate(last.getUTCDate() + 7);
+  const years = Array.from({ length: last.getUTCFullYear() - first.getUTCFullYear() + 1 }, (_, index) => first.getUTCFullYear() + index);
+  const currentYear = new Date().getFullYear();
+  for (const year of [currentYear, currentYear + 1]) {
+    if (!years.includes(year)) void loadYear(year);
+  }
   const results = await Promise.all(years.map(async (year) => [year, await loadYear(year)] as const));
   return buildCalendarDays(from, to, new Map(results));
 }

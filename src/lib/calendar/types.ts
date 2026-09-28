@@ -20,6 +20,8 @@ export type TaiwanCalendarDay = {
   officialAvailable: boolean;
   isDayOff: boolean;
   dayOffType: "weekend" | "national_holiday" | "makeup_holiday" | "special_holiday" | "workday" | "unknown";
+  isConnectedHoliday: boolean;
+  connectedHolidayId: string | null;
   holidayName: string | null;
   festivalName: string | null;
   note: string | null;
