@@ -638,7 +638,7 @@ export function PhotosWorkspace({
         setView={(value) => { setShowAllPhotos(false); setRecentMode(false); setView(value); }}
         storageKey="personal-vault:photo-system-folders:v1"
         view={view}
-      />
+      >
       <div className={mobileStyles.librarySearch} data-open={mobileSearchOpen}>
         <input
           aria-label="搜尋照片"
@@ -710,6 +710,7 @@ export function PhotosWorkspace({
         ))}
         {photos.length === 0 && <p className="lead">此清單尚無照片。</p>}
       </div>
+      </CollectionNavigation>
       </div>
       <BulkOrganizeDialog categories={data.categories} count={chosenPhotos.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
       <ModalDialog

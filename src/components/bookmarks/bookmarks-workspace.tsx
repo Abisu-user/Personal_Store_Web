@@ -2072,6 +2072,7 @@ export function BookmarksWorkspace({
             <CreateItemButton className="mobile-header-create-button" kind="bookmark"><AppIcon name="plus" /><span className="sr-only">新增網站收藏</span></CreateItemButton>
           </>}
         />
+      <div className="desktop-collection-layout">
       <DesktopCollectionSidebar
         allCount={categoryScopeItems.length}
         allLabel="所有類別"
@@ -2085,6 +2086,7 @@ export function BookmarksWorkspace({
         trash={folders.trash.visible ? { label: folders.trash.label, count: counts.trash, active: view === "trash", onSelect: () => { restorePublicBookmarks(); setShowAllBookmarks(false); setView("trash"); setFolderFilters([]); setCategory([]); } } : undefined}
         unclassifiedCount={categoryScopeItems.filter((bookmark) => bookmark.categories.length === 0).length}
       />
+      <div className="desktop-collection-main">
       <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>資料夾</strong>
@@ -2263,6 +2265,8 @@ export function BookmarksWorkspace({
             {list.length === 0 && <p className="lead">尚無符合條件的網站收藏。</p>}
           </>
         )}
+      </div>
+      </div>
       </div>
       </div>
       <ModalDialog

@@ -1756,6 +1756,7 @@ export function AnimeWorkspace({
               onManageCategories={() => setCategoryManageScope("adult")}
               onManageFolders={() => setAdultFolderManageSignal((value) => value + 1)}
               onTrash={() => { setAdultFolderFilters([]); setAdultCategoryFilters([]); void openTrash("adult"); }}
+              showFolders={false}
               trashCount={adultTrashData?.library.length ?? 0}
               trashSelected={adultLibraryView === "trash"}
             />

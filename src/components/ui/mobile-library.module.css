@@ -24,7 +24,7 @@
   }
 
   .libraryWorkspace > :global(.library-heading) { display: none; }
-  .libraryWorkspace > :global(.note-search) {
+  .libraryWorkspace :global(.desktop-collection-main > .note-search) {
     order: -1;
     min-height: 44px;
     margin: 0;
@@ -32,7 +32,7 @@
     font-size: 16px;
   }
 
-  .libraryWorkspace > :global(.bulk-toolbar) {
+  .libraryWorkspace :global(.desktop-collection-main > .bulk-toolbar) {
     min-height: 44px;
     margin: 0;
     padding: 0 8px;
@@ -41,7 +41,7 @@
     font-size: .75rem;
   }
 
-  .libraryWorkspace > :global(.content-item-list) {
+  .libraryWorkspace :global(.desktop-collection-main > .content-item-list) {
     gap: 7px;
     margin-top: 0;
   }

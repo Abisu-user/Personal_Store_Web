@@ -389,7 +389,7 @@ export function FilesWorkspace({
         setView={setView}
         storageKey="personal-vault:file-system-folders:v1"
         view={view}
-      />
+      >
       <input
         aria-label="搜尋檔案"
         className="note-search"
@@ -461,6 +461,7 @@ export function FilesWorkspace({
         ))}
         {files.length === 0 && <p className="lead">此清單尚未找到檔案。</p>}
       </div>
+      </CollectionNavigation>
       <BulkOrganizeDialog categories={data.categories} count={chosenFiles.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
       <ModalDialog
         onClose={() => setSelectedId(null)}

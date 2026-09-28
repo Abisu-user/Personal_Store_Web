@@ -1918,11 +1918,11 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-filter-rail-group > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .anime-filter-rail-group > header > div { display: flex; align-items: center; gap: 4px; }
   .anime-filter-rail-group > header button { min-width: 28px; min-height: 32px; padding: 0 5px; border: 0; color: var(--brand); background: transparent; font: inherit; font-size: .73rem; font-weight: 800; }
-  .anime-filter-rail-group > button { display: flex; min-width: 0; min-height: 36px; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 9px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; font: inherit; font-size: .78rem; text-align: left; cursor: pointer; }
-  .anime-filter-rail-group > button:hover, .anime-filter-rail-group > button.active { border-color: color-mix(in srgb, var(--brand) 36%, var(--line)); color: var(--brand); background: var(--brand-soft); }
-  .anime-filter-rail-group > button > span { display: inline-flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .anime-filter-rail-group > button .app-icon { width: 15px; height: 15px; flex: 0 0 15px; }
-  .anime-filter-rail-group > button small { flex: 0 0 auto; color: var(--muted); font-size: .7rem; }
+  .anime-filter-rail-group > button, .anime-filter-rail-category-scroll > button { display: flex; min-width: 0; min-height: 36px; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 9px; border: 1px solid transparent; border-radius: 10px; color: var(--muted); background: transparent; font: inherit; font-size: .78rem; text-align: left; cursor: pointer; }
+  .anime-filter-rail-group > button:hover, .anime-filter-rail-group > button.active, .anime-filter-rail-category-scroll > button:hover, .anime-filter-rail-category-scroll > button.active { border-color: color-mix(in srgb, var(--brand) 36%, var(--line)); color: var(--brand); background: var(--brand-soft); }
+  .anime-filter-rail-group > button > span, .anime-filter-rail-category-scroll > button > span { display: inline-flex; min-width: 0; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .anime-filter-rail-group > button .app-icon, .anime-filter-rail-category-scroll > button .app-icon { width: 15px; height: 15px; flex: 0 0 15px; }
+  .anime-filter-rail-group > button small, .anime-filter-rail-category-scroll > button small { flex: 0 0 auto; color: var(--muted); font-size: .7rem; }
   .anime-filter-rail-group > .anime-filter-rail-more { justify-content: flex-start; color: var(--brand); font-weight: 800; }
   .anime-library-main > .anime-filter-bar { display: flex; justify-content: flex-end; }
   .anime-library-main > .anime-filter-bar > .anime-filter-scroll { display: none; }
@@ -2008,12 +2008,16 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 @media (min-width: 701px) {
   .anime-discovery-layout { display: grid; grid-template-columns: clamp(190px, 20vw, 245px) minmax(0, 1fr); align-items: start; gap: clamp(14px, 2vw, 24px); }
   .anime-discovery-layout-adult { grid-template-columns: minmax(0, 1fr); }
-  .anime-desktop-filter-rail { position: sticky; top: 16px; max-height: min(72dvh, calc(100dvh - 32px)); overflow-y: auto; overscroll-behavior: contain; }
+  .anime-desktop-filter-rail { display: flex; height: 100%; min-height: 0; flex-direction: column; overflow: hidden; }
+  .anime-filter-rail-categories { min-height: 0; flex: 1; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .anime-filter-rail-category-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: none; -ms-overflow-style: none; }
+  .anime-filter-rail-category-scroll::-webkit-scrollbar { display: none; }
+  .anime-filter-rail-footer { flex: 0 0 auto; margin-top: auto; }
   .anime-discovery-mobile-filter, .anime-discovery-results > .anime-schedule-days { display: none; }
-  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] { display: grid; gap: 8px; }
-  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > header,
-  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > .responsive-chip-overflow { display: flex; }
-  .anime-library-main > .anime-folder-navigation[data-anime-scope="standard"] > .responsive-chip-overflow { display: block; }
+  .anime-library-layout .anime-library-main > .anime-folder-navigation[data-anime-scope] { display: grid; gap: 8px; }
+  .anime-library-layout .anime-library-main > .anime-folder-navigation[data-anime-scope] > header,
+  .anime-library-layout .anime-library-main > .anime-folder-navigation[data-anime-scope] > .responsive-chip-overflow { display: flex; }
+  .anime-library-layout .anime-library-main > .anime-folder-navigation[data-anime-scope] > .responsive-chip-overflow { display: block; }
   .anime-workspace .responsive-chip-overflow.scrollable-desktop { overflow-x: auto; overflow-y: hidden; }
   .anime-workspace .responsive-chip-overflow.scrollable-desktop > .responsive-chip-overflow-row:not(.responsive-chip-overflow-measure) { width: max-content; max-width: none; min-width: 100%; overflow: visible !important; }
   .anime-library-main > .anime-filter-bar .anime-library-search-mobile:not(.anime-library-search-trash) { display: none; }
@@ -2031,9 +2035,8 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .anime-discovery-filter-rail { display: none; }
   .anime-discovery-mobile-filter, .anime-discovery-results > .anime-schedule-days { display: flex; }
   .anime-discovery-schedule-filter { display: inline-flex; }
-  .anime-standard-library-layout { grid-template-columns: minmax(0, 1fr); }
-  .anime-standard-library-layout > .anime-desktop-filter-rail { display: none; }
-  .anime-standard-library-layout .anime-library-main > .anime-filter-bar > .anime-filter-scroll { display: flex; }
+  .anime-standard-library-layout { grid-template-columns: 185px minmax(0, 1fr); }
+  .anime-standard-library-layout .anime-library-main > .anime-filter-bar > .anime-filter-scroll { display: none; }
   .anime-standard-library-layout .anime-mobile-filter { display: inline-grid; place-items: center; }
 }
 @media (max-width: 700px) {
@@ -2057,26 +2060,34 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 @media (min-width: 701px) {
   .desktop-collection-workspace {
     --desktop-collection-rail-width: clamp(190px, 17vw, 230px);
-    position: relative;
+    display: flex;
     min-width: 0;
-    min-height: clamp(320px, calc(100dvh - 270px), 740px);
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
     box-sizing: border-box;
-    padding-inline-start: calc(var(--desktop-collection-rail-width) + 14px);
+    overflow: hidden;
   }
   .bookmarks-workspace > .desktop-collection-workspace,
   .library-workspace > .desktop-collection-workspace {
-    display: grid;
+    display: flex;
     min-width: 0;
     gap: 12px;
   }
-  .desktop-collection-workspace > .desktop-collection-sidebar {
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-start: 0;
-    display: flex;
-    width: var(--desktop-collection-rail-width);
-    height: clamp(320px, calc(100dvh - 270px), 740px);
+  .desktop-collection-layout {
+    display: grid;
+    width: 100%;
     min-width: 0;
+    min-height: 0;
+    flex: 1;
+    grid-template-columns: var(--desktop-collection-rail-width) minmax(0, 1fr);
+    gap: 14px;
+    overflow: hidden;
+  }
+  .desktop-collection-layout > .desktop-collection-sidebar {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
     flex-direction: column;
     padding: 12px;
     overflow: hidden;
@@ -2085,6 +2096,16 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
     background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 87%), transparent);
     box-shadow: 0 9px 24px rgb(22 45 80 / 7%);
     backdrop-filter: blur(14px);
+  }
+  .desktop-collection-main {
+    display: grid;
+    min-width: 0;
+    min-height: 0;
+    align-content: start;
+    gap: 12px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .desktop-collection-sidebar > header {
     display: flex;
@@ -2115,11 +2136,13 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .desktop-collection-category-list {
     min-height: 0;
     flex: 1;
+    overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-    scrollbar-color: color-mix(in srgb, var(--muted) 35%, transparent) transparent;
-    scrollbar-width: thin;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  .desktop-collection-category-list::-webkit-scrollbar { display: none; }
   .desktop-collection-category {
     display: flex;
     width: 100%;
@@ -2149,16 +2172,16 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .desktop-collection-category > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .desktop-collection-category > small { flex: 0 0 auto; color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; }
   .desktop-collection-sidebar-footer { padding-top: 8px; border-top: 1px solid var(--line); }
-  .desktop-collection-workspace > section[aria-label="類別"] { display: none; }
-  .desktop-collection-workspace > section[aria-label="資料夾"] { min-width: 0; margin-top: 0; }
-  .desktop-collection-workspace > section[aria-label="資料夾"] .trash-tab { display: none; }
-  .desktop-collection-workspace > section[aria-label="資料夾"] .bookmark-view-tabs-scroll { flex-wrap: nowrap; }
-  .desktop-collection-workspace > section[aria-label="資料夾"] .bookmark-view-tabs button:not(.active) {
+  .desktop-collection-main > section[aria-label="類別"] { display: none; }
+  .desktop-collection-main > section[aria-label="資料夾"] { min-width: 0; margin-top: 0; }
+  .desktop-collection-main > section[aria-label="資料夾"] .trash-tab { display: none; }
+  .desktop-collection-main > section[aria-label="資料夾"] .bookmark-view-tabs-scroll { flex-wrap: nowrap; }
+  .desktop-collection-main > section[aria-label="資料夾"] .bookmark-view-tabs button:not(.active) {
     background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 90%), transparent);
   }
-  .desktop-collection-workspace > .note-search,
-  .desktop-collection-workspace > div .note-search,
-  .desktop-collection-workspace > .bookmark-toolbar input {
+  .desktop-collection-main > .note-search,
+  .desktop-collection-main > div .note-search,
+  .desktop-collection-main > .bookmark-toolbar input {
     min-width: 0;
     min-height: 42px;
     margin-top: 0;
@@ -2171,16 +2194,68 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
     background-repeat: no-repeat;
     background-position: 14px center;
   }
-  .desktop-collection-workspace > .note-search:focus,
-  .desktop-collection-workspace > div .note-search:focus,
-  .desktop-collection-workspace > .bookmark-toolbar input:focus {
+  .desktop-collection-main > .note-search:focus,
+  .desktop-collection-main > div .note-search:focus,
+  .desktop-collection-main > .bookmark-toolbar input:focus {
     border-color: var(--brand);
     outline: 2px solid color-mix(in srgb, var(--brand) 18%, transparent);
     outline-offset: 1px;
   }
-  .desktop-collection-workspace > .bulk-toolbar {
+  .desktop-collection-main > .bulk-toolbar {
     min-height: 38px;
     padding-block: 5px;
     background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 90%), transparent);
   }
+  .app-main .dashboard:has(.desktop-collection-workspace) > .dashboard-card {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .app-main .dashboard-card > .bookmarks-workspace:has(.desktop-collection-workspace),
+  .app-main .dashboard-card > .library-workspace:has(.desktop-collection-workspace),
+  .app-main .dashboard-card > .desktop-collection-workspace {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .app-main .anime-dashboard > .dashboard-card:has(.anime-library-layout) {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .anime-dashboard .anime-workspace:has(.anime-library-layout) {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .anime-workspace .anime-adult-workspace:has(.anime-library-layout) {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .anime-workspace .anime-library-layout {
+    min-height: 0;
+    flex: 1;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .anime-workspace .anime-library-main {
+    min-height: 0;
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+@media (max-width: 700px) {
+  .desktop-collection-layout,
+  .desktop-collection-main { display: contents; }
 }

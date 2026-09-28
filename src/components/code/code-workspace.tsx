@@ -424,7 +424,7 @@ export function CodeWorkspace({
         setView={setView}
         storageKey="personal-vault:code-system-folders:v1"
         view={view}
-      />
+      >
       <input
         aria-label="搜尋程式碼"
         className="note-search"
@@ -496,6 +496,7 @@ export function CodeWorkspace({
         ))}
         {list.length === 0 && <p className="lead">此清單尚無程式碼片段。</p>}
       </div>
+      </CollectionNavigation>
       <BulkOrganizeDialog
         categories={data.categories}
         count={chosenItems.length}

@@ -45,12 +45,9 @@ export function AnimeDesktopFilterRail({
   trashSelected: boolean;
 }) {
   const [allFoldersOpen, setAllFoldersOpen] = useState(false);
-  const [allCategoriesOpen, setAllCategoriesOpen] = useState(false);
   const visibleFolders = folders.filter((folder) => folder.isVisible);
   const displayedFolders = allFoldersOpen || visibleFolders.slice(7).some((folder) => folderFilters.includes(folder.id))
     ? visibleFolders : visibleFolders.slice(0, 7);
-  const displayedCategories = allCategoriesOpen || categories.slice(7).some((category) => categoryFilters.includes(category.id))
-    ? categories : categories.slice(0, 7);
   return (
     <aside aria-label="動漫收藏篩選" className="anime-desktop-filter-rail">
       {onStatusChange && (
@@ -83,20 +80,21 @@ export function AnimeDesktopFilterRail({
         ))}
         {visibleFolders.length > 7 && <button className="anime-filter-rail-more" onClick={() => setAllFoldersOpen((open) => !open)} type="button">{allFoldersOpen ? "收起資料夾" : "更多資料夾 ›"}</button>}
       </section>}
-      <section className="anime-filter-rail-group">
+      <section className="anime-filter-rail-group anime-filter-rail-categories">
         <header><h2>類別</h2><div><button aria-label="新增動漫類別" onClick={onAddCategory} type="button">＋</button><button aria-label="管理動漫類別" onClick={onManageCategories} type="button">管理</button></div></header>
+        <div className="anime-filter-rail-category-scroll">
         <button aria-pressed={!trashSelected && !categoryFilters.length} className={!trashSelected && !categoryFilters.length ? "active" : ""} onClick={() => onCategoryChange([])} type="button">
           <span><AppIcon name="tag" />所有類別</span>
         </button>
-        {displayedCategories.map((category) => (
+        {categories.map((category) => (
           <button aria-pressed={categoryFilters.includes(category.id)} className={categoryFilters.includes(category.id) ? "active" : ""} key={category.id} onClick={() => onCategoryChange(categoryFilters.includes(category.id) ? categoryFilters.filter((id) => id !== category.id) : [...categoryFilters, category.id])} type="button">
             <span><AppIcon name="tag" />{category.name}</span>
             <small>{items.filter((item) => item.tags.some((tag) => tag.id === category.id)).length}</small>
           </button>
         ))}
-        {categories.length > 7 && <button className="anime-filter-rail-more" onClick={() => setAllCategoriesOpen((open) => !open)} type="button">{allCategoriesOpen ? "收起類別" : "更多類別 ›"}</button>}
+        </div>
       </section>
-      <section className="anime-filter-rail-group">
+      <section className="anime-filter-rail-group anime-filter-rail-footer">
         <button aria-pressed={trashSelected} className={trashSelected ? "active" : ""} onClick={onTrash} type="button">
           <span><AppIcon name="trash" />垃圾桶</span><small>{trashCount}</small>
         </button>

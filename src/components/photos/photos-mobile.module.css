@@ -255,7 +255,7 @@
     line-height: 1;
   }
 
-  .managementView > :global(.bulk-toolbar) {
+  .managementView :global(.desktop-collection-main > .bulk-toolbar) {
     min-width: 0;
     min-height: 44px;
     margin: 0;
@@ -265,8 +265,8 @@
     font-size: .75rem;
   }
 
-  .managementView > :global(.bulk-toolbar label),
-  .managementView > :global(.bulk-toolbar button) { min-height: 44px; }
+  .managementView :global(.desktop-collection-main > .bulk-toolbar label),
+  .managementView :global(.desktop-collection-main > .bulk-toolbar button) { min-height: 44px; }
 
   .mobileGridHeading {
     display: flex;

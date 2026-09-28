@@ -408,7 +408,7 @@ export function NotesWorkspace({
         setView={setView}
         storageKey="personal-vault:note-system-folders:v1"
         view={view}
-      />
+      >
       <input
         aria-label="搜尋筆記"
         className="note-search"
@@ -478,6 +478,7 @@ export function NotesWorkspace({
         ))}
         {notes.length === 0 && <p className="lead">此清單尚無筆記。</p>}
       </div>
+      </CollectionNavigation>
       <BulkOrganizeDialog
         categories={data.categories}
         count={chosenNotes.length}
