@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { animeCoverFields, deleteCover, storedAnimeCover, verifiedCover } from "@/lib/content/server";
@@ -6,6 +7,9 @@ import { getAnimePreferences, getAnimeWorkspaceData } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdultContentAccess } from "@/lib/security/adult-content";
+import { hasUnlockedAdultAccess } from "@/lib/security/adult-unlock";
+import { getVerifiedAdultAnimeByIds } from "@/lib/anime/anilist-catalogue";
+import { learnVerifiedAdultAnime } from "@/lib/anime/adult-alias-store";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +21,7 @@ const catalogueMetadata = z.object({
 });
 const commonFields = z.object({
   title: z.string().trim().min(1).max(500),
+  titleIsCustom: z.boolean().optional(),
   sourceUrl: safeUrl.nullable().optional(),
   coverUrl: safeUrl.nullable().optional(),
   metadata: catalogueMetadata.optional(),
@@ -94,7 +99,19 @@ async function replaceCategories(userId: string, animeId: string, categoryIds: s
 function manualRow(input: z.infer<typeof commonFields>, coverPath: string | null) {
   const today = new Date().toISOString().slice(0, 10);
   const metadata = input.metadata;
-  return { external_source: input.externalSource ?? "manual", external_id: input.externalId ?? randomUUID(), title: input.title, title_japanese: metadata?.titleJapanese ?? null, title_english: metadata?.titleEnglish ?? null, title_chinese: metadata?.titleChinese ?? null, original_title: metadata?.originalTitle ?? null, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: metadata?.synopsis ?? null, anime_type: metadata?.animeType ?? null, broadcast_status: metadata?.broadcastStatus ?? null, episodes: metadata?.episodes ?? null, episode_duration: metadata?.episodeDuration ?? null, release_year: metadata?.releaseYear ?? null, season: metadata?.season ?? null, start_date: metadata?.startDate ?? null, end_date: metadata?.endDate ?? null, age_rating: metadata?.ageRating ?? null, source_material: metadata?.sourceMaterial ?? null, public_score: metadata?.publicScore ?? null, genres: metadata?.genres ?? [], studios: metadata?.studios ?? [], relations: metadata?.relations ?? [], watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, is_adult: input.isAdult ?? false, content_rating: input.contentRating || (input.isAdult ? "成人內容" : null), adult_source: input.isAdult ? input.adultSource || "manual" : null, external_url: input.externalUrl || input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
+  return { external_source: input.externalSource ?? "manual", external_id: input.externalId ?? randomUUID(), title: input.title, title_is_custom: input.titleIsCustom ?? (input.externalSource !== "anilist"), title_japanese: metadata?.titleJapanese ?? null, title_english: metadata?.titleEnglish ?? null, title_chinese: metadata?.titleChinese ?? null, original_title: metadata?.originalTitle ?? null, cover_url: coverPath ?? input.coverUrl ?? null, banner_url: null, synopsis: metadata?.synopsis ?? null, anime_type: metadata?.animeType ?? null, broadcast_status: metadata?.broadcastStatus ?? null, episodes: metadata?.episodes ?? null, episode_duration: metadata?.episodeDuration ?? null, release_year: metadata?.releaseYear ?? null, season: metadata?.season ?? null, start_date: metadata?.startDate ?? null, end_date: metadata?.endDate ?? null, age_rating: metadata?.ageRating ?? null, source_material: metadata?.sourceMaterial ?? null, public_score: metadata?.publicScore ?? null, genres: metadata?.genres ?? [], studios: metadata?.studios ?? [], relations: metadata?.relations ?? [], watched_episodes: 0, watch_status: input.watchStatus, rating: input.rating ?? null, notes: input.notes || null, source_url: input.sourceUrl || null, is_adult: input.isAdult ?? false, content_rating: input.contentRating || (input.isAdult ? "成人內容" : null), adult_source: input.isAdult ? input.adultSource || "manual" : null, external_url: input.externalUrl || input.sourceUrl || null, started_watching_at: input.watchStatus === "watching" ? today : null, completed_at: input.watchStatus === "completed" ? today : null };
+}
+
+function learnKnownAdultIdentity(externalSource: string | null | undefined, externalId: string | null | undefined) {
+  if (externalSource !== "anilist" || !externalId || !/^\d+$/.test(externalId)) return;
+  after(async () => {
+    try {
+      const found = await getVerifiedAdultAnimeByIds([Number(externalId)]);
+      await learnVerifiedAdultAnime(found);
+    } catch (cause) {
+      console.warn("[adult-alias] post-save learning deferred", { error: cause instanceof Error ? cause.name : "unknown" });
+    }
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -102,6 +119,7 @@ export async function GET(request: NextRequest) {
   const adultScope = request.nextUrl.searchParams.get("scope") === "adult";
   if (adultScope && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
   if (adultScope && !(await getAnimePreferences(context.userId)).adultModeEnabled) return error("成人內容模式尚未啟用。", 403);
+  if (adultScope && !(await hasUnlockedAdultAccess(context, request.headers.get("x-adult-unlock")))) return error("請先完成成人區驗證。", 403);
   const trashed = request.nextUrl.searchParams.get("view") === "trash";
   try { return NextResponse.json(await getAnimeWorkspaceData(context.userId, adultScope ? "adult" : "standard", { trashed }), { headers: { "Cache-Control": "private, no-store" } }); }
   catch { return error("動漫收藏資料尚未啟用或暫時無法讀取。", 503); }
@@ -118,9 +136,11 @@ export async function POST(request: NextRequest) {
     const folderIds = await validateFolderIds(context.userId, scope, normalizedFolderIds(parsed.data));
     const admin = createAdminClient();
     const { data, error: insertError } = await admin.from("anime_library").insert({ user_id: context.userId, ...manualRow(parsed.data, cover?.legacyPath ?? null), ...(cover?.storageObjectId ? { cover_storage_object_id: cover.storageObjectId } : {}), folder_id: folderIds[0] ?? null }).select("id").single();
+    if (insertError?.code === "23505") return error("這部作品已在收藏中。", 409);
     if (insertError) throw insertError;
     await replaceFolders(data.id, folderIds);
     await replaceCategories(context.userId, data.id, parsed.data.categoryIds, scope, folderIds);
+    if (parsed.data.isAdult) learnKnownAdultIdentity(parsed.data.externalSource, parsed.data.externalId);
     return NextResponse.json({ id: data.id }, { status: 201, headers: { "Cache-Control": "private, no-store" } });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); return error("無法新增動漫，請稍後再試。", 503); }
 }
@@ -165,11 +185,12 @@ export async function PATCH(request: NextRequest) {
   const cover = await verifiedCover(context.userId, parsed.data.coverTicket); if (cover === undefined) return error("封面上傳已過期，請重新選擇圖片。", 400);
   try {
     const admin = createAdminClient(); const { id: animeId, categoryIds } = parsed.data; const changes = parsed.data;
-    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,cover_storage_object_id,watch_status,is_adult,folder_id").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
+    const { data: current, error: currentError } = await admin.from("anime_library").select("id,cover_url,cover_storage_object_id,watch_status,is_adult,folder_id,external_source,external_id").eq("id", animeId).eq("user_id", context.userId).is("deleted_at", null).maybeSingle();
     if (currentError) throw currentError; if (!current) return error("找不到這部動漫。", 404);
     if ((current.is_adult || changes.isAdult === true) && !(await hasAdultContentAccess(context.userId))) return error("你沒有成人內容存取權。", 403);
     const updates: Record<string, unknown> = {};
     if (changes.title !== undefined) updates.title = changes.title;
+    if (changes.titleIsCustom !== undefined) updates.title_is_custom = changes.titleIsCustom;
     if (changes.sourceUrl !== undefined) updates.source_url = changes.sourceUrl || null;
     if (changes.coverUrl !== undefined && !cover) updates.cover_url = changes.coverUrl || null;
     if (changes.watchStatus !== undefined) { updates.watch_status = changes.watchStatus; if (changes.watchStatus === "watching" && current.watch_status !== "watching") updates.started_watching_at = new Date().toISOString().slice(0, 10); if (changes.watchStatus === "completed") updates.completed_at = new Date().toISOString().slice(0, 10); }
@@ -198,6 +219,7 @@ export async function PATCH(request: NextRequest) {
     if (folderAssignmentChanged || scopeChanged) await replaceFolders(animeId, effectiveFolderIds);
     if (cover) await deleteCover(context.userId, storedAnimeCover(context.userId, current));
     if (categoryIds !== undefined || scopeChanged) await replaceCategories(context.userId, animeId, categoryIds ?? [], effectiveScope, effectiveFolderIds);
+    if (effectiveAdult) learnKnownAdultIdentity(current.external_source, current.external_id);
     return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (caught) { if (caught instanceof Error && caught.message === "Invalid anime category") return error("選取的類別不存在。", 400); if (caught instanceof Error && caught.message === "Invalid anime folder") return error("請選擇目前清單內的資料夾。", 400); return error("無法儲存動漫資料，請稍後再試。", 503); }
 }

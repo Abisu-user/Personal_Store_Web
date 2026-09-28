@@ -272,7 +272,12 @@ async function matchBangumiCandidates(candidates: BangumiChineseCandidate[], fil
         .sort((left, right) => right.score - left.score);
       const best = ranked[0];
       if (!best || (ranked[1] && best.score - ranked[1].score < 2)) return [];
-      return [{ ...best.anime, titleChinese: candidate.nameChinese ?? best.anime.titleChinese }];
+      return [{
+        ...best.anime,
+        titleChinese: candidate.nameChinese ?? best.anime.titleChinese,
+        verifiedChineseTitle: Boolean(candidate.nameChinese && candidate.malId && candidate.malId === best.anime.malId),
+        verifiedChineseSource: candidate.nameChinese && candidate.malId === best.anime.malId ? String(candidate.id) : null,
+      }];
     });
     const needle = normalizeAnimeTitle(filters.search ?? "").normalized.replace(/\s+/g, "");
     const relevance = (anime: ExternalAnime) => {
@@ -320,6 +325,27 @@ async function request<T>(
   }
   cache.set(key, { until: Date.now() + ttl, value: body.data });
   return body.data as T;
+}
+
+/** One AniList operation for all local-alias candidate IDs; never trust alias rows as metadata. */
+export async function getVerifiedAdultAnimeByIds(ids: number[], filters: CatalogueFilters = {}) {
+  const unique = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, 24);
+  if (!unique.length) return [];
+  const definitions = ["$ids: [Int!]!"];
+  const argumentsList = ["id_in: $ids", "type: ANIME", "countryOfOrigin: JP", "isAdult: true"];
+  const variables: Record<string, unknown> = { ids: unique };
+  for (const [name, type, value] of activeMediaFilters(filters)) {
+    if (name === "search" || value === undefined || value === null || value === "") continue;
+    definitions.push("$" + name + ": " + type);
+    argumentsList.push(name + ": $" + name);
+    variables[name] = value;
+  }
+  const query = "query AdultAliasMedia(" + definitions.join(", ") + ") { Page(page: 1, perPage: 30) { media(" +
+    argumentsList.join(", ") + ") { " + mediaFields + " } } }";
+  const data = await request<{ Page?: { media?: unknown[] } }>(query, variables, FILTER_TTL);
+  return (Array.isArray(data?.Page?.media) ? data.Page.media : [])
+    .map(mapAnime)
+    .filter((anime) => anime.source === "anilist" && anime.isAdult && anime.countryOfOrigin === "JP");
 }
 
 export async function getCatalogue(
@@ -526,6 +552,87 @@ export async function getWeeklySchedule(
       return airingAt >= start && airingAt < end;
     });
   }
+}
+
+export type LatestAiredEpisode = {
+  mediaId: number;
+  episode: number;
+  airedAt: number;
+  broadcastStatus: string | null;
+  totalEpisodes: number | null;
+};
+
+/** Resolve legacy Jikan/MAL library IDs through AniList's stable idMal field. */
+export async function getAniListIdsForMalIds(malIds: number[]) {
+  const ids = [...new Set(malIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  const found = new Map<number, number>();
+  if (!ids.length) return found;
+  const query = `query AnimeMalIds($ids: [Int]) {
+    Page(page: 1, perPage: 50) {
+      media(idMal_in: $ids, type: ANIME, isAdult: false) { id idMal }
+    }
+  }`;
+  for (let offset = 0; offset < ids.length; offset += 40) {
+    const batch = ids.slice(offset, offset + 40);
+    const data = await request<{ Page?: { media?: Array<{ id?: number; idMal?: number }> } }>(
+      query, { ids: batch }, CATALOGUE_TTL,
+    );
+    for (const media of data.Page?.media ?? []) {
+      if (media.idMal && media.id && batch.includes(media.idMal)) found.set(media.idMal, media.id);
+    }
+  }
+  return found;
+}
+
+/** AniList's past AiringSchedule is the only source of update timestamps here.
+ * Missing history stays missing; nextAiringEpisode and DB updated_at are never substitutes.
+ */
+export async function getLatestAiredEpisodes(mediaIds: number[], now = Math.floor(Date.now() / 1000)) {
+  const ids = [...new Set(mediaIds.filter((id) => Number.isSafeInteger(id) && id > 0))];
+  if (!ids.length) return new Map<number, LatestAiredEpisode>();
+  const query = `query AnimeLatestAired($page: Int!, $ids: [Int], $start: Int!, $end: Int!) {
+    Page(page: $page, perPage: 50) {
+      pageInfo { hasNextPage }
+      airingSchedules(mediaId_in: $ids, airingAt_greater: $start, airingAt_lesser: $end, sort: TIME_DESC) {
+        mediaId episode airingAt media { id status episodes isAdult }
+      }
+    }
+  }`;
+  const bucketEnd = Math.ceil(now / 900) * 900;
+  const start = bucketEnd - 45 * 86400;
+  const found = new Map<number, LatestAiredEpisode>();
+  type AiringResponse = { Page?: {
+    pageInfo?: { hasNextPage?: boolean };
+    airingSchedules?: Array<{
+      mediaId?: number;
+      episode?: number;
+      airingAt?: number;
+      media?: { id?: number; status?: string; episodes?: number | null; isAdult?: boolean };
+    }>;
+  } };
+  for (let offset = 0; offset < ids.length; offset += 40) {
+    const batch = ids.slice(offset, offset + 40);
+    for (let page = 1; page <= 8; page += 1) {
+      const data = await request<AiringResponse>(query, { page, ids: batch, start, end: bucketEnd }, FILTER_TTL);
+      const rows = Array.isArray(data?.Page?.airingSchedules) ? data.Page.airingSchedules : [];
+      for (const row of rows) {
+        const id = Number(row?.mediaId);
+        const airedAt = Number(row?.airingAt);
+        const episode = Number(row?.episode);
+        if (!batch.includes(id) || row?.media?.id !== id || row.media.isAdult !== false || !Number.isSafeInteger(episode) || episode < 1 ||
+            !Number.isSafeInteger(airedAt) || airedAt > now || found.has(id)) continue;
+        found.set(id, {
+          mediaId: id,
+          episode,
+          airedAt,
+          broadcastStatus: typeof row.media?.status === "string" ? row.media.status : null,
+          totalEpisodes: typeof row.media?.episodes === "number" && Number.isSafeInteger(row.media.episodes) ? row.media.episodes : null,
+        });
+      }
+      if (batch.every((id) => found.has(id)) || !data?.Page?.pageInfo?.hasNextPage) break;
+    }
+  }
+  return found;
 }
 
 export async function getCatalogueTaxonomy(): Promise<CatalogueTaxonomy> {

@@ -154,13 +154,17 @@ test("adult catalogue route checks access before search and never browser-caches
     "@/lib/anime/data": { getAnimePreferences: async () => ({ adultModeEnabled: true }) },
     "@/lib/security/activity": { getSecurityContext: async () => ({ userId: "test-user" }) },
     "@/lib/security/adult-content": { hasAdultContentAccess: async () => unlocked },
+    "@/lib/security/adult-unlock": { hasUnlockedAdultAccess: async (_context, token) => token === "test-unlock-token" },
   });
   const { GET } = load("src/app/api/anime/catalogue/route.ts");
-  const request = { nextUrl: new URL("https://example.test/api/anime/catalogue?adult=1&search=%E7%B7%A3%E4%B9%8B%E7%A9%BA") };
+  const url = new URL("https://example.test/api/anime/catalogue?adult=1&search=%E7%B7%A3%E4%B9%8B%E7%A9%BA");
+  const request = { nextUrl: url, headers: new Headers() };
   assert.equal((await GET(request)).status, 403);
   assert.equal(calls, 0);
   unlocked = true;
-  const permitted = await GET(request);
+  assert.equal((await GET(request)).status, 403, "adult permission alone cannot bypass unlock");
+  assert.equal(calls, 0);
+  const permitted = await GET({ nextUrl: url, headers: new Headers({ "x-adult-unlock": "test-unlock-token" }) });
   assert.equal(permitted.status, 200);
   assert.equal(permitted.headers["Cache-Control"], "private, no-store");
   assert.equal(calls, 1);

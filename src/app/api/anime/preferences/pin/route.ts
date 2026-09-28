@@ -4,6 +4,7 @@ import { hashAppLockPin, makeAppLockSalt, validateAppLockPin, verifyAppLockPin }
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasAdultContentAccess } from "@/lib/security/adult-content";
+import { issueAdultUnlock } from "@/lib/security/adult-unlock";
 
 const modeSchema = z.enum(["pin4", "pin6"]);
 const configureSchema = z.object({ action: z.literal("configure"), mode: modeSchema, pin: z.string().min(1).max(12) });
@@ -52,7 +53,7 @@ export async function POST(request: NextRequest) {
       return fail(lockedUntil ? "已連續輸入錯誤 5 次，請 1 分鐘後再試。" : "PIN 碼不正確，請再試一次。", 403);
     }
     await admin.from("anime_preferences").update({ adult_pin_failed_attempts: 0, adult_pin_locked_until: null }).eq("user_id", context.userId);
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, token: issueAdultUnlock(context) }, { headers: { "Cache-Control": "no-store" } });
   } catch (cause) {
     const error = cause as { code?: string; message?: string };
     console.error("[anime-adult-pin] request failed", { code: error.code, message: error.message });

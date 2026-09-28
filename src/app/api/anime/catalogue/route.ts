@@ -1,14 +1,20 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import {
   getCatalogue,
   getCatalogueTaxonomy,
   getDiscoveryHome,
+  getAniListIdsForMalIds,
+  getLatestAiredEpisodes,
   getWeeklySchedule,
   type CatalogueFilters,
 } from "@/lib/anime/anilist-catalogue";
 import { getAnimePreferences } from "@/lib/anime/data";
 import { getSecurityContext } from "@/lib/security/activity";
 import { hasAdultContentAccess } from "@/lib/security/adult-content";
+import { hasUnlockedAdultAccess } from "@/lib/security/adult-unlock";
+import { getAdultCatalogueWithAliases } from "@/lib/anime/adult-alias-catalogue";
+import { learnVerifiedAdultAnime } from "@/lib/anime/adult-alias-store";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +53,8 @@ export async function GET(request: NextRequest) {
       { error: "成人內容模式尚未啟用。" },
       { status: 403 },
     );
+  if (adultRequested && !(await hasUnlockedAdultAccess(security, request.headers.get("x-adult-unlock"))))
+    return NextResponse.json({ error: "請先完成成人區驗證。" }, { status: 403 });
   const timeZoneOffset = Math.max(
     -840,
     Math.min(840, Number(params.get("tzOffset") ?? 0) || 0),
@@ -63,6 +71,52 @@ export async function GET(request: NextRequest) {
         },
         { status: 503 },
       );
+    }
+  }
+  if (params.get("view") === "following") {
+    try {
+      const { data: rows, error: libraryError } = await createAdminClient()
+        .from("anime_library")
+        .select("id,title,cover_url,cover_storage_object_id,updated_at,external_id,external_source,episodes")
+        .eq("user_id", security.userId)
+        .eq("watch_status", "watching")
+        .or("is_adult.is.null,is_adult.eq.false")
+        .is("deleted_at", null)
+        .limit(400);
+      if (libraryError) throw libraryError;
+      const watched = rows ?? [];
+      const malToAniList = await getAniListIdsForMalIds(watched
+        .filter((row) => row.external_source === "jikan")
+        .map((row) => Number(row.external_id))).catch((cause) => {
+          console.warn("[anime-following] MAL ID mapping unavailable", { error: cause instanceof Error ? cause.message : "unknown" });
+          return new Map<number, number>();
+        });
+      const providerIds = watched.map((row) => row.external_source === "anilist"
+        ? Number(row.external_id)
+        : row.external_source === "jikan" ? malToAniList.get(Number(row.external_id)) : undefined);
+      const latest = await getLatestAiredEpisodes(providerIds.filter((id): id is number => typeof id === "number"));
+      const items = watched.flatMap((row, index) => {
+        const providerId = providerIds[index];
+        const aired = providerId ? latest.get(providerId) : null;
+        if (!aired) return [];
+        return [{
+          id: row.id,
+          title: row.title,
+          coverUrl: row.cover_storage_object_id
+            ? `/api/anime/library/${row.id}/cover?v=${encodeURIComponent(row.updated_at)}`
+            : row.cover_url,
+          broadcastStatus: aired.broadcastStatus,
+          latestEpisode: aired.episode,
+          lastAiredAt: aired.airedAt,
+          totalEpisodes: aired.totalEpisodes ?? row.episodes,
+        }];
+      }).sort((left, right) => right.lastAiredAt - left.lastAiredAt);
+      return NextResponse.json({ items, watchingCount: watched.length }, {
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    } catch (cause) {
+      console.warn("[anime-following] recent episodes unavailable", { error: cause instanceof Error ? cause.message : "unknown" });
+      return NextResponse.json({ error: "追番更新暫時無法載入。" }, { status: 503 });
     }
   }
   if (params.get("view") === "schedule") {
@@ -129,7 +183,16 @@ export async function GET(request: NextRequest) {
     search: clean(params.get("search")),
   };
   try {
-    return NextResponse.json(await getCatalogue(filters), {
+    const result = includeAdult
+      ? await getAdultCatalogueWithAliases(filters, security.userId)
+      : await getCatalogue(filters);
+    const needingAliasLearning = includeAdult ? result.items.filter((anime) =>
+      !anime.aliases?.some((alias) => alias.scope === "global" && alias.source === "anilist") ||
+      (anime.verifiedChineseTitle && !anime.aliases?.some((alias) => alias.scope === "global" && alias.source === "bangumi"))) : [];
+    if (needingAliasLearning.length) after(() =>
+      learnVerifiedAdultAnime(needingAliasLearning).catch((cause) =>
+        console.warn("[adult-alias] background learning failed", { error: cause instanceof Error ? cause.name : "unknown" })));
+    return NextResponse.json(result, {
       headers: { "Cache-Control": includeAdult ? "private, no-store" : "private, max-age=900" },
     });
   } catch (cause) {

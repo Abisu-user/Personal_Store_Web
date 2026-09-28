@@ -164,7 +164,13 @@
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   box-shadow: var(--shadow-card);
   scroll-snap-align: start;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
+.card:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .cover {
   position: relative;
   aspect-ratio: 16 / 9;

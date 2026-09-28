@@ -1,5 +1,6 @@
 "use client";
 import styles from "./anime-mobile.module.css";
+import { resolveAnimeDisplayTitle, type AnimeAlias } from "@/lib/anime/anime-alias";
 import { usePathname } from "next/navigation";
 import { AppIcon } from "@/components/ui/app-icon";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
@@ -87,11 +88,8 @@ const empty: AnimeWorkspaceData = {
 };
 // `title` is the user's editable display name.  Provider names remain in the
 // detail view, but must never override a name the user has changed.
-const displayTitle = (
-  anime: Pick<AnimeLibraryItem, "title" | "titleChinese" | "titleJapanese">,
-) => anime.title || anime.titleChinese || anime.titleJapanese || "未命名動漫";
-const externalDisplayTitle = (anime: ExternalAnime) =>
-  anime.titleChinese || anime.titleJapanese || anime.title || "未命名動漫";
+const displayTitle = (anime: AnimeLibraryItem) => resolveAnimeDisplayTitle(anime);
+const externalDisplayTitle = (anime: ExternalAnime) => resolveAnimeDisplayTitle(anime);
 
 function watchSourceLabel(url: string) {
   try {
@@ -146,6 +144,8 @@ function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: bool
     externalId: anime.id,
     externalSource: anime.source,
     title: externalDisplayTitle(anime),
+    titleIsCustom: false,
+    aliases: anime.aliases,
     titleJapanese: anime.titleJapanese,
     titleEnglish: anime.titleEnglish,
     titleChinese: anime.titleChinese,
@@ -188,6 +188,13 @@ function optimisticAnime(anime: ExternalAnime, optimisticId: string, adult: bool
     folderIds: [],
   };
 }
+type AnimeEditorSaveResult = {
+  id: string;
+  watchStatus: AnimeWatchStatus;
+  rating: number | null;
+  categoryIds: string[];
+  folderIds: string[];
+};
 async function api<T>(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
@@ -1003,12 +1010,12 @@ export function AnimeWorkspace({
     "library",
   );
   const [adultUnlocked, setAdultUnlocked] = useState(false);
+  const adultUnlockToken = useRef<string | null>(null);
   const [adultView, setAdultView] = useState<AdultView>("library");
   const [adultPinPrompt, setAdultPinPrompt] = useState(false);
   const [adultPinBusy, setAdultPinBusy] = useState(false);
   const [adultLoading, setAdultLoading] = useState(false);
   const previousAdultContext = useRef({ pathname, tab });
-  const quickAddLocks = useRef(new Set<string>());
   const [preferences, setPreferences] = useState(
     initialData?.preferences ?? defaultPreferences,
   );
@@ -1082,6 +1089,7 @@ export function AnimeWorkspace({
         setPreferences(next.preferences);
         setLoaded(true);
         if (!next.adultPermissions.adultContentAccess) {
+          adultUnlockToken.current = null;
           setAdultUnlocked(false);
           setAdultData(null);
           setTab((current) => current === "adult" ? "library" : current);
@@ -1118,6 +1126,7 @@ export function AnimeWorkspace({
     setPreferences(next.preferences);
     setLoaded(true);
     if (!next.adultPermissions.adultContentAccess) {
+      adultUnlockToken.current = null;
       setAdultUnlocked(false);
       setAdultData(null);
       setTab((current) => current === "adult" ? "library" : current);
@@ -1127,117 +1136,58 @@ export function AnimeWorkspace({
   const refreshAdult = async () => {
     const next = await api<AnimeWorkspaceData>(
       "/api/anime/library?scope=adult",
+      { headers: { "x-adult-unlock": adultUnlockToken.current ?? "" } },
     );
     if (document.visibilityState === "visible") setAdultData(next);
   };
-  const quickAddExternal = async (anime: ExternalAnime, adult = false) => {
-    const key = `${adult ? "adult" : "standard"}:${anime.source}:${anime.id}`;
-    if (quickAddLocks.current.has(key)) return;
+  const quickAddExternal = (anime: ExternalAnime, adult = false) => {
     const currentLibrary = adult ? (adultData?.library ?? []) : data.library;
     if (currentLibrary.some((item) => item.externalSource === anime.source && item.externalId === anime.id)) {
       setNotice("這部作品已在收藏中。");
       return;
     }
-    quickAddLocks.current.add(key);
-    const optimisticId = `optimistic-${crypto.randomUUID()}`;
-    const optimistic = optimisticAnime(anime, optimisticId, adult);
-    if (adult) setAdultData((current) => current ? { ...current, library: [optimistic, ...current.library] } : current);
-    else setData((current) => ({ ...current, library: [optimistic, ...current.library] }));
-
-    return new Promise<void>((resolve, reject) => {
-      backgroundJobs.enqueue({
-        type: adult ? "anime-adult" : "anime",
-        title: `加入收藏：${externalDisplayTitle(anime)}`,
-        operation: "加入收藏",
-        page: "/anime",
-        entityKey: `anime-external:${key}`,
-        request: {
-          url: "/api/anime/library",
-          method: "POST",
-          body: {
-            title: externalDisplayTitle(anime),
-            sourceUrl: null,
-            coverUrl: anime.coverUrl,
-            watchStatus: "planning",
-            categoryIds: [],
-            folderIds: [],
-            isAdult: adult,
-            contentRating: adult ? anime.contentRating ?? "成人內容" : anime.contentRating,
-            adultSource: adult ? anime.source : null,
-            externalUrl: null,
-            externalId: anime.id,
-            externalSource: anime.source,
-            metadata: {
-              titleJapanese: anime.titleJapanese,
-              titleEnglish: anime.titleEnglish,
-              titleChinese: anime.titleChinese,
-              originalTitle: anime.originalTitle,
-              synopsis: anime.synopsis,
-              animeType: anime.animeType,
-              broadcastStatus: anime.broadcastStatus,
-              episodes: anime.episodes,
-              episodeDuration: anime.episodeDuration,
-              releaseYear: anime.releaseYear,
-              season: anime.season,
-              startDate: anime.startDate,
-              endDate: anime.endDate,
-              ageRating: anime.ageRating,
-              sourceMaterial: anime.sourceMaterial,
-              publicScore: anime.publicScore,
-              genres: anime.genres,
-              studios: anime.studios,
-              relations: anime.relations,
-            },
-          },
-        },
-        rollback: () => {
-          if (adult) setAdultData((current) => current ? { ...current, library: current.library.filter((item) => item.id !== optimisticId) } : current);
-          else setData((current) => ({ ...current, library: current.library.filter((item) => item.id !== optimisticId) }));
-        },
-        onSuccess: (result) => {
-          const savedId = (result as { id?: string } | null)?.id;
-          const replace = (items: AnimeLibraryItem[]) => items.map((item) => item.id === optimisticId ? { ...item, id: savedId ?? item.id } : item);
-          if (adult) setAdultData((current) => current ? { ...current, library: replace(current.library) } : current);
-          else setData((current) => ({ ...current, library: replace(current.library) }));
-          if (savedId) {
-            const scope = adult ? "adult" : "standard";
-            sourceMatchAttempted.current.add(`${scope}:${savedId}`);
-            void fetch("/api/anime/sources/match-library", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ scope, ids: [savedId] }),
-            }).then(async (response) => {
-              if (!response.ok) throw new Error(`新增收藏來源比對失敗：${response.status}`);
-              return response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>;
-            }).then((answer) => {
-              const match = answer.matches?.find((item) => item.id === savedId);
-              if (!match) return;
-              if (adult) setAdultData((current) => current ? {
-                ...current,
-                library: current.library.map((item) => item.id !== savedId ? item : match.destination === "external"
-                  ? { ...item, externalUrl: match.matchedUrl }
-                  : { ...item, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" }),
-              } : current);
-              else setData((current) => ({
-                ...current,
-                library: current.library.map((item) => item.id === savedId ? { ...item, sourceUrl: match.matchedUrl } : item),
-              }));
-            }).catch((error) => {
-              sourceMatchAttempted.current.delete(`${scope}:${savedId}`);
-              console.warn("[anime-source-backfill] newly added item failed", error);
-            });
-          }
-          quickAddLocks.current.delete(key);
-          setNotice("已加入收藏。");
-          resolve();
-        },
-        onError: (cause) => {
-          quickAddLocks.current.delete(key);
-          setNotice(cause.message || "無法加入收藏。");
-          reject(cause);
-        },
-      });
+    if (adult) setAdultPrefill(anime);
+    else setPrefill(anime);
+  };
+  const onExternalSaved = (anime: ExternalAnime, adult: boolean, saved: AnimeEditorSaveResult) => {
+    const optimistic = optimisticAnime(anime, saved.id, adult);
+    const item: AnimeLibraryItem = {
+      ...optimistic,
+      watchStatus: saved.watchStatus,
+      rating: saved.rating,
+      folderId: saved.folderIds[0] ?? null,
+      folderIds: saved.folderIds,
+      tags: (adult ? adultData?.tags ?? [] : data.tags).filter((category) => saved.categoryIds.includes(category.id)),
+    };
+    if (adult) setAdultData((current) => current ? { ...current, library: [item, ...current.library.filter((entry) => entry.id !== saved.id)] } : current);
+    else setData((current) => ({ ...current, library: [item, ...current.library.filter((entry) => entry.id !== saved.id)] }));
+    const scope = adult ? "adult" : "standard";
+    sourceMatchAttempted.current.add(`${scope}:${saved.id}`);
+    void fetch("/api/anime/sources/match-library", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, ids: [saved.id] }),
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`新增收藏來源比對失敗：${response.status}`);
+      return response.json() as Promise<{ matches?: Array<{ id: string; matchedUrl: string; destination: "source" | "external" }> }>;
+    }).then((answer) => {
+      const match = answer.matches?.find((entry) => entry.id === saved.id);
+      if (!match) return;
+      if (adult) setAdultData((current) => current ? {
+        ...current,
+        library: current.library.map((entry) => entry.id !== saved.id ? entry : match.destination === "external"
+          ? { ...entry, externalUrl: match.matchedUrl }
+          : { ...entry, sourceUrl: match.matchedUrl, externalUrl: match.matchedUrl, adultSource: "hanime1" }),
+      } : current);
+      else setData((current) => ({
+        ...current,
+        library: current.library.map((entry) => entry.id === saved.id ? { ...entry, sourceUrl: match.matchedUrl } : entry),
+      }));
+    }).catch((error) => {
+      sourceMatchAttempted.current.delete(`${scope}:${saved.id}`);
+      console.warn("[anime-source-backfill] newly added item failed", error);
     });
+    setNotice("已加入收藏。");
   };
   const updateWatchStatus = (anime: AnimeLibraryItem, watchStatus: Exclude<AnimeWatchStatus, "paused">) => {
     const adult = anime.isAdult;
@@ -1262,7 +1212,7 @@ export function AnimeWorkspace({
   const refreshTrash = async (scope: CategoryScope) => {
     const next = await api<AnimeWorkspaceData>(
       `/api/anime/library?scope=${scope}&view=trash`,
-      { cache: "no-store" },
+      { cache: "no-store", headers: scope === "adult" ? { "x-adult-unlock": adultUnlockToken.current ?? "" } : {} },
     );
     if (scope === "adult") setAdultTrashData(next);
     else setTrashData(next);
@@ -1312,6 +1262,7 @@ export function AnimeWorkspace({
       setPreferences(next);
       setData((current) => ({ ...current, preferences: next }));
       if (!next.adultModeEnabled) {
+        adultUnlockToken.current = null;
         setAdultData(null);
         setAdultUnlocked(false);
         if (tab === "adult") setTab("library");
@@ -1326,8 +1277,11 @@ export function AnimeWorkspace({
     }
   };
   const loadAdult = async () => {
+    const token = adultUnlockToken.current;
+    if (!token) throw new Error("請先完成成人區驗證。");
     const next = await api<AnimeWorkspaceData>(
       "/api/anime/library?scope=adult",
+      { headers: { "x-adult-unlock": token } },
     );
     if (document.visibilityState !== "visible") return;
     setAdultData(next);
@@ -1358,9 +1312,21 @@ export function AnimeWorkspace({
     setNotice(null);
     try {
       if (preferences.adultAccessMode === "passkey") {
+        const { challenge } = await api<{ challenge: string }>("/api/anime/adult-unlock", {
+          method: "POST", body: JSON.stringify({ action: "begin-passkey" }),
+        });
         const { error } = await createClient().auth.signInWithPasskey();
         if (error)
           throw new Error("Face ID / Passkey 驗證未完成，成人內容仍保持隱藏。");
+        const { token } = await api<{ token: string }>("/api/anime/adult-unlock", {
+          method: "POST", body: JSON.stringify({ action: "complete-passkey", challenge }),
+        });
+        adultUnlockToken.current = token;
+      } else {
+        const { token } = await api<{ token: string }>("/api/anime/adult-unlock", {
+          method: "POST", body: JSON.stringify({ action: "none" }),
+        });
+        adultUnlockToken.current = token;
       }
       await loadAdult();
     } catch (cause) {
@@ -1385,6 +1351,9 @@ export function AnimeWorkspace({
     if (!response.ok) {
       throw await pinVerificationErrorFromResponse(response, "成人區 PIN 驗證失敗。");
     }
+    const body = await response.json() as { token?: string };
+    if (!body.token) throw new Error("無法建立成人區驗證狀態。");
+    adultUnlockToken.current = body.token;
   };
   const finishAdultPinUnlock = async () => {
     setAdultPinPrompt(false);
@@ -1393,7 +1362,9 @@ export function AnimeWorkspace({
     setTab("adult");
     try {
       const [next] = await Promise.all([
-        api<AnimeWorkspaceData>("/api/anime/library?scope=adult"),
+        api<AnimeWorkspaceData>("/api/anime/library?scope=adult", {
+          headers: { "x-adult-unlock": adultUnlockToken.current ?? "" },
+        }),
         new Promise<void>((resolve) => window.setTimeout(resolve, 300)),
       ]);
       if (document.visibilityState !== "visible") return;
@@ -1410,6 +1381,7 @@ export function AnimeWorkspace({
   useEffect(() => {
     const hideAdult = () => {
       if (document.visibilityState !== "visible") {
+        adultUnlockToken.current = null;
         setAdultUnlocked(false);
         setAdultData(null);
         setAdultLoading(false);
@@ -1424,6 +1396,7 @@ export function AnimeWorkspace({
     const leftAdultRoute = previous.pathname.startsWith("/anime/adult") && !pathname.startsWith("/anime/adult");
     const leftAdultTab = previous.tab === "adult" && tab !== "adult";
     if (leftAdultRoute || leftAdultTab) {
+      adultUnlockToken.current = null;
       setAdultUnlocked(false);
       setAdultData(null);
       setAdultLoading(false);
@@ -1743,7 +1716,15 @@ export function AnimeWorkspace({
       {tab === "home" && (
         <AnimeHome
           library={data.library}
-          onAdd={(anime) => quickAddExternal(anime)}
+          onOpenAnime={(id) => {
+            const anime = data.library.find((entry) => entry.id === id);
+            if (anime) {
+              setSelectedReadOnly(false);
+              setSelected(anime);
+            } else {
+              setTab("library");
+            }
+          }}
           onOpenLibrary={() => setTab("library")}
           onOpenSchedule={() => { setDiscoveryView("schedule"); setTab("discover"); }}
           onOpenSeason={() => { setDiscoveryView("explore"); setTab("discover"); }}
@@ -1960,6 +1941,7 @@ export function AnimeWorkspace({
           ) : (
             <AnimeDiscovery
               adultMode
+              adultUnlockToken={adultUnlockToken.current}
               library={adultData.library}
               onAdd={(anime) => quickAddExternal(anime, true)}
             />
@@ -2495,9 +2477,9 @@ export function AnimeWorkspace({
           folders={data.folders}
           prefill={prefill}
           onClose={() => setPrefill(null)}
-          onSaved={async () => {
-            await refresh();
-            setNotice("已新增動漫。");
+          onSaved={async (saved) => {
+            if (saved) onExternalSaved(prefill, false, saved);
+            else await refresh();
           }}
         />
       )}
@@ -2509,15 +2491,20 @@ export function AnimeWorkspace({
           folders={adultData?.folders ?? []}
           prefill={adultPrefill}
           onClose={() => setAdultPrefill(null)}
-          onSaved={async () => {
-            await refreshAdult();
-            setNotice("已新增成人作品。");
+          onSaved={async (saved) => {
+            if (saved) onExternalSaved(adultPrefill, true, saved);
+            else await refreshAdult();
           }}
         />
       )}
       {selected && (
         <AnimeDetailDialog
           anime={selected}
+          adultUnlockToken={selected.isAdult ? adultUnlockToken.current : null}
+          onAliasesChanged={(aliases) => {
+            setSelected((current) => current?.id === selected.id ? { ...current, aliases } : current);
+            setAdultData((current) => current ? { ...current, library: current.library.map((item) => item.id === selected.id ? { ...item, aliases } : item) } : current);
+          }}
           onClose={() => setSelected(null)}
           onEdit={
             selectedReadOnly
@@ -2992,13 +2979,56 @@ function AnimeStats({
 
 function AnimeDetailDialog({
   anime,
+  adultUnlockToken,
+  onAliasesChanged,
   onClose,
   onEdit,
 }: {
   anime: AnimeLibraryItem;
+  adultUnlockToken?: string | null;
+  onAliasesChanged?: (aliases: AnimeAlias[]) => void;
   onClose: () => void;
   onEdit?: () => void;
 }) {
+  const anilistId = anime.isAdult && anime.externalSource === "anilist" && /^\d+$/.test(anime.externalId ?? "") ? Number(anime.externalId) : null;
+  const [aliases, setAliases] = useState<AnimeAlias[]>(anime.aliases ?? []);
+  const [newAlias, setNewAlias] = useState("");
+  const [aliasBusy, setAliasBusy] = useState(false);
+  const [aliasError, setAliasError] = useState<string | null>(null);
+  const saveAlias = async () => {
+    if (!anilistId || !adultUnlockToken || !newAlias.trim() || aliasBusy) return;
+    setAliasBusy(true);
+    setAliasError(null);
+    try {
+      const response = await fetch("/api/anime/aliases", {
+        method: "POST", headers: { "Content-Type": "application/json", "x-adult-unlock": adultUnlockToken },
+        body: JSON.stringify({ anilistId, alias: newAlias.trim() }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "無法新增搜尋別名。");
+      setAliases(result.aliases);
+      onAliasesChanged?.(result.aliases);
+      setNewAlias("");
+    } catch (caught) { setAliasError(caught instanceof Error ? caught.message : "無法新增搜尋別名。"); }
+    finally { setAliasBusy(false); }
+  };
+  const deleteAlias = async (id: string) => {
+    if (!adultUnlockToken || aliasBusy) return;
+    setAliasBusy(true);
+    setAliasError(null);
+    try {
+      const response = await fetch("/api/anime/aliases", {
+        method: "DELETE", headers: { "Content-Type": "application/json", "x-adult-unlock": adultUnlockToken },
+        body: JSON.stringify({ id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "無法移除搜尋別名。");
+      const next = aliases.filter((alias) => alias.id !== id);
+      setAliases(next);
+      onAliasesChanged?.(next);
+    } catch (caught) { setAliasError(caught instanceof Error ? caught.message : "無法移除搜尋別名。"); }
+    finally { setAliasBusy(false); }
+  };
   const names = [
     anime.titleJapanese,
     anime.titleEnglish,
@@ -3024,7 +3054,7 @@ function AnimeDetailDialog({
             <Cover anime={anime} />
             <div>
               <Status value={anime.watchStatus} />
-              <h3>{displayTitle(anime)}</h3>
+              <h3>{resolveAnimeDisplayTitle({ ...anime, aliases })}</h3>
               {names.length > 0 && <p>{names.join(" · ")}</p>}
               <div className="anime-detail-rating">
                 <StarRating readonly value={anime.rating} />{" "}
@@ -3041,6 +3071,23 @@ function AnimeDetailDialog({
               <span key={item}>{item}</span>
             ))}
           </div>
+        )}
+        {anilistId && adultUnlockToken && (
+          <section className="anime-alias-section">
+            <h4>中文名稱／搜尋別名</h4>
+            <p className="anime-field-hint">自己的別名只有此帳號能搜尋；已驗證的名稱由系統維護。</p>
+            <div className="anime-tags">
+              {aliases.map((alias) => <span key={alias.id ?? `${alias.source}:${alias.alias}`}>
+                {alias.alias}
+                {alias.scope === "user" && alias.id && <button aria-label={`移除別名 ${alias.alias}`} disabled={aliasBusy} onClick={() => void deleteAlias(alias.id!)} type="button">×</button>}
+              </span>)}
+            </div>
+            <div className="anime-alias-add">
+              <input aria-label="新增中文名稱或搜尋別名" maxLength={500} onChange={(event) => setNewAlias(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void saveAlias(); } }} placeholder="例如：黑獸、黒獣" value={newAlias} />
+              <button className="secondary-button" disabled={aliasBusy || !newAlias.trim()} onClick={() => void saveAlias()} type="button">新增別名</button>
+            </div>
+            {aliasError && <p role="alert">{aliasError}</p>}
+          </section>
         )}
         {anime.tags.length > 0 && (
           <section>
@@ -3123,13 +3170,13 @@ function AnimeEditor({
   folders: AnimeWorkspaceData["folders"];
   defaultFolderId?: string | null;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (saved?: AnimeEditorSaveResult) => Promise<void>;
   onRemove?: () => void;
   onOptimisticChange?: (next: AnimeLibraryItem) => void;
 }) {
   const backgroundSave = useBackgroundSave();
   const [title, setTitle] = useState(
-    anime?.title ?? prefill?.titleChinese ?? prefill?.title ?? "",
+    anime?.title ?? (prefill ? externalDisplayTitle(prefill) : ""),
   );
   const [sourceUrl, setSourceUrl] = useState(anime?.sourceUrl ?? "");
   const [watchStatus, setWatchStatus] = useState<AnimeWatchStatus>(
@@ -3144,6 +3191,7 @@ function AnimeEditor({
     anime?.folderIds ?? (anime?.folderId ? [anime.folderId] : defaultFolderId ? [defaultFolderId] : []),
   );
   const [cover, setCover] = useState<CoverSelection>(null);
+  const submitLock = useRef(false);
   const pending = false;
   const [message, setMessage] = useState<string | null>(null);
   const isAdult = adult || Boolean(anime?.isAdult) || Boolean(prefill?.isAdult);
@@ -3153,20 +3201,27 @@ function AnimeEditor({
       (isAdult ? "成人內容" : ""),
   );
   const [adultSource, setAdultSource] = useState(
-    anime?.adultSource ?? "manual",
+    anime?.adultSource ?? prefill?.source ?? "manual",
   );
   const save = async () => {
+    if (submitLock.current) return;
     const normalizedTitle = title.trim();
     if (!normalizedTitle) {
       setMessage("請輸入動漫名稱。");
       return;
     }
+    submitLock.current = true;
     setMessage(null);
     const selectedCover = cover;
     let coverTicket: string | null = null;
     const body = {
       ...(anime ? { id: anime.id } : {}),
       title: normalizedTitle,
+      titleIsCustom: anime
+        ? normalizedTitle !== anime.title || anime.titleIsCustom === true ||
+          (anime.titleIsCustom == null && (anime.externalSource === "manual" ||
+            ![anime.titleChinese, anime.titleEnglish, anime.originalTitle, anime.titleJapanese].includes(anime.title)))
+        : !prefill || normalizedTitle !== externalDisplayTitle(prefill),
       sourceUrl: sourceUrl.trim() || null,
       externalUrl: isAdult ? sourceUrl.trim() || null : undefined,
       isAdult,
@@ -3187,6 +3242,7 @@ function AnimeEditor({
       onOptimisticChange?.({
         ...anime,
         title: normalizedTitle,
+        titleIsCustom: body.titleIsCustom,
         sourceUrl: sourceUrl.trim() || null,
         externalUrl: isAdult ? sourceUrl.trim() || null : anime.externalUrl,
         isAdult,
@@ -3202,8 +3258,14 @@ function AnimeEditor({
       });
     }
     const callbacks = {
-      onSuccess: () => onSaved(),
-      onError: (cause: Error) => setMessage(cause.message || "無法儲存動漫。"),
+      onSuccess: (result: unknown) => {
+        const savedId = (result as { id?: string } | null)?.id;
+        void onSaved(savedId && prefill ? { id: savedId, watchStatus, rating, categoryIds, folderIds } : undefined);
+      },
+      onError: (cause: Error) => {
+        submitLock.current = false;
+        setMessage(cause.message || "無法儲存動漫。");
+      },
       rollback: () => { if (anime) onOptimisticChange?.(anime); },
     };
     const common = {
@@ -3245,10 +3307,18 @@ function AnimeEditor({
       onClose={onClose}
       open
       pending={pending}
-      title={anime ? "修改動漫" : "新增動漫"}
+      title={anime ? "修改動漫" : prefill ? "加入收藏設定" : "新增動漫"}
     >
       <div className="anime-dialog">
-        <label>
+        {prefill && <div className="anime-dialog-title">
+          {prefill.coverUrl ? <img className="anime-cover" src={prefill.coverUrl} alt="" /> : <span className="anime-cover anime-cover-fallback">ANIME</span>}
+          <div>
+            <h3>{externalDisplayTitle(prefill)}</h3>
+            <p>{[prefill.releaseYear, prefill.animeType, prefill.episodes ? `全 ${prefill.episodes} 集` : null].filter(Boolean).join(" · ")}</p>
+            <p>{prefill.broadcastStatus === "RELEASING" ? "連載中" : prefill.broadcastStatus === "FINISHED" ? "已完結" : "播出資訊未定"}</p>
+          </div>
+        </div>}
+        {!prefill && <label>
           動漫名稱
           <input
             autoFocus
@@ -3256,13 +3326,13 @@ function AnimeEditor({
             placeholder="例如：葬送的芙莉蓮"
             value={title}
           />
-        </label>
-        <CoverImageField
+        </label>}
+        {!prefill && <CoverImageField
           cropSize={{ width: 720, height: 1040 }}
           initialUrl={currentCover}
           onChange={setCover}
-        />
-        <label>
+        />}
+        {!prefill && <label>
           {isAdult ? "外部作品／觀看連結（選填）" : "觀看連結（選填）"}
           <input
             onChange={(event) => setSourceUrl(event.target.value)}
@@ -3270,8 +3340,8 @@ function AnimeEditor({
             type="url"
             value={sourceUrl}
           />
-        </label>
-        {isAdult && (
+        </label>}
+        {isAdult && !prefill && (
           <div className="anime-adult-editor-fields">
             <label>
               內容分級
@@ -3325,7 +3395,7 @@ function AnimeEditor({
         />
         {!folders.length && <p className="anime-field-hint">尚未建立資料夾；不勾選代表未整理。</p>}
         <p className="anime-field-hint">可同時加入多個資料夾；未勾選代表未整理。</p>
-        <label>
+        {!prefill && <label>
           私人備註
           <textarea
             onChange={(event) => setNotes(event.target.value)}
@@ -3333,7 +3403,7 @@ function AnimeEditor({
             rows={4}
             value={notes}
           />
-        </label>
+        </label>}
         {message && <p className="notice error">{message}</p>}
         {anime ? (<div className="anime-editor-actions">
           <div>
@@ -3366,7 +3436,7 @@ function AnimeEditor({
               {pending ? "儲存中…" : anime ? "儲存修改" : "新增動漫"}
             </button>
           </div>
-        </div>) : <CreateFormActions pending={pending} label="新增動漫" pendingLabel="儲存中…" onSave={() => void save()} onCancel={onClose} />}
+        </div>) : <CreateFormActions pending={pending} label={prefill ? "加入收藏" : "新增動漫"} pendingLabel="儲存中…" onSave={() => void save()} onCancel={onClose} />}
       </div>
     </CreateItemModal>
   );

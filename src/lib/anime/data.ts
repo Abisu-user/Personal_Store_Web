@@ -3,12 +3,13 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { AnimeFolder, AnimeLibraryItem, AnimePreferences, AnimeRelation, AnimeTag, AnimeWatchLog, AnimeWorkspaceData } from "@/lib/anime/types";
 import { localizeAnimeTitles } from "@/lib/anime/bangumi-title-localizer";
 import { getAdultContentPermissions } from "@/lib/security/adult-content";
+import { adultAliasesForIds } from "@/lib/anime/adult-alias-store";
 
 const asStrings = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 const asRelations = (value: unknown): AnimeRelation[] => Array.isArray(value) ? value.filter((item): item is AnimeRelation => Boolean(item) && typeof item === "object" && typeof (item as AnimeRelation).malId === "number" && typeof (item as AnimeRelation).title === "string") : [];
 
 const toAnime = (row: any): AnimeLibraryItem => ({
-  id: row.id, externalId: row.external_id, externalSource: row.external_source, title: row.title, titleJapanese: row.title_japanese, titleEnglish: row.title_english, titleChinese: row.title_chinese, originalTitle: row.original_title,
+  id: row.id, externalId: row.external_id, externalSource: row.external_source, title: row.title, titleIsCustom: row.title_is_custom ?? null, titleJapanese: row.title_japanese, titleEnglish: row.title_english, titleChinese: row.title_chinese, originalTitle: row.original_title,
   coverUrl: row.cover_storage_object_id ? `/api/anime/library/${row.id}/cover?v=${encodeURIComponent(row.updated_at)}` : row.cover_url, bannerUrl: row.banner_url, synopsis: row.synopsis, animeType: row.anime_type, broadcastStatus: row.broadcast_status, episodes: row.episodes, episodeDuration: row.episode_duration, releaseYear: row.release_year, season: row.season, startDate: row.start_date, endDate: row.end_date, ageRating: row.age_rating, sourceMaterial: row.source_material, publicScore: row.public_score === null ? null : Number(row.public_score), genres: asStrings(row.genres), studios: asStrings(row.studios), relations: asRelations(row.relations), watchStatus: row.watch_status, watchedEpisodes: row.watched_episodes, rating: row.rating === null ? null : Number(row.rating), favorite: row.favorite, personalRank: row.personal_rank, notes: row.notes, startedWatchingAt: row.started_watching_at, completedAt: row.completed_at, lastWatchedAt: row.last_watched_at, createdAt: row.created_at, updatedAt: row.updated_at, tags: [], sourceUrl: row.source_url, isAdult: Boolean(row.is_adult), contentRating: row.content_rating ?? null, adultSource: row.adult_source ?? null, externalUrl: row.external_url ?? null, folderId: row.folder_id ?? null, folderIds: [],
 });
 
@@ -59,6 +60,16 @@ export async function getAnimeWorkspaceData(userId: string, scope: "standard" | 
   if (folderError) { folderRows = []; folderError = null; }
   if (libraryError || tagError) throw new Error("Anime library unavailable");
   const library = await localizeAnimeTitles((rows ?? []).map(toAnime)); const animeIds = library.map((anime) => anime.id);
+  if (scope === "adult") {
+    const anilistIds = library.filter((anime) => anime.externalSource === "anilist" && /^\d+$/.test(anime.externalId)).map((anime) => Number(anime.externalId));
+    try {
+      const aliases = await adultAliasesForIds(userId, anilistIds);
+      for (const anime of library) if (anime.externalSource === "anilist")
+        anime.aliases = aliases.get(Number(anime.externalId)) ?? [];
+    } catch (cause) {
+      console.warn("[adult-alias] library titles unavailable", { error: cause instanceof Error ? cause.name : "unknown" });
+    }
+  }
   const [{ data: links, error: linkError }, { data: folderLinks, error: folderLinkError }, { data: logRows, error: logError }] = await Promise.all([
     animeIds.length ? admin.from("anime_library_tags").select("anime_id,tag_id").in("anime_id", animeIds) : Promise.resolve({ data: [], error: null }),
     animeIds.length ? admin.from("anime_library_folders").select("anime_id,folder_id").in("anime_id", animeIds) : Promise.resolve({ data: [], error: null }),

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import type { AnimeLibraryItem, ExternalAnime } from "@/lib/anime/types";
+import { resolveAnimeDisplayTitle } from "@/lib/anime/anime-alias";
 
 type Season = "WINTER" | "SPRING" | "SUMMER" | "FALL";
 type Sort =
@@ -213,8 +214,7 @@ Object.assign(names, {
   VTuber: "虛擬 YouTuber",
 });
 const cn = (value: string) => names[value] ?? value;
-const displayTitle = (anime: ExternalAnime) =>
-  anime.titleChinese ?? anime.titleJapanese ?? anime.title;
+const displayTitle = (anime: ExternalAnime) => resolveAnimeDisplayTitle(anime);
 const state = (value: string | null) =>
   ({
     RELEASING: "連載中",
@@ -279,8 +279,8 @@ function query(values: Record<string, string | number | undefined>) {
   });
   return result.toString();
 }
-async function get<T>(url: string) {
-  const response = await fetch(url);
+async function get<T>(url: string, adultUnlockToken?: string | null) {
+  const response = await fetch(url, { headers: adultUnlockToken ? { "x-adult-unlock": adultUnlockToken } : {} });
   const body = await response.json().catch(() => ({}));
   if (!response.ok)
     throw new Error(
@@ -293,11 +293,13 @@ export function AnimeDiscovery({
   library,
   onAdd,
   adultMode = false,
+  adultUnlockToken = null,
   initialView = "explore",
 }: {
   library: AnimeLibraryItem[];
   onAdd: (anime: ExternalAnime) => void | Promise<void>;
   adultMode?: boolean;
+  adultUnlockToken?: string | null;
   initialView?: DiscoveryView;
 }) {
   const current = useMemo(() => nowSeason(), []);
@@ -396,6 +398,7 @@ export function AnimeDiscovery({
               search: catalogueSearch || undefined,
               adult: adultMode ? 1 : undefined,
             }),
+          adultMode ? adultUnlockToken : null,
         );
         if (requestId !== catalogueRequestId.current) return;
         setAll((currentRows) =>
@@ -416,7 +419,7 @@ export function AnimeDiscovery({
         if (requestId === catalogueRequestId.current) setLoading(false);
       }
     },
-    [adultMode, catalogueSearch, filters],
+    [adultMode, adultUnlockToken, catalogueSearch, filters],
   );
   const filterHash = JSON.stringify({ filters, catalogueSearch });
   useEffect(() => {
@@ -583,7 +586,7 @@ export function AnimeDiscovery({
           </button>
         </div>
       )}
-      <div className="anime-discovery-layout">
+      <div className={`anime-discovery-layout${adultMode ? " anime-discovery-layout-adult" : ""}`}>
         {!adultMode && (
           <aside aria-label={discoveryView === "schedule" ? "時間表篩選" : "探索篩選"} className="anime-desktop-filter-rail anime-discovery-filter-rail">
             {discoveryView === "schedule" ? (

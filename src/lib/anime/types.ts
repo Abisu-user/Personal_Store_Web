@@ -1,3 +1,5 @@
+import type { AnimeAlias } from "@/lib/anime/anime-alias";
+
 export type AnimeWatchStatus =
   "planning" | "watching" | "completed" | "paused" | "dropped";
 export type AnimePersonalRank = "normal" | "like" | "love" | "masterpiece";
@@ -42,6 +44,8 @@ export type AnimeLibraryItem = {
   externalId: string;
   externalSource: "jikan" | "anilist" | "bangumi" | "manual";
   title: string;
+  titleIsCustom?: boolean | null;
+  aliases?: AnimeAlias[];
   titleJapanese: string | null;
   titleEnglish: string | null;
   titleChinese: string | null;
@@ -117,6 +121,7 @@ export type ExternalAnime = {
   id: string;
   source: "jikan" | "anilist" | "bangumi";
   title: string;
+  aliases?: AnimeAlias[];
   titleJapanese: string | null;
   titleEnglish: string | null;
   titleChinese: string | null;
@@ -151,6 +156,8 @@ export type ExternalAnime = {
   titleUserPreferred?: string | null;
   synonyms?: string[];
   popularity?: number | null;
+  verifiedChineseTitle?: boolean;
+  verifiedChineseSource?: string | null;
   sourceAvailability?: AnimeSourceAvailability;
 };
 

@@ -4,7 +4,7 @@ import { createHmac } from "crypto";
 import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export type SecurityContext = { userId: string; sessionId: string; userAgent: string; ipHash: string | null };
+export type SecurityContext = { userId: string; sessionId: string; userAgent: string; ipHash: string | null; authMethods?: string[] };
 
 export async function getSecurityContext(): Promise<SecurityContext | null> {
   const supabase = await createClient();
@@ -20,7 +20,13 @@ export async function getSecurityContext(): Promise<SecurityContext | null> {
   const rawIp = requestHeaders.get("x-forwarded-for")?.split(",")[0]?.trim();
   const secret = process.env.SUPABASE_SECRET_KEY;
   const ipHash = rawIp && secret ? `\\x${createHmac("sha256", secret).update(rawIp).digest("hex")}` : null;
-  return { userId: userData.user.id, sessionId: claims.session_id, userAgent, ipHash };
+  const amr = (claims as { amr?: unknown }).amr;
+  const authMethods = Array.isArray(amr) ? amr.flatMap((entry): string[] => {
+    if (typeof entry === "string") return [entry];
+    if (entry && typeof entry === "object" && "method" in entry && typeof entry.method === "string") return [entry.method];
+    return [];
+  }) : [];
+  return { userId: userData.user.id, sessionId: claims.session_id, userAgent, ipHash, authMethods };
 }
 
 export function deviceLabel(userAgent: string) {
