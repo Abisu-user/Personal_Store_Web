@@ -366,7 +366,7 @@ export function FilesWorkspace({
     );
   const selected = data.files.find((item) => item.id === selectedId) ?? null;
   return (
-    <section className="library-workspace">
+    <section className="library-workspace desktop-collection-workspace">
       {error && (
         <p className="notice error" role="alert">
           {error}

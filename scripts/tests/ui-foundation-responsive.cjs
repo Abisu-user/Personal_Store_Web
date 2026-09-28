@@ -10,8 +10,13 @@ const executable = chromePaths.find(existsSync);
 const port = 9337;
 const origin = "http://127.0.0.1:3010";
 const viewports = [
+  { width: 1920, height: 1080, mobile: false },
   { width: 1440, height: 900, mobile: false },
+  { width: 1366, height: 768, mobile: false },
   { width: 1024, height: 768, mobile: false },
+  { width: 820, height: 900, mobile: false },
+  { width: 701, height: 820, mobile: false },
+  { width: 700, height: 820, mobile: true },
   { width: 430, height: 932, mobile: true },
   { width: 390, height: 844, mobile: true },
   { width: 375, height: 812, mobile: true },
@@ -112,6 +117,22 @@ const fixture = `
             <header><h2>手機區塊</h2><button class="mobile-icon-button" aria-label="更多" type="button">•••</button></header>
             <div class="mobile-surface">手機內容</div>
           </section>
+          <div class="desktop-collection-workspace">
+            <aside class="desktop-collection-sidebar">
+              <header><strong>類別</strong><div><button type="button">＋</button><button type="button">管理</button></div></header>
+              <div class="desktop-collection-category-list">
+                <button class="desktop-collection-category" aria-pressed="true" type="button"><span>所有類別</span><small>12</small></button>
+                <button class="desktop-collection-category" aria-pressed="false" type="button"><span>測試類別</span><small>3</small></button>
+                ${Array.from({ length: 30 }, (_, index) => `<button class="desktop-collection-category" type="button"><span>分類 ${index + 1}</span></button>`).join("")}
+              </div>
+              <div class="desktop-collection-sidebar-footer"><button class="desktop-collection-category" type="button"><span>垃圾桶</span></button></div>
+            </aside>
+            <section aria-label="資料夾" class="collection-navigation-section"><header><strong>資料夾</strong></header><div class="bookmark-view-tabs"><button>未整理</button><button>工作</button></div></section>
+            <section aria-label="類別" class="collection-navigation-section"><header><strong>類別</strong></header><div class="category-strip"><button>所有類別</button></div></section>
+            <input class="note-search" aria-label="搜尋" placeholder="搜尋名稱" />
+            <div class="bulk-toolbar"><label><input type="checkbox" /> 全選目前清單</label></div>
+            <div class="content-item-list"><article class="content-item-card">測試內容</article></div>
+          </div>
         </div>
       </section>
     </div>
@@ -171,11 +192,18 @@ async function measure(client, viewport) {
         buttonStyle: style(".page-create-button"),
         workspaceStyle: style(".bookmarks-workspace"),
         mobileSectionStyle: style(".mobile-section"),
+        collection: rect(".desktop-collection-workspace"),
+        collectionSidebar: rect(".desktop-collection-sidebar"),
+        collectionSidebarStyle: style(".desktop-collection-sidebar"),
+        collectionList: (() => { const element = document.querySelector(".desktop-collection-category-list"); return { scrollHeight: element.scrollHeight, clientHeight: element.clientHeight, overflowY: getComputedStyle(element).overflowY }; })(),
+        collectionFolder: rect(".desktop-collection-workspace > section[aria-label='資料夾']"),
+        collectionCategoryStyle: style(".desktop-collection-workspace > section[aria-label='類別']"),
         buttonCenterDelta: Math.abs((buttonRect.x + buttonRect.width / 2) - (textRect.x + textRect.width / 2)),
       };
     })()`,
     returnByValue: true,
   });
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Browser layout evaluation failed");
   return result.result.value;
 }
 
@@ -200,10 +228,17 @@ async function measure(client, viewport) {
     assert(metrics.card.height < 180, `${viewport.width}px two-line card is unnecessarily tall`);
 
     if (viewport.mobile) {
+      assert(metrics.collectionSidebarStyle.display === "none", `${viewport.width}px desktop category sidebar leaked into mobile`);
+      assert(metrics.collectionCategoryStyle.display !== "none", `${viewport.width}px mobile category controls disappeared`);
       assert(metrics.mobileSectionStyle.display === "grid", `${viewport.width}px mobile section is not available`);
       assert(metrics.mobileIcon.width >= 44 && metrics.mobileIcon.height >= 44, `${viewport.width}px mobile icon target is below 44px`);
       assert(metrics.workspaceStyle.gap === "12px", `${viewport.width}px mobile workspace gap is not on the spacing scale`);
     } else {
+      assert(metrics.collectionSidebarStyle.display === "flex", `${viewport.width}px category sidebar is missing`);
+      assert(metrics.collectionCategoryStyle.display === "none", `${viewport.width}px horizontal category strip remains visible`);
+      assert(metrics.collectionSidebar.right + 8 <= metrics.collectionFolder.x, `${viewport.width}px category sidebar overlaps folder content`);
+      assert(metrics.collectionFolder.right <= viewport.width + 1, `${viewport.width}px folder content overflows viewport`);
+      assert(metrics.collectionList.overflowY === "auto" && metrics.collectionList.scrollHeight > metrics.collectionList.clientHeight, `${viewport.width}px long category list cannot scroll independently`);
       assert(metrics.modal.width <= 721, `${viewport.width}px default modal exceeds the 720px content width`);
       assert(metrics.mobileSectionStyle.display === "none", `${viewport.width}px mobile-only section leaked into desktop`);
       assert(metrics.workspaceStyle.gap === "16px", `${viewport.width}px desktop workspace gap is not on the spacing scale`);

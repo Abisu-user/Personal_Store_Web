@@ -23,6 +23,7 @@ import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
+import { DesktopCollectionSidebar } from "@/components/content/desktop-collection-sidebar";
 import { BulkOrganizeDialog, type BulkOrganizeChange } from "@/components/content/bulk-organize-dialog";
 import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select";
 import {
@@ -1922,6 +1923,12 @@ export function BookmarksWorkspace({
     if (next === "unclassified") { setCategory((current) => current.includes(next) ? [] : [next]); return; }
     setCategory((current) => current.includes(next) ? current.filter((id) => id !== next) : [...current.filter((id) => id !== "unclassified"), next]);
   };
+  const categoryScopeItems = data.bookmarks.filter((item) => {
+    if (view === "trash") return Boolean(item.deletedAt);
+    if (item.deletedAt || item.archived) return false;
+    if (folderFilters.length) return item.folders.some((folder) => folderFilters.includes(folder.id));
+    return showAllBookmarks || item.folders.length === 0;
+  });
   return (
     <section className="bookmarks-workspace">
       {error && (
@@ -2044,7 +2051,7 @@ export function BookmarksWorkspace({
           </section>
         )}
       </section>
-      <div className={styles.managementView} data-active={mobileView === "library"}>
+      <div className={`${styles.managementView} desktop-collection-workspace`} data-active={mobileView === "library"}>
         <MobilePageHeader
           eyebrow="BOOKMARK LIBRARY"
           title="全部網站"
@@ -2065,6 +2072,19 @@ export function BookmarksWorkspace({
             <CreateItemButton className="mobile-header-create-button" kind="bookmark"><AppIcon name="plus" /><span className="sr-only">新增網站收藏</span></CreateItemButton>
           </>}
         />
+      <DesktopCollectionSidebar
+        allCount={categoryScopeItems.length}
+        allLabel="所有類別"
+        categories={scopedCategories.map((item) => ({ id: item.id, name: item.name, count: categoryScopeItems.filter((bookmark) => bookmark.categories.some((entry) => entry.id === item.id)).length }))}
+        onAdd={() => setCategoryAddOpen(true)}
+        onAll={() => selectBookmarkCategory("all")}
+        onCategory={selectBookmarkCategory}
+        onManage={() => openManager("category")}
+        onUnclassified={() => selectBookmarkCategory("unclassified")}
+        selectedIds={category}
+        trash={folders.trash.visible ? { label: folders.trash.label, count: counts.trash, active: view === "trash", onSelect: () => { restorePublicBookmarks(); setShowAllBookmarks(false); setView("trash"); setFolderFilters([]); setCategory([]); } } : undefined}
+        unclassifiedCount={categoryScopeItems.filter((bookmark) => bookmark.categories.length === 0).length}
+      />
       <section aria-label="資料夾" className="collection-navigation-section" data-chip-overflow-container>
         <header>
           <strong>資料夾</strong>

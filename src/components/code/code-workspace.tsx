@@ -401,7 +401,7 @@ export function CodeWorkspace({
       </section>
     );
   return (
-    <section className={`library-workspace ${mobileStyles.libraryWorkspace}`}>
+    <section className={`library-workspace desktop-collection-workspace ${mobileStyles.libraryWorkspace}`}>
       {error && (
         <p className="notice error" role="alert">
           {error}

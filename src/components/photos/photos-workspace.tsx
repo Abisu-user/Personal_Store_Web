@@ -608,7 +608,7 @@ export function PhotosWorkspace({
           </section>
         ) : null}
       </section>
-      <div className={mobileStyles.managementView} data-active={mobileView === "library"}>
+      <div className={`${mobileStyles.managementView} desktop-collection-workspace`} data-active={mobileView === "library"}>
       <MobilePageHeader
         eyebrow="PHOTO LIBRARY"
         title={libraryTitle}
