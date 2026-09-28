@@ -2259,3 +2259,19 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
   .desktop-collection-layout,
   .desktop-collection-main { display: contents; }
 }
+.feature-home-management[data-active="false"],
+.feature-home-desktop-management[data-active="false"] { display: none; }
+.feature-home-management,
+.feature-home-desktop-management { min-height: 0; min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; }
+.feature-home-management > .desktop-collection-layout,
+.feature-home-desktop-management > .desktop-collection-workspace { min-height: 0; flex: 1 1 auto; }
+.feature-home-desktop-home { display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.feature-home-desktop-home > * { min-height: 0; flex: 1 1 auto; }
+@media (max-width: 700px) {
+  .feature-home-desktop-tabs,
+  .feature-home-desktop-home { display: none !important; }
+  .feature-home-desktop-management,
+  .feature-home-desktop-management[data-active="false"] { display: contents; }
+  .feature-home-management { display: contents; }
+  .feature-home-management[data-active="false"] { display: none; }
+}

@@ -19,6 +19,7 @@ export type Note = {
   category: Pick<NoteCategory, "id" | "name"> | null;
   categories: Pick<NoteCategory, "id" | "name">[];
   tags: NoteTag[];
+  createdAt: string;
   updatedAt: string;
 };
 

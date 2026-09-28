@@ -8,14 +8,21 @@ export type EntryTaxonomyLinks = { categories: { id: string; name: string }[]; f
 
 function unique(ids: readonly string[]) { return [...new Set(ids.filter(Boolean))]; }
 
-export async function readEntryTaxonomyLinks(ownerId: string, folderType: "bookmark" | "content") {
+export async function readEntryTaxonomyLinks(ownerId: string, folderType: "bookmark" | "content", entryIds?: readonly string[]) {
+  if (entryIds && entryIds.length === 0) return new Map<string, EntryTaxonomyLinks>();
   const admin = createAdminClient();
+  const categoryQuery = admin.from("entry_category_links").select("entry_id, categories(id,name)").eq("owner_id", ownerId);
+  const bookmarkQuery = admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders(id,name,is_visible)").eq("owner_id", ownerId);
+  const contentQuery = admin.from("entry_content_folder_links").select("entry_id, content_folders(id,name,is_visible)").eq("owner_id", ownerId);
   const [categoryResult, folderResult] = await Promise.all([
-    admin.from("entry_category_links").select("entry_id, categories(id,name)").eq("owner_id", ownerId),
+    entryIds ? categoryQuery.in("entry_id", [...entryIds]) : categoryQuery,
     folderType === "bookmark"
-      ? admin.from("bookmark_entry_folders").select("entry_id, bookmark_folders(id,name,is_visible)").eq("owner_id", ownerId)
-      : admin.from("entry_content_folder_links").select("entry_id, content_folders(id,name,is_visible)").eq("owner_id", ownerId),
+      ? entryIds ? bookmarkQuery.in("entry_id", [...entryIds]) : bookmarkQuery
+      : entryIds ? contentQuery.in("entry_id", [...entryIds]) : contentQuery,
   ]);
+  // Missing relations must never be interpreted as an unfiled (and public) entry.
+  if (categoryResult.error) throw categoryResult.error;
+  if (folderResult.error) throw folderResult.error;
   const links = new Map<string, EntryTaxonomyLinks>();
   const ensure = (entryId: string) => { const current = links.get(entryId) ?? { categories: [], folders: [] }; links.set(entryId, current); return current; };
   for (const row of categoryResult.data ?? []) { const values = Array.isArray(row.categories) ? row.categories : row.categories ? [row.categories] : []; ensure(row.entry_id).categories.push(...values); }

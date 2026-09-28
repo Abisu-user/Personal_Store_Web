@@ -21,6 +21,10 @@ import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { ContentFeatureHome } from "@/components/content/content-feature-home";
+import { FeatureHomeTabs, useFeatureHomeSection } from "@/components/content/feature-home";
+import { useFeatureHomeCounts } from "@/components/content/use-feature-home-counts";
+import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import type { FilesWorkspaceData } from "@/lib/files/types";
 
@@ -42,14 +46,18 @@ async function sha256(file: File) {
 export function FilesWorkspace({
   initialData,
   createMode = false,
+  storageUsedBytes,
 }: {
   initialData: FilesWorkspaceData;
   createMode?: boolean;
+  storageUsedBytes?: number | null;
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
   const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
+  const { section, changeSection } = useFeatureHomeSection();
+  const { counts: homeCounts, failed: homeFailed, refresh: refreshHomeCounts } = useFeatureHomeCounts("file");
   const [query, setQuery] = useState("");
   const pending = false;
   const [error, setError] = useState<string | null>(null);
@@ -57,6 +65,14 @@ export function FilesWorkspace({
   const [view, setView] = useState<CollectionView>("all");
   const [category, setCategory] = useState<CollectionCategory>([]);
   const [folderIds, setFolderIds] = useState<string[]>([]);
+  const folderLinkHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || folderLinkHandled.current) return;
+    const id = new URLSearchParams(window.location.search).get("folder");
+    if (!id || !data.folders.some((folder) => folder.id === id)) return;
+    folderLinkHandled.current = true;
+    queueMicrotask(() => { setFolderIds([id]); setView(`folder:${id}`); changeSection("library"); });
+  }, [changeSection, createMode, data.folders]);
   const [cover, setCover] = useState<CoverSelection>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   useEffect(() => { if (selectedId) recordDashboardOpen(selectedId); }, [selectedId]);
@@ -80,7 +96,8 @@ export function FilesWorkspace({
       return;
     }
     setData((await response.json()) as FilesWorkspaceData);
-  }, []);
+    void refreshHomeCounts();
+  }, [refreshHomeCounts]);
   useCreatedItemRefresh("file", load);
   useEffect(() => {
     if (createMode) void load();
@@ -378,6 +395,9 @@ export function FilesWorkspace({
           <h2>檔案保管</h2>
         </div>
       </div>
+      <FeatureHomeTabs libraryLabel="我的檔案" onChange={changeSection} section={section} />
+      {section === "home" && <ContentFeatureHome kind="file" counts={homeCounts} failed={homeFailed} folders={data.folders} storageUsedBytes={storageUsedBytes} onLibrary={() => changeSection("library")} onFolder={(id) => { setFolderIds(id ? [id] : []); setView(id ? `folder:${id}` : "all"); changeSection("library", { folder: id }); }} onOpen={(entry) => { changeSection("library"); setSelectedId(entry.id); }} createAction={<CreateItemButton kind="file">＋ 上傳第一個檔案</CreateItemButton>} />}
+      <div className="feature-home-management" data-active={section === "library"}>
       <CollectionNavigation
         categories={data.categories}
         category={category}
@@ -462,6 +482,7 @@ export function FilesWorkspace({
         {files.length === 0 && <p className="lead">此清單尚未找到檔案。</p>}
       </div>
       </CollectionNavigation>
+      </div>
       <BulkOrganizeDialog categories={data.categories} count={chosenFiles.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
       <ModalDialog
         onClose={() => setSelectedId(null)}

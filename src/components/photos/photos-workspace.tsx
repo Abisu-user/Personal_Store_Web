@@ -17,6 +17,9 @@ import { TaxonomyMultiSelect } from "@/components/content/taxonomy-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { ContentFeatureHome } from "@/components/content/content-feature-home";
+import { FeatureHomeTabs, useFeatureHomeSection } from "@/components/content/feature-home";
+import { useFeatureHomeCounts } from "@/components/content/use-feature-home-counts";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { AppIcon } from "@/components/ui/app-icon";
 import { MobilePageHeader } from "@/components/ui/mobile-layout";
@@ -84,14 +87,18 @@ function CollectionSettings({
 export function PhotosWorkspace({
   initialData,
   createMode = false,
+  storageUsedBytes,
 }: {
   initialData: PhotosWorkspaceData;
   createMode?: boolean;
+  storageUsedBytes?: number | null;
 }) {
   const router = useRouter();
   const createFlow = useCreateFlow();
   const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
+  const { section, changeSection } = useFeatureHomeSection();
+  const { counts: homeCounts, failed: homeFailed, refresh: refreshHomeCounts } = useFeatureHomeCounts("photo");
   const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
   const [overviewTab, setOverviewTab] = useState<"all" | "albums">("all");
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -131,7 +138,8 @@ export function PhotosWorkspace({
       return;
     }
     setData((await response.json()) as PhotosWorkspaceData);
-  }, []);
+    void refreshHomeCounts();
+  }, [refreshHomeCounts]);
   useCreatedItemRefresh("photo", load);
   useEffect(() => {
     if (!createMode) return;
@@ -531,6 +539,8 @@ export function PhotosWorkspace({
           {error}
         </p>
       )}
+      <div className="feature-home-desktop-tabs"><FeatureHomeTabs libraryLabel="我的照片" onChange={changeSection} section={section} /></div>
+      {section === "home" && <div className="feature-home-desktop-home"><ContentFeatureHome kind="photo" counts={homeCounts} failed={homeFailed} folders={data.folders} storageUsedBytes={storageUsedBytes} onLibrary={() => { openLibrary({ all: true }); changeSection("library"); }} onFolder={(id) => { openFolder(id); changeSection("library", { folder: id }); }} onOpen={(entry) => { changeSection("library"); setSelected(entry as StoredPhoto); }} createAction={<CreateItemButton kind="photo">＋ 上傳第一張照片</CreateItemButton>} /></div>}
       <section className={mobileStyles.mobileOverview} data-active={mobileView === "overview"}>
         <MobilePageHeader
           eyebrow="PHOTOS"
@@ -608,6 +618,7 @@ export function PhotosWorkspace({
           </section>
         ) : null}
       </section>
+      <div className="feature-home-desktop-management" data-active={section === "library"}>
       <div className={`${mobileStyles.managementView} desktop-collection-workspace`} data-active={mobileView === "library"}>
       <MobilePageHeader
         eyebrow="PHOTO LIBRARY"
@@ -711,6 +722,7 @@ export function PhotosWorkspace({
         {photos.length === 0 && <p className="lead">此清單尚無照片。</p>}
       </div>
       </CollectionNavigation>
+      </div>
       </div>
       <BulkOrganizeDialog categories={data.categories} count={chosenPhotos.length} folders={data.folders} onClose={() => setOrganizeOpen(false)} onSave={organizeSelection} open={organizeOpen} pending={pending} />
       <ModalDialog

@@ -21,6 +21,8 @@ import { AppIcon } from "@/components/ui/app-icon";
 import { MobileSectionActions } from "@/components/ui/mobile-section-actions";
 import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { FeatureHome, FeatureHomeTabs, featureHomeStyles as homeStyles, useFeatureHomeSection } from "@/components/content/feature-home";
+import { useFeatureHomeCounts } from "@/components/content/use-feature-home-counts";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { FolderUnlockDialog } from "@/components/content/folder-unlock-dialog";
 import { DesktopCollectionSidebar } from "@/components/content/desktop-collection-sidebar";
@@ -471,6 +473,8 @@ export function BookmarksWorkspace({
   const previewRequest = useRef<AbortController | null>(null);
   const pendingRelock = useRef<{ folderId: string; timer: number } | null>(null);
   const [data, setData] = useState(initialData ?? emptyBookmarks);
+  const { section, changeSection } = useFeatureHomeSection();
+  const { counts: homeCounts, refresh: refreshHomeCounts } = useFeatureHomeCounts("bookmark");
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [freshData, setFreshData] = useState(Boolean(initialData));
   const [mobileView, setMobileView] = useState<"overview" | "library">("overview");
@@ -585,7 +589,8 @@ export function BookmarksWorkspace({
     setLoaded(true);
     setFreshData(true);
     setUnlockedFolderScopeId(folderScopeId ?? null);
-  }, []);
+    void refreshHomeCounts();
+  }, [refreshHomeCounts]);
   useCreatedItemRefresh("bookmark", load);
   useEffect(() => { if (createMode) void load(); }, [createMode, load]);
   useEffect(() => {
@@ -1929,6 +1934,19 @@ export function BookmarksWorkspace({
     if (folderFilters.length) return item.folders.some((folder) => folderFilters.includes(folder.id));
     return showAllBookmarks || item.folders.length === 0;
   });
+  // The unscoped /api/bookmarks response is server-filtered in
+  // getBookmarksWorkspaceData. Never render its temporary unlocked-folder
+  // payload on Home, even while the public reload is in flight.
+  const homeReady = freshData && !unlockedFolderScopeId;
+  const homeBookmarks = homeReady ? data.bookmarks.filter((item) => !item.deletedAt && !item.archived) : [];
+  const homeShortcuts = homeBookmarks.filter((item) => item.shortcutOrder !== null && item.detail?.url)
+    .sort((left, right) => (left.shortcutOrder ?? 0) - (right.shortcutOrder ?? 0)).slice(0, 8);
+  const homeActivities = [
+    ...homeBookmarks.filter((item) => item.lastOpenedAt).map((item) => ({ id: `open:${item.id}`, label: `開啟 ${item.title}`, detail: item.folders.map((folder) => folder.name).join("、") || bookmarkHostname(item), at: item.lastOpenedAt!, onClick: () => { if (item.detail?.url) { void recordOpen(item.id); window.open(item.detail.url, "_blank", "noopener,noreferrer"); } } })),
+    ...homeBookmarks.map((item) => ({ id: `add:${item.id}`, label: `新增 ${item.title}`, detail: item.folders.map((folder) => folder.name).join("、") || "未整理", at: item.createdAt, onClick: () => { changeSection("library"); setDetailItem(item); } })),
+  ].sort((left, right) => Date.parse(right.at) - Date.parse(left.at)).slice(0, 6);
+  const openHomeLibrary = () => { openLibrary({ all: true }); changeSection("library"); };
+  const openHomeFolder = (id: string | null) => { openFolder(id); changeSection("library", { folder: id }); };
   return (
     <section className="bookmarks-workspace">
       {error && (
@@ -1941,6 +1959,26 @@ export function BookmarksWorkspace({
           {success}
         </p>
       )}
+      <div className="feature-home-desktop-tabs"><FeatureHomeTabs libraryLabel="我的收藏" onChange={(next) => { if (next === "home") restorePublicBookmarks(); changeSection(next); }} section={section} /></div>
+      {section === "home" && <div className="feature-home-desktop-home"><FeatureHome
+        activities={homeActivities}
+        activitiesUnavailable={!homeReady && !!error}
+        createAction={<CreateItemButton kind="bookmark">＋ 新增第一個網站</CreateItemButton>}
+        emptyLabel="還沒有網站收藏"
+        folders={homeReady ? [{ id: "unorganized", name: "未整理", count: homeCounts?.unorganized ?? undefined, onClick: () => openHomeFolder(null) }, ...visibleBookmarkFolders.filter((folder) => !folder.is_locked).map((folder) => ({ id: folder.id, name: folder.name, onClick: () => openHomeFolder(folder.id) }))] : []}
+        loading={!homeReady && !error}
+        metrics={[
+          { label: "全部收藏", value: homeCounts?.total ?? "—", description: homeCounts?.total == null ? "目前無法取得" : "目前保存的網站", onClick: openHomeLibrary },
+          { label: "未整理", value: homeCounts?.unorganized ?? "—", description: homeCounts?.unorganized == null ? "目前無法取得" : "等待放入資料夾", onClick: () => openHomeFolder(null) },
+          { label: "本月新增", value: homeCounts?.month ?? "—", description: homeCounts?.month == null ? "目前無法取得" : "最近新增的網站" },
+          { label: "常用網站", value: homeShortcuts.length, description: "手動選定的捷徑", onClick: openShortcutManager },
+        ]}
+        onShowAll={openHomeLibrary}
+        subtitle="手動選定的常用捷徑"
+        title="我的常用網站"
+      >
+        {!homeReady && error ? <p className={homeStyles.empty}>網站內容暫時無法載入。</p> : homeShortcuts.length ? <div className={homeStyles.cards}>{homeShortcuts.map((item) => <a className={homeStyles.card} href={item.detail?.url ?? "#"} key={item.id} onClick={() => void recordOpen(item.id)} rel="noreferrer noopener" target="_blank"><span className={homeStyles.cover}><AppIcon name="bookmark" /><BookmarkCoverImage item={item} /></span><strong>{item.title}</strong><small>{bookmarkHostname(item)} · {item.folders.map((folder) => folder.name).join("、") || "未整理"}</small></a>)}</div> : <button className="secondary-button compact" onClick={openShortcutManager} type="button">選擇常用網站</button>}
+      </FeatureHome></div>}
       <section className={styles.mobileOverview} data-active={mobileView === "overview"}>
         <MobilePageHeader
           eyebrow="BOOKMARKS"
@@ -2051,6 +2089,7 @@ export function BookmarksWorkspace({
           </section>
         )}
       </section>
+      <div className="feature-home-desktop-management" data-active={section === "library"}>
       <div className={`${styles.managementView} desktop-collection-workspace`} data-active={mobileView === "library"}>
         <MobilePageHeader
           eyebrow="BOOKMARK LIBRARY"
@@ -2265,6 +2304,7 @@ export function BookmarksWorkspace({
             {list.length === 0 && <p className="lead">尚無符合條件的網站收藏。</p>}
           </>
         )}
+      </div>
       </div>
       </div>
       </div>

@@ -21,6 +21,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AppIcon } from "@/components/ui/app-icon";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { BatchActionBar } from "@/components/ui/batch-action-bar";
+import { ContentFeatureHome } from "@/components/content/content-feature-home";
+import { FeatureHomeTabs, useFeatureHomeSection } from "@/components/content/feature-home";
+import { useFeatureHomeCounts } from "@/components/content/use-feature-home-counts";
+import { CreateItemButton } from "@/components/layout/create-item-provider";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import mobileStyles from "@/components/ui/mobile-library.module.css";
 import type { Note, NotesWorkspaceData } from "@/lib/notes/types";
@@ -78,9 +82,19 @@ export function NotesWorkspace({
   const createFlow = useCreateFlow();
   const backgroundJobs = useBackgroundSave();
   const [data, setData] = useState(initialData);
+  const { section, changeSection } = useFeatureHomeSection();
+  const { counts: homeCounts, failed: homeFailed, refresh: refreshHomeCounts } = useFeatureHomeCounts("note");
   const [view, setView] = useState<CollectionView>("all");
   const [category, setCategory] = useState<CollectionCategory>([]);
   const [folderIds, setFolderIds] = useState<string[]>([]);
+  const folderLinkHandled = useRef(false);
+  useEffect(() => {
+    if (createMode || folderLinkHandled.current) return;
+    const id = new URLSearchParams(window.location.search).get("folder");
+    if (!id || !data.folders.some((folder) => folder.id === id)) return;
+    folderLinkHandled.current = true;
+    queueMicrotask(() => { setFolderIds([id]); setView(`folder:${id}`); changeSection("library"); });
+  }, [changeSection, createMode, data.folders]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const pending = false;
@@ -113,7 +127,8 @@ export function NotesWorkspace({
       return;
     }
     setData((await response.json()) as NotesWorkspaceData);
-  }, []);
+    void refreshHomeCounts();
+  }, [refreshHomeCounts]);
   useCreatedItemRefresh("note", load);
   useEffect(() => {
     if (createMode) void load();
@@ -396,6 +411,9 @@ export function NotesWorkspace({
           {error}
         </p>
       )}
+      <FeatureHomeTabs libraryLabel="我的筆記" onChange={changeSection} section={section} />
+      {section === "home" && <ContentFeatureHome kind="note" counts={homeCounts} failed={homeFailed} folders={data.folders} onLibrary={() => changeSection("library")} onFolder={(id) => { setFolderIds(id ? [id] : []); setView(id ? `folder:${id}` : "all"); changeSection("library", { folder: id }); }} onOpen={(entry) => { changeSection("library"); setSelected(entry as Note); }} createAction={<CreateItemButton kind="note">＋ 建立第一篇筆記</CreateItemButton>} />}
+      <div className="feature-home-management" data-active={section === "library"}>
       <CollectionNavigation
         categories={data.categories}
         category={category}
@@ -479,6 +497,7 @@ export function NotesWorkspace({
         {notes.length === 0 && <p className="lead">此清單尚無筆記。</p>}
       </div>
       </CollectionNavigation>
+      </div>
       <BulkOrganizeDialog
         categories={data.categories}
         count={chosenNotes.length}

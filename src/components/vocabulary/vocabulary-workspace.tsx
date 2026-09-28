@@ -9,12 +9,13 @@ import { ModalDialog, OperationStatus } from "@/components/ui/modal-dialog";
 import { FlashcardReview, type LocalReview } from "@/components/vocabulary/flashcard-review";
 import { VocabularyLookupPanel } from "@/components/vocabulary/vocabulary-lookup-panel";
 import { VocabularyCatalog } from "@/components/vocabulary/vocabulary-catalog";
+import { VocabularyFeatureHome } from "@/components/vocabulary/vocabulary-feature-home";
 import type { ReviewRating, VocabularyCard, VocabularyStatus, VocabularyWorkspaceData } from "@/lib/vocabulary/types";
 import { masteryLabels } from "@/lib/vocabulary/review";
 import { readClientResource, writeClientResource } from "@/lib/pwa/client-resource-cache";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 
-type Tab = "catalog" | "overview" | "lookup" | "assistant" | "review" | "decks" | "favorites" | "quiz" | "stats" | "transfer" | "settings" | "trash";
+type Tab = "home" | "catalog" | "overview" | "lookup" | "assistant" | "review" | "decks" | "favorites" | "quiz" | "stats" | "transfer" | "settings" | "trash";
 type Draft = { id?: string; language: string; word: string; reading: string; romaji: string; primaryTranslation: string; englishDefinition: string; partOfSpeech: string; jlptLevel: string; cefrLevel: string; notes: string; languageDetails: string; tagIds: string[]; deckIds: string[]; meaningsText: string; examplesText: string; isFavorite: boolean; learningStatus: VocabularyStatus; masteryLevel: number };
 import { VocabularyQuizSession } from "@/components/vocabulary/quiz-session";
 import { ambiguousHints, drawQuizCards, eligibleStudyCards, type StudyFilters, type StudyMode, type StudyOrder, type StudySession, type StudyTimerMode } from "@/lib/vocabulary/quiz-session";
@@ -22,7 +23,7 @@ const studyCacheKey = "vocabulary:study-session";
 const setupCacheKey = "vocabulary:study-setup";
 const kanaFilters = ["あ", "い", "う", "え", "お", "か", "き", "く", "け", "こ", "さ", "し", "す", "せ", "そ", "た", "ち", "つ", "て", "と", "な", "に", "ぬ", "ね", "の", "は", "ひ", "ふ", "へ", "ほ", "ま", "み", "む", "め", "も", "や", "ゆ", "よ", "ら", "り", "る", "れ", "ろ", "わ", "を", "ん"];
 const toHiragana = (value: string) => value.replace(/[ァ-ヶ]/g, (character) => String.fromCharCode(character.charCodeAt(0) - 0x60));
-const tabs: { id: Tab; label: string }[] = [{ id: "overview", label: "單字總覽" }, { id: "catalog", label: "探索單字庫" }, { id: "lookup", label: "查字典" }, { id: "assistant", label: "AI 學習" }, { id: "review", label: "複習與測驗" }, { id: "decks", label: "單字本" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" }];
+const tabs: { id: Tab; label: string }[] = [{ id: "home", label: "首頁" }, { id: "overview", label: "單字總覽" }, { id: "catalog", label: "探索單字庫" }, { id: "lookup", label: "查字典" }, { id: "assistant", label: "AI 學習" }, { id: "review", label: "複習與測驗" }, { id: "decks", label: "單字本" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" }];
 const blankDraft = (): Draft => ({ language: "ja", word: "", reading: "", romaji: "", primaryTranslation: "", englishDefinition: "", partOfSpeech: "", jlptLevel: "", cefrLevel: "", notes: "", languageDetails: "{}", tagIds: [], deckIds: [], meaningsText: "", examplesText: "", isFavorite: false, learningStatus: "new", masteryLevel: 0 });
 const emptyVocabulary: VocabularyWorkspaceData = { cards: [], decks: [], tags: [], settings: { dailyNewGoal: 5, dailyReviewGoal: 20, flashcardPreferences: {} }, reviewLogs: [] };
 type QuizMode = "smart" | "equal";
@@ -122,14 +123,13 @@ const vocabularyCompactFilterCss = `
 const vocabularyMobileDialogCss = `@media(max-width:700px){.modal-dialog.vocabulary-more-dialog{position:relative;right:auto;bottom:auto;left:auto;align-self:center;display:flex;width:100%;max-height:calc(var(--mobile-modal-viewport-height,100dvh) - max(28px,env(safe-area-inset-top)) - max(48px,env(safe-area-inset-bottom)));flex-direction:column;overflow:hidden;border-radius:18px}.modal-dialog.vocabulary-more-dialog .modal-dialog-content{min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}}`;
 
 const primaryTabs: { id: Tab; label: string; mobileLabel?: string }[] = [
+  { id: "home", label: "首頁" },
   { id: "overview", label: "單字總覽", mobileLabel: "總覽" },
-  { id: "catalog", label: "探索", mobileLabel: "探索" },
-  { id: "lookup", label: "查單字", mobileLabel: "查詢" },
   { id: "review", label: "複習與測驗", mobileLabel: "複習" },
-  { id: "decks", label: "單字本" },
+  { id: "stats", label: "學習統計", mobileLabel: "統計" },
 ];
 const moreTabs: { id: Tab; label: string; note?: string }[] = [
-  { id: "decks", label: "單字本" }, { id: "assistant", label: "AI 學習" }, { id: "stats", label: "學習統計" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" },
+  { id: "catalog", label: "探索單字庫" }, { id: "lookup", label: "查字典" }, { id: "decks", label: "單字本" }, { id: "assistant", label: "AI 學習" }, { id: "transfer", label: "匯入／匯出" }, { id: "settings", label: "設定" }, { id: "trash", label: "垃圾桶" },
 ];
 
 export function VocabularyWorkspace({ initialData, createMode = false }: { initialData?: VocabularyWorkspaceData; createMode?: boolean }) {
@@ -141,7 +141,7 @@ export function VocabularyWorkspace({ initialData, createMode = false }: { initi
   const [loaded, setLoaded] = useState(Boolean(initialData));
   const [dataMode, setDataMode] = useState<"active" | "trash">("active");
   const [listLoading, setListLoading] = useState(false);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>("home");
   const [query, setQuery] = useState("");
   const [language, setLanguage] = useState("all");
   const [masteryFilter, setMasteryFilter] = useState<number | null>(null);
@@ -381,6 +381,8 @@ export function VocabularyWorkspace({ initialData, createMode = false }: { initi
     {notice && <p className="notice success" role="status">{notice}</p>}
     <header className="vocabulary-header"><div><p className="eyebrow">VOCABULARY LEARNING</p><h1>單字學習</h1><p>記錄、整理與間隔複習你的日文、英文及更多語言。</p></div><button className="button vocabulary-primary-action" onClick={() => setDraft(blankDraft())} type="button">＋ 新增單字</button></header>
     <nav aria-label="單字學習功能" className="vocabulary-tabs">{tabs.map((item) => { const isPrimary = primaryTabs.some((primary) => primary.id === item.id); const mobileItem = primaryTabs.find((primary) => primary.id === item.id); return <button className={`${tab === item.id ? "active" : ""} ${item.id === "decks" ? "vocabulary-decks-tab" : ""} ${isPrimary ? "" : "vocabulary-tab-overflow"}`} key={item.id} onClick={() => activateTab(item.id)} type="button"><span className="vocabulary-tab-wide">{item.label}</span><span className="vocabulary-mobile-only">{mobileItem?.mobileLabel || item.label}</span>{item.id === "review" && dueCards.length > 0 ? <b>{dueCards.length}</b> : null}</button>; })}<button aria-expanded={moreOpen} className={`vocabulary-tab-more ${moreTabs.some((item) => item.id === tab) ? "active" : ""} ${tab === "decks" ? "deck-active" : ""}`} onClick={() => setMoreOpen(true)} type="button">更多</button></nav>
+
+    {tab === "home" && <VocabularyFeatureHome data={data} loaded={loaded && dataMode === "active"} dueCount={dueCards.length} onReview={() => activateTab("review")} onOverview={() => activateTab("overview", true)} onOpen={setSelected} onCreate={() => setDraft(blankDraft())} />}
 
     {tab === "catalog" && <VocabularyCatalog onChanged={() => load(false)} />}
     {tab === "lookup" && <VocabularyLookupPanel cards={data.cards} mode="lookup" onAdd={(entry) => setDraft({ ...blankDraft(), ...entry })} />}

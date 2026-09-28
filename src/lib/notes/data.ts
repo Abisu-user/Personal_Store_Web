@@ -25,13 +25,16 @@ function logQueryError(query: string, error: SupabaseQueryError | null, level: "
 }
 
 /** Owner-scoped note collection for server-rendered pages and internal APIs. */
-export async function getNotesWorkspaceData(ownerId: string): Promise<NotesWorkspaceData> {
+export async function getNotesWorkspaceData(ownerId: string, options?: { entryLimit?: number; publicOnly?: boolean }): Promise<NotesWorkspaceData> {
   const admin = createAdminClient();
   const lockState = await getFolderLockState(ownerId, "note");
-  const cleanupResult = await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "note").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
-  logQueryError("expired trash cleanup", cleanupResult.error, "warn");
+  if (!options?.publicOnly) {
+    const cleanupResult = await admin.from("entries").delete().eq("owner_id", ownerId).eq("kind", "note").lt("deleted_at", new Date(Date.now() - 30 * 86400000).toISOString());
+    logQueryError("expired trash cleanup", cleanupResult.error, "warn");
+  }
+  const entriesQuery = admin.from("entries").select("id, title, description, created_at, updated_at, is_favorite, is_pinned, is_archived, deleted_at, cover_image_path, cover_storage_object_id, categories:categories!entries_category_id_fkey(id, name), content_folders:content_folders!entries_content_folder_id_fkey(id, name, is_visible), note_details(content_markdown, current_version), entry_tags(tags(id, name, color))").eq("owner_id", ownerId).eq("kind", "note");
   const [entriesResult, categoriesResult, foldersResult, tagsResult] = await Promise.all([
-    admin.from("entries").select("id, title, description, updated_at, is_favorite, is_pinned, is_archived, deleted_at, cover_image_path, cover_storage_object_id, categories:categories!entries_category_id_fkey(id, name), content_folders:content_folders!entries_content_folder_id_fkey(id, name, is_visible), note_details(content_markdown, current_version), entry_tags(tags(id, name, color))").eq("owner_id", ownerId).eq("kind", "note").order("updated_at", { ascending: false }).limit(100),
+    (options?.publicOnly ? entriesQuery.eq("is_archived", false).is("deleted_at", null) : entriesQuery).order("updated_at", { ascending: false }).limit(options?.entryLimit ?? 100),
     admin.from("categories").select("id, name, sort_order, folder_id").eq("owner_id", ownerId).eq("content_kind", "note").order("sort_order").order("name").limit(100),
     admin.from("content_folders").select("id, name, sort_order, is_visible").eq("owner_id", ownerId).eq("content_kind", "note").order("sort_order").order("name").limit(100),
     admin.from("tags").select("id, name, color").eq("owner_id", ownerId).order("name").limit(100),
@@ -44,16 +47,17 @@ export async function getNotesWorkspaceData(ownerId: string): Promise<NotesWorks
   ] as const;
   queryErrors.forEach(([query, error]) => logQueryError(query, error));
   if (queryErrors.some(([, error]) => error)) throw new Error("Unable to load notes.");
-  const taxonomyLinks = await readEntryTaxonomyLinks(ownerId, "content");
   const entries = entriesResult.data ?? [];
+  const taxonomyLinks = await readEntryTaxonomyLinks(ownerId, "content", entries.map((entry) => entry.id));
   const notes: Note[] = entries.flatMap((entry) => {
     const detail = Array.isArray(entry.note_details) ? entry.note_details[0] : entry.note_details;
     if (!detail) return [];
     const folder = Array.isArray(entry.content_folders) ? entry.content_folders[0] ?? null : entry.content_folders;
     const category = Array.isArray(entry.categories) ? entry.categories[0] ?? null : entry.categories;
     const links = taxonomyLinks.get(entry.id); const linkedFolders = links?.folders.length ? links.folders : folder ? [folder] : []; const linkedCategories = links?.categories.length ? links.categories : category ? [category] : [];
-    if (linkedFolders.some((item) => lockState.locks.has(item.id) && !lockState.unlockedFolderIds.has(item.id))) return [];
-    return [{ id: entry.id, title: entry.title, description: entry.description, content: detail.content_markdown, currentVersion: detail.current_version, favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder: linkedFolders[0] ?? folder, folders: linkedFolders, coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null, category: linkedCategories[0] ?? category, categories: linkedCategories, tags: (entry.entry_tags ?? []).flatMap((item) => Array.isArray(item.tags) ? item.tags : item.tags ? [item.tags] : []), updatedAt: entry.updated_at }];
+    const privacyFolders = [...(folder ? [folder] : []), ...(links?.folders ?? [])];
+    if (privacyFolders.some((item) => (options?.publicOnly && !item.is_visible) || (lockState.locks.has(item.id) && (options?.publicOnly || !lockState.unlockedFolderIds.has(item.id))))) return [];
+    return [{ id: entry.id, title: entry.title, description: entry.description, content: detail.content_markdown, currentVersion: detail.current_version, favorite: entry.is_favorite, pinned: entry.is_pinned, archived: entry.is_archived, deletedAt: entry.deleted_at, folder: linkedFolders[0] ?? folder, folders: linkedFolders, coverImageUrl: entry.cover_image_path || entry.cover_storage_object_id ? `/api/content-covers?entry=${entry.id}&v=${encodeURIComponent(entry.updated_at)}` : null, category: linkedCategories[0] ?? category, categories: linkedCategories, tags: (entry.entry_tags ?? []).flatMap((item) => Array.isArray(item.tags) ? item.tags : item.tags ? [item.tags] : []), createdAt: entry.created_at, updatedAt: entry.updated_at }];
   });
   return { notes, categories: categoriesResult.data ?? [], folders: (foldersResult.data ?? []).map((folder) => ({ ...folder, is_locked: lockState.locks.has(folder.id), lock_mode: lockState.locks.get(folder.id)?.password_mode ?? null })), tags: tagsResult.data ?? [] };
 }
