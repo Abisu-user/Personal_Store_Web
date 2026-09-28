@@ -4,7 +4,7 @@ export type CalendarEvent = {
   description: string | null;
   startsAt: string;
   endsAt: string | null;
-  color: "indigo" | "blue" | "green" | "amber" | "rose";
+  color: string;
   updatedAt: string;
   eventDate: string;
   eventTime: string | null;
@@ -14,4 +14,19 @@ export type CalendarEvent = {
 
 export type CalendarOccurrence = CalendarEvent & { occurrenceDate: string };
 
-export type CalendarWorkspaceData = { events: CalendarEvent[]; range: { from: string; to: string } };
+export type TaiwanCalendarDay = {
+  date: string;
+  weekday: number;
+  officialAvailable: boolean;
+  isDayOff: boolean;
+  dayOffType: "weekend" | "national_holiday" | "makeup_holiday" | "special_holiday" | "workday" | "unknown";
+  holidayName: string | null;
+  festivalName: string | null;
+  note: string | null;
+};
+
+export type CalendarWorkspaceData = {
+  events: CalendarEvent[];
+  calendarDays: TaiwanCalendarDay[];
+  range: { from: string; to: string };
+};

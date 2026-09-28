@@ -15,7 +15,7 @@ const eventSchema = z.object({
   eventTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
   allDay: z.boolean(),
   recurrenceType: z.enum(["none", "yearly"]),
-  color: z.enum(["indigo", "blue", "green", "amber", "rose"]),
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/, "請選擇有效的行程顏色。"),
 }).refine((event) => event.allDay || event.eventTime !== null, { message: "請設定行程時間。", path: ["eventTime"] })
   .refine((event) => !event.endsAt || new Date(event.endsAt) >= new Date(event.startsAt), { message: "結束時間必須晚於開始時間。", path: ["endsAt"] });
 const updateSchema = eventSchema.safeExtend({ id: z.string().uuid() });

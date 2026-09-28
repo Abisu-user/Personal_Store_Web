@@ -37,7 +37,7 @@ async function main() {
     page.on("pageerror", (error) => errors.push(error.message));
     await page.route("**/api/calendar**", (route) => {
       const url = new URL(route.request().url());
-      if (route.request().method() === "GET") return route.fulfill({ json: { events: [], range: { from: url.searchParams.get("from"), to: url.searchParams.get("to") } } });
+      if (route.request().method() === "GET") return route.fulfill({ json: { events: [], calendarDays: [], range: { from: url.searchParams.get("from"), to: url.searchParams.get("to") } } });
       mutations.push({ method: route.request().method(), body: route.request().postDataJSON() });
       if (route.request().method() === "POST" && failNextPost) { failNextPost = false; return route.fulfill({ status: 400, json: { error: "測試儲存失敗" } }); }
       return route.fulfill({ json: { ok: true } });
@@ -51,6 +51,8 @@ async function main() {
       assert.ok(dimensions.page <= width + 1, "horizontal overflow at " + width + ": " + JSON.stringify(dimensions));
       assert.ok(dimensions.grid <= dimensions.gridClient + 1, "calendar grid overflow at " + width);
       assert.equal(dimensions.columns, width <= 700 ? 1 : 2, "layout columns at " + width);
+      assert.ok(await page.locator(".rest").count() > 0, "official rest marker at " + width);
+      assert.match(await page.locator(".selectedMeta").textContent(), /休/, "selected day knows official rest status");
       await page.screenshot({ path: path.join(output, "calendar-" + width + ".png") });
       await page.getByRole("button", { name: "＋ 新行程" }).click();
       const dialog = page.getByRole("dialog");
@@ -69,12 +71,14 @@ async function main() {
     await page.getByLabel("行程名稱").fill("生日 測試");
     await page.getByLabel("全天").check();
     await page.getByLabel("重複").selectOption("yearly");
+    await page.getByRole("button", { name: "選擇紫色" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "新增行程" }).click();
     await page.waitForFunction(() => [...document.querySelectorAll(".timelineEvent")].some((item) => item.textContent.includes("生日 測試")));
     await page.waitForTimeout(100);
     assert.equal(mutations.at(-1)?.method, "POST");
     assert.equal(mutations.at(-1)?.body.recurrenceType, "yearly");
     assert.equal(mutations.at(-1)?.body.allDay, true);
+    assert.equal(mutations.at(-1)?.body.color, "#9B76C5");
     await page.locator(".timelineEvent").filter({ hasText: "生日 測試" }).click();
     const current = new Date();
     const changed = new Date(current);
@@ -82,11 +86,14 @@ async function main() {
     const changedDate = [changed.getFullYear(), String(changed.getMonth() + 1).padStart(2, "0"), String(changed.getDate()).padStart(2, "0")].join("-");
     await page.getByLabel("行程名稱").fill("生日 更新");
     await page.getByLabel("日期").fill(changedDate);
+    await page.getByRole("button", { name: "自訂行程顏色" }).click();
+    await page.getByLabel("Hex 色碼").fill("#F8E989");
     await page.getByRole("dialog").getByRole("button", { name: "儲存修改" }).click();
     await page.waitForFunction(() => [...document.querySelectorAll(".timelineEvent")].some((item) => item.textContent.includes("生日 更新")));
     await page.waitForTimeout(100);
     assert.equal(mutations.at(-1)?.method, "PATCH");
     assert.equal(mutations.at(-1)?.body.eventDate, changedDate);
+    assert.equal(mutations.at(-1)?.body.color, "#F8E989");
     await page.locator(".timelineEvent").filter({ hasText: "生日 更新" }).click();
     await page.getByLabel("重複").selectOption("none");
     await page.getByRole("dialog").getByRole("button", { name: "儲存修改" }).click();
