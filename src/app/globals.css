@@ -2281,13 +2281,19 @@ html[data-theme="dark"] .taxonomy-section-card .taxonomy-choice-grid label:has(i
 @media (min-width: 701px) {
   .app-main .dashboard {
     --feature-page-pad-x: 28px;
-    --feature-page-pad-top: 18px;
+    --feature-page-pad-top: 0px;
     --feature-section-gap: 16px;
     padding-block: 16px;
   }
 
   .app-main .dashboard > .dashboard-card {
     padding: var(--feature-page-pad-top) var(--feature-page-pad-x) 24px;
+  }
+
+  /* Compact density has its own four-sided padding declaration above. Keep
+     its horizontal/bottom values while removing only the outer card's top. */
+  html[data-density="compact"] .app-main .dashboard > .dashboard-card {
+    padding-top: 0;
   }
 
   .app-main .dashboard > .dashboard-card > .page-heading,

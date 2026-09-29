@@ -167,7 +167,7 @@ select {
   }
 
   .app-main .dashboard > .dashboard-card {
-    padding: clamp(20px, 2.25vw, 32px);
+    padding: 0 clamp(20px, 2.25vw, 32px) clamp(20px, 2.25vw, 32px);
     border-radius: var(--radius-panel);
   }
 }
@@ -179,7 +179,7 @@ select {
   }
 
   .app-main .dashboard > .dashboard-card {
-    padding: var(--space-5);
+    padding: 0 var(--space-5) var(--space-5);
   }
 }
 

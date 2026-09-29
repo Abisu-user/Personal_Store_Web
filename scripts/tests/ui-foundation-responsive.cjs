@@ -190,6 +190,7 @@ async function measure(client, viewport) {
         innerWidth,
         scrollWidth: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth),
         dashboard: rect(".dashboard"),
+        dashboardCardPadding: (() => { const value = getComputedStyle(document.querySelector(".dashboard-card")); return { top: value.paddingTop, right: value.paddingRight, bottom: value.paddingBottom, left: value.paddingLeft }; })(),
         card: rect(".library-card"),
         modal: rect(".modal-dialog"),
         modalVisibleAtCenter: (() => { const dialog = document.querySelector('.modal-dialog'); const bounds = dialog.getBoundingClientRect(); return dialog.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)); })(),
@@ -282,6 +283,7 @@ async function verifyAnimeCollectionScroll(client, viewport, adult) {
         folderDisplay: getComputedStyle(document.querySelector('.anime-folder-navigation')).display,
         stripDisplay: getComputedStyle(document.querySelector('.anime-category-bar')).display,
         cardTop: document.querySelector('.dashboard-card').scrollTop,
+        cardPaddingTop: getComputedStyle(document.querySelector('.dashboard-card')).paddingTop,
         categoryX: category.getBoundingClientRect().x + 40, categoryY: category.getBoundingClientRect().y + 60,
         mainX: main.getBoundingClientRect().x + 40, mainY: main.getBoundingClientRect().y + 80 };
     })()`, returnByValue: true });
@@ -289,6 +291,7 @@ async function verifyAnimeCollectionScroll(client, viewport, adult) {
   };
   const label = `${viewport.width}px ${adult ? "adult" : "standard"} anime`;
   const before = await read();
+  assert(before.cardPaddingTop === "0px", `${label} outer card still has top padding`);
   assert(before.railDisplay === "flex", `${label} category rail is hidden (${JSON.stringify(before)})`);
   assert(before.folderDisplay === "grid" && before.stripDisplay === "none", `${label} folder/category hierarchy is wrong`);
   assert(before.categoryOverflow === "auto" && before.categoryScrollHeight > before.categoryHeight, `${label} categories cannot scroll`);
@@ -334,6 +337,14 @@ async function verifyAnimeCollectionScroll(client, viewport, adult) {
       assert(metrics.mobileIcon.width >= 44 && metrics.mobileIcon.height >= 44, `${viewport.width}px mobile icon target is below 44px`);
       assert(metrics.workspaceStyle.gap === "12px", `${viewport.width}px mobile workspace gap is not on the spacing scale`);
     } else {
+      assert(metrics.dashboardCardPadding.top === "0px", `${viewport.width}px desktop feature card still has top padding (${JSON.stringify(metrics.dashboardCardPadding)})`);
+      assert(parseFloat(metrics.dashboardCardPadding.right) > 0 && parseFloat(metrics.dashboardCardPadding.bottom) > 0 && parseFloat(metrics.dashboardCardPadding.left) > 0, `${viewport.width}px desktop feature card lost side/bottom padding`);
+      const compactPadding = await client.send("Runtime.evaluate", {
+        expression: `(() => { document.documentElement.dataset.density = "compact"; const style = getComputedStyle(document.querySelector(".dashboard-card")); return { top: style.paddingTop, right: style.paddingRight, bottom: style.paddingBottom, left: style.paddingLeft }; })()`,
+        returnByValue: true,
+      });
+      assert(compactPadding.result.value.top === "0px" && parseFloat(compactPadding.result.value.right) > 0 && parseFloat(compactPadding.result.value.bottom) > 0, `${viewport.width}px compact feature card padding is incorrect`);
+      await client.send("Runtime.evaluate", { expression: 'delete document.documentElement.dataset.density' });
       assert(metrics.collectionSidebarStyle.display === "flex", `${viewport.width}px category sidebar is missing (${JSON.stringify(metrics.collectionSidebarStyle)})`);
       assert(metrics.collectionCategoryStyle.display === "none", `${viewport.width}px horizontal category strip remains visible`);
       assert(metrics.collectionSidebar.right + 8 <= metrics.collectionFolder.x, `${viewport.width}px category sidebar overlaps folder content`);
