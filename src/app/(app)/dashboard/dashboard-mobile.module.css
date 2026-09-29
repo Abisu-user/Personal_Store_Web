@@ -1,10 +1,10 @@
 .mobileDashboard { display: none; }
 
 @media (max-width: 700px) {
-  :global(.app-main) :global(.dashboard).dashboardPage { width: 100%; margin: 0; padding: 8px var(--mobile-page-gutter-right) 18px var(--mobile-page-gutter); scrollbar-gutter: auto; }
+  :global(.app-main) :global(.dashboard).dashboardPage { width: 100%; margin: 0; height: 100%; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch; padding: 8px var(--mobile-page-gutter-right) calc(var(--mobile-nav-height) + 24px) var(--mobile-page-gutter); scrollbar-gutter: auto; }
   :global(.app-main) .dashboardPage > .desktopOnly { display: none; }
   .mobileDashboard { display: grid; min-width: 0; gap: 18px; padding-bottom: 5px; }
-  :global(html[data-density="compact"]) :global(.app-main) :global(.dashboard).dashboardPage { padding-top: 6px; padding-bottom: 14px; }
+  :global(html[data-density="compact"]) :global(.app-main) :global(.dashboard).dashboardPage { padding-top: 6px; padding-bottom: calc(var(--mobile-nav-height) + 20px); }
   :global(html[data-density="compact"]) .mobileDashboard { gap: 14px; }
   :global(html[data-density="compact"]) .overviewCard { min-height: 65px; padding: 7px 8px; }
   .personalHeader { position: relative; isolation: isolate; min-width: 0; overflow: hidden; padding: 15px 14px 13px; border-radius: 22px; background: linear-gradient(135deg, color-mix(in srgb, var(--brand-soft) 80%, transparent), color-mix(in srgb, var(--surface) 42%, transparent)); }

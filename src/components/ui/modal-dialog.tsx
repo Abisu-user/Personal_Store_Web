@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
 
 type ModalDialogProps = {
@@ -33,9 +34,9 @@ export function ModalDialog({ children, className, onClose, open, pending = fals
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, pending]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return <div className="modal-dialog-backdrop" onMouseDown={(event) => {
+  return createPortal(<div className="modal-dialog-backdrop" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !pending) onClose();
   }}>
     <section aria-labelledby={titleId} aria-modal="true" data-create-dialog={/^(新增|上傳|建立)/.test(title) ? "true" : undefined} className={`modal-dialog${className ? ` ${className}` : ""}`} role="dialog">
@@ -46,7 +47,7 @@ export function ModalDialog({ children, className, onClose, open, pending = fals
       <div className="modal-dialog-content">{children}</div>
       {footer}
     </section>
-  </div>;
+  </div>, document.body);
 }
 
 export function OperationStatus({ label = "正在處理資料…" }: { label?: string }) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
 
 type ConfirmDialogProps = {
@@ -27,14 +28,14 @@ export function ConfirmDialog({ open, title, description, confirmLabel = "確認
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onCancel, open, pending]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return <div className="confirm-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel(); }}>
+  return createPortal(<div className="confirm-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onCancel(); }}>
     <section aria-describedby="confirm-dialog-description" aria-labelledby="confirm-dialog-title" aria-modal="true" className="confirm-dialog" role="alertdialog">
       <span aria-hidden="true" className="confirm-dialog-icon">!</span>
       <div><p className="eyebrow">DELETE CONFIRMATION</p><h2 id="confirm-dialog-title">{title}</h2><p id="confirm-dialog-description">{description}</p></div>
       {error && <p className="notice error" role="alert">{error}</p>}
       <div className="dialog-actions"><button className="delete-button" disabled={pending} onClick={onConfirm} type="button">{pending ? "處理中…" : confirmLabel}</button><button className="secondary-button" disabled={pending} onClick={onCancel} ref={cancelButton} type="button">取消</button></div>
     </section>
-  </div>;
+  </div>, document.body);
 }

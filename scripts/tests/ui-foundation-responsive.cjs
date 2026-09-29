@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { spawn } = require("node:child_process");
-const { existsSync } = require("node:fs");
+const { existsSync, readdirSync, readFileSync } = require("node:fs");
+const path = require("node:path");
 
 const chromePaths = [
   "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
@@ -9,6 +10,10 @@ const chromePaths = [
 const executable = chromePaths.find(existsSync);
 const port = 9337;
 const origin = "http://localhost:3010";
+const cssDirectory = path.join(__dirname, "../../.next/static/chunks");
+const dashboardCssFile = readdirSync(cssDirectory).find((name) => name.endsWith(".css") && readFileSync(path.join(cssDirectory, name), "utf8").includes("dashboardPage"));
+const dashboardCss = dashboardCssFile ? readFileSync(path.join(cssDirectory, dashboardCssFile), "utf8") : "";
+const dashboardClass = dashboardCss.match(/\.([\w-]+__dashboardPage)/)?.[1];
 const viewports = [
   { width: 1920, height: 1080, mobile: false },
   { width: 1440, height: 900, mobile: false },
@@ -306,6 +311,57 @@ async function verifyAnimeCollectionScroll(client, viewport, adult) {
   assert(afterCategory.categoryTop > before.categoryTop && afterCategory.mainTop === afterMain.mainTop && afterCategory.headerY === before.headerY && afterCategory.footerY === before.footerY, `${label} left wheel moves header/footer/main`);
 }
 
+async function verifyMobileLongDialog(client, viewport) {
+  const options = Array.from({ length: 80 }, (_, index) => `<label style="display:block;min-height:44px">類別 ${index + 1} <input type="checkbox"></label>`).join("");
+  const html = `<div class="app-shell"><main class="app-main"><div class="app-page-transition"><div class="dashboard"><div class="dashboard-card">${options}</div></div></div></main></div><div class="modal-dialog-backdrop"><section class="modal-dialog create-item-dialog"><header class="modal-dialog-header"><h2>加入收藏設定</h2><button class="modal-dialog-close">×</button></header><div class="modal-dialog-content">${options}</div><div class="create-item-footer"><div class="create-form-actions"><button class="secondary-button">取消</button><button class="button">加入收藏</button></div></div></section></div>`;
+  await client.send("Runtime.evaluate", { expression: `document.body.innerHTML = ${JSON.stringify(html)}` });
+  const read = async () => {
+    const response = await client.send("Runtime.evaluate", { expression: `(() => {
+      const panel = document.querySelector('.modal-dialog');
+      const body = panel.querySelector('.modal-dialog-content');
+      const header = panel.querySelector('.modal-dialog-header').getBoundingClientRect();
+      const footerElement = panel.querySelector('.create-item-footer, .modal-dialog-footer');
+      const footer = footerElement.getBoundingClientRect();
+      const button = footerElement.querySelector('.button').getBoundingClientRect();
+      const bounds = (rect) => ({ top: rect.top, bottom: rect.bottom });
+      return { panel: bounds(panel.getBoundingClientRect()), header: bounds(header), footer: bounds(footer), button: bounds(button), scrollTop: body.scrollTop, scrollHeight: body.scrollHeight, clientHeight: body.clientHeight, overflowY: getComputedStyle(body).overflowY };
+    })()`, returnByValue: true });
+    if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
+    return response.result.value;
+  };
+  const before = await read();
+  assert(before.panel.top >= -1 && before.panel.bottom <= viewport.height + 1, `${viewport.width}px long dialog leaves viewport: ${JSON.stringify(before)}`);
+  assert(before.button.top >= 0 && before.button.bottom <= viewport.height, `${viewport.width}px action button is hidden`);
+  assert(before.scrollHeight > before.clientHeight && before.overflowY === "auto", `${viewport.width}px long dialog body does not scroll`);
+  await client.send("Runtime.evaluate", { expression: `document.querySelector('.modal-dialog-content').scrollTop = 1000` });
+  const after = await read();
+  assert(after.scrollTop > 0 && after.header.top === before.header.top && after.footer.top === before.footer.top, `${viewport.width}px header/footer moved with dialog body`);
+  const manager = `<div class="modal-dialog-backdrop"><section class="modal-dialog"><header class="modal-dialog-header"><h2>管理分類</h2><button class="modal-dialog-close">×</button></header><div class="modal-dialog-content">${options}</div><div class="modal-dialog-footer"><div class="dialog-actions"><button class="secondary-button">取消</button><button class="button">儲存分類</button></div></div></section></div>`;
+  await client.send("Runtime.evaluate", { expression: `document.body.innerHTML = ${JSON.stringify(manager)}` });
+  const managerBefore = await read();
+  assert(managerBefore.scrollHeight > managerBefore.clientHeight && managerBefore.button.bottom <= viewport.height, `${viewport.width}px manager actions are hidden`);
+  await client.send("Runtime.evaluate", { expression: `document.querySelector('.modal-dialog-content').scrollTop = 1000` });
+  const managerAfter = await read();
+  assert(managerAfter.scrollTop > 0 && managerAfter.footer.top === managerBefore.footer.top, `${viewport.width}px manager footer moved with list`);
+}
+
+async function verifyMobileDashboardScroll(client, viewport) {
+  assert(dashboardCssFile && dashboardClass, "Built mobile dashboard stylesheet is missing");
+  const content = Array.from({ length: 8 }, (_, index) => `<section style="min-height:240px">首頁區塊 ${index + 1}</section>`).join("");
+  const html = `<div class="app-shell"><main class="app-main"><div class="app-page-transition"><div class="dashboard ${dashboardClass}">${content}</div></div></main><nav class="mobile-bottom-nav" style="height:70px">導覽列</nav></div>`;
+  await client.send("Runtime.evaluate", { expression: `new Promise((resolve, reject) => { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/_next/static/chunks/${dashboardCssFile}'; link.onload = resolve; link.onerror = reject; document.head.appendChild(link); })`, awaitPromise: true });
+  await client.send("Runtime.evaluate", { expression: `document.body.innerHTML = ${JSON.stringify(html)}` });
+  const read = async () => {
+    const response = await client.send("Runtime.evaluate", { expression: `(() => { const page = document.querySelector('.dashboard'); return { scrollTop: page.scrollTop, scrollHeight: page.scrollHeight, clientHeight: page.clientHeight, overflowY: getComputedStyle(page).overflowY, lastBottom: page.lastElementChild.getBoundingClientRect().bottom, navTop: document.querySelector('.mobile-bottom-nav').getBoundingClientRect().top }; })()`, returnByValue: true });
+    return response.result.value;
+  };
+  const before = await read();
+  assert(before.overflowY === "auto" && before.scrollHeight > before.clientHeight, `${viewport.width}px mobile dashboard is not scrollable: ${JSON.stringify(before)}`);
+  await client.send("Runtime.evaluate", { expression: `document.querySelector('.dashboard').scrollTop = 99999` });
+  const after = await read();
+  assert(after.scrollTop > 0 && after.lastBottom < after.navTop, `${viewport.width}px dashboard bottom is unreachable above navigation: ${JSON.stringify(after)}`);
+}
+
 (async () => {
   const target = await newTarget(origin + "/login");
   const client = await connect(target.webSocketDebuggerUrl);
@@ -336,6 +392,8 @@ async function verifyAnimeCollectionScroll(client, viewport, adult) {
       assert(metrics.mobileSectionStyle.display === "grid", `${viewport.width}px mobile section is not available`);
       assert(metrics.mobileIcon.width >= 44 && metrics.mobileIcon.height >= 44, `${viewport.width}px mobile icon target is below 44px`);
       assert(metrics.workspaceStyle.gap === "12px", `${viewport.width}px mobile workspace gap is not on the spacing scale`);
+      await verifyMobileDashboardScroll(client, viewport);
+      await verifyMobileLongDialog(client, viewport);
     } else {
       assert(metrics.dashboardCardPadding.top === "0px", `${viewport.width}px desktop feature card still has top padding (${JSON.stringify(metrics.dashboardCardPadding)})`);
       assert(parseFloat(metrics.dashboardCardPadding.right) > 0 && parseFloat(metrics.dashboardCardPadding.bottom) > 0 && parseFloat(metrics.dashboardCardPadding.left) > 0, `${viewport.width}px desktop feature card lost side/bottom padding`);
