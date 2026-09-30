@@ -3,7 +3,6 @@ import {
   getCatalogue,
   getCatalogueTaxonomy,
   getDiscoveryHome,
-  getAniListIdsForMalIds,
   getLatestAiredEpisodes,
   getWeeklySchedule,
   type CatalogueFilters,
@@ -15,6 +14,7 @@ import { hasUnlockedAdultAccess } from "@/lib/security/adult-unlock";
 import { getAdultCatalogueWithAliases } from "@/lib/anime/adult-alias-catalogue";
 import { learnVerifiedAdultAnime } from "@/lib/anime/adult-alias-store";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveFollowingAniListIds, type FollowingIdentityRow } from "@/lib/anime/following-identity";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -75,28 +75,38 @@ export async function GET(request: NextRequest) {
   }
   if (params.get("view") === "following") {
     try {
-      const { data: rows, error: libraryError } = await createAdminClient()
-        .from("anime_library")
-        .select("id,title,cover_url,cover_storage_object_id,updated_at,external_id,external_source,episodes")
-        .eq("user_id", security.userId)
-        .eq("watch_status", "watching")
-        .or("is_adult.is.null,is_adult.eq.false")
-        .is("deleted_at", null)
-        .limit(400);
-      if (libraryError) throw libraryError;
-      const watched = rows ?? [];
-      const malToAniList = await getAniListIdsForMalIds(watched
-        .filter((row) => row.external_source === "jikan")
-        .map((row) => Number(row.external_id))).catch((cause) => {
-          console.warn("[anime-following] MAL ID mapping unavailable", { error: cause instanceof Error ? cause.message : "unknown" });
-          return new Map<number, number>();
-        });
-      const providerIds = watched.map((row) => row.external_source === "anilist"
-        ? Number(row.external_id)
-        : row.external_source === "jikan" ? malToAniList.get(Number(row.external_id)) : undefined);
-      const latest = await getLatestAiredEpisodes(providerIds.filter((id): id is number => typeof id === "number"));
-      const items = watched.flatMap((row, index) => {
-        const providerId = providerIds[index];
+      const admin = createAdminClient();
+      type WatchingRow = FollowingIdentityRow & {
+        cover_url: string | null;
+        cover_storage_object_id: string | null;
+        updated_at: string;
+        episodes: number | null;
+      };
+      const watched: WatchingRow[] = [];
+      let hasIdentityColumns = false;
+      for (let offset = 0; ; offset += 400) {
+        const { data, error: libraryError } = await admin.from("anime_library")
+          .select("*")
+          .eq("user_id", security.userId)
+          .eq("watch_status", "watching")
+          .or("is_adult.is.null,is_adult.eq.false")
+          .is("deleted_at", null)
+          .order("id")
+          .range(offset, offset + 399);
+        if (libraryError) throw libraryError;
+        if (offset === 0 && data?.length) hasIdentityColumns = "anilist_media_id" in data[0]!;
+        const batch = (data ?? []).map((row) => ({
+          ...row,
+          anilist_media_id: "anilist_media_id" in row ? row.anilist_media_id : null,
+          anilist_match_checked_at: "anilist_match_checked_at" in row ? row.anilist_match_checked_at : null,
+        })) as WatchingRow[];
+        watched.push(...batch);
+        if (batch.length < 400) break;
+      }
+      const providerIds = await resolveFollowingAniListIds(security.userId, watched, hasIdentityColumns);
+      const latest = await getLatestAiredEpisodes([...providerIds.values()]);
+      const items = watched.flatMap((row) => {
+        const providerId = providerIds.get(row.id);
         const aired = providerId ? latest.get(providerId) : null;
         if (!aired) return [];
         return [{

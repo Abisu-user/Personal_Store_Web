@@ -584,6 +584,54 @@ export async function getAniListIdsForMalIds(malIds: number[]) {
   return found;
 }
 
+/** Resolve a legacy provider row only when an AniList title/alias and year agree.
+ * A fuzzy result must never become a persistent cross-provider identity.
+ */
+export async function findAniListMediaIdByAliases(
+  aliases: string[],
+  releaseYear: number | null,
+): Promise<number | null> {
+  const query = `query AnimeIdentity($search: String!) {
+    Page(page: 1, perPage: 12) {
+      media(search: $search, type: ANIME, isAdult: false, countryOfOrigin: JP) {
+        id seasonYear title { native romaji english } synonyms
+      }
+    }
+  }`;
+  const terms = [...new Map(aliases
+    .map((alias) => alias.trim())
+    .filter((alias) => alias.length >= 5 && alias.length <= 200)
+    .map((alias) => [normalizeAnimeTitle(alias).normalized, alias])).values()].slice(0, 10);
+  let failed = false;
+  for (const term of terms) {
+    try {
+      const data = await request<{ Page?: { media?: Array<{
+        id: number;
+        seasonYear?: number | null;
+        title?: { native?: string | null; romaji?: string | null; english?: string | null };
+        synonyms?: string[];
+      }> } }>(query, { search: term }, CATALOGUE_TTL);
+      const normalizedTerm = normalizeAnimeTitle(term);
+      const matches = (data.Page?.media ?? []).filter((media) => {
+        if (!Number.isSafeInteger(media.id) || media.id <= 0) return false;
+        if (releaseYear && media.seasonYear && releaseYear !== media.seasonYear) return false;
+        const names = [media.title?.native, media.title?.romaji, media.title?.english, ...(media.synonyms ?? [])];
+        return names.some((name) => {
+          if (!name) return false;
+          const candidate = normalizeAnimeTitle(name);
+          return candidate.normalized === normalizedTerm.normalized &&
+            (!normalizedTerm.seasonNumber || !candidate.seasonNumber || normalizedTerm.seasonNumber === candidate.seasonNumber);
+        });
+      });
+      if (matches.length === 1) return matches[0]!.id;
+    } catch {
+      failed = true;
+    }
+  }
+  if (failed) throw new Error("AniList identity lookup incomplete");
+  return null;
+}
+
 /** AniList's past AiringSchedule is the only source of update timestamps here.
  * Missing history stays missing; nextAiringEpisode and DB updated_at are never substitutes.
  */
