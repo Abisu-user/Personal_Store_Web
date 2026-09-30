@@ -119,6 +119,20 @@
 .colorPreview { display: inline-grid; width: 40px; height: 40px; place-items: center; border: 1px solid var(--line); border-radius: 10px; font-size: .8rem; font-weight: 800; }
 .formError { margin: 0; color: #b04461; font-size: .78rem; }
 .deleteButton { justify-self: start; margin-top: 3px; padding: 6px 0; border: 0; background: transparent; color: #b04461; font: inherit; font-size: .8rem; cursor: pointer; }
+.reminderSection { display: grid; gap: 8px; }
+.reminderList { display: flex; flex-wrap: wrap; gap: 7px; }
+.reminderChip { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 3px 7px 3px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--brand-soft); color: var(--ink); font-size: .78rem; }
+.reminderChip button { display: grid; width: 25px; height: 25px; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+.reminderEmpty { margin: 0; color: var(--muted); font-size: .78rem; }
+.customReminder { display: grid; grid-template-columns: 80px minmax(0, 130px) auto; align-items: center; gap: 8px; }
+.addReminder { justify-self: start; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--brand); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.addReminder:disabled { opacity: .5; cursor: not-allowed; }
+.notificationDialog { width: min(94vw, 450px); }
+.notificationSettings { display: grid; gap: 12px; }
+.notificationSettings p { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+.notificationSettings button { min-height: 42px; }
+.notificationState { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: .85rem; }
+.notificationState span { color: var(--brand); font-weight: 700; }
 @keyframes enterMonth { from { opacity: .68; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (min-width: 701px) and (max-width: 1050px) {
@@ -164,6 +178,7 @@
   .editorDialog { width: 100%; max-height: min(92dvh, 820px); }
   .formRow { gap: 8px; }
   .form { gap: 10px; }
+  .notificationDialog { width: 100%; }
 }
 @media (max-width: 390px) {
   .calendarPage:global(.dashboard) { width: calc(100% - 12px); }

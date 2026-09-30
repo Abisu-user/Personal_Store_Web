@@ -9,7 +9,10 @@ export type CalendarEvent = {
   eventDate: string;
   eventTime: string | null;
   allDay: boolean;
-  recurrenceType: "none" | "yearly";
+  recurrenceType: "none" | "daily" | "weekly" | "yearly";
+  reminders: number[];
+  allDayReminderTime: string;
+  timeZone: string;
 };
 
 export type CalendarOccurrence = CalendarEvent & { occurrenceDate: string };

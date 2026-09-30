@@ -5,15 +5,32 @@ import { useBackgroundSave } from "@/components/background-save/background-save-
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
-import { calendarDateKey, occurrencesInRange, rangeForMonth } from "@/lib/calendar/recurrence";
+import { CalendarNotificationSettings } from "@/components/calendar/calendar-notifications";
+import { calendarDateKey, isValidDateKey, occurrencesInRange, rangeForMonth } from "@/lib/calendar/recurrence";
 import { defaultEventColor, eventColorContrast, eventColorPresets, isHexEventColor, normalizeEventColor } from "@/lib/calendar/event-color";
 import type { CalendarEvent, CalendarOccurrence, CalendarWorkspaceData, TaiwanCalendarDay } from "@/lib/calendar/types";
 import styles from "./calendar-mobile.module.css";
 
 type Draft = {
   title: string; description: string; date: string; time: string; endDate: string; endTime: string;
-  allDay: boolean; recurrenceType: "none" | "yearly"; color: string;
+  allDay: boolean; recurrenceType: CalendarEvent["recurrenceType"]; color: string;
+  reminders: number[]; allDayReminderTime: string; timeZone: string;
 };
+const reminderPresets = [
+  { value: 0, label: "行程開始時" }, { value: 5, label: "提前 5 分鐘" },
+  { value: 10, label: "提前 10 分鐘" }, { value: 15, label: "提前 15 分鐘" },
+  { value: 30, label: "提前 30 分鐘" }, { value: 60, label: "提前 1 小時" },
+  { value: 120, label: "提前 2 小時" }, { value: 180, label: "提前 3 小時" },
+  { value: 1440, label: "提前 1 天" }, { value: 2880, label: "提前 2 天" },
+  { value: 4320, label: "提前 3 天" },
+];
+function reminderLabel(minutes: number) {
+  return reminderPresets.find((item) => item.value === minutes)?.label ??
+    (minutes % 1440 === 0 ? `提前 ${minutes / 1440} 天` : minutes % 60 === 0 ? `提前 ${minutes / 60} 小時` : `提前 ${minutes} 分鐘`);
+}
+function recurrenceLabel(type: CalendarEvent["recurrenceType"]) {
+  return ({ none: "私人行程", daily: "每天重複", weekly: "每週重複", yearly: "每年重複" })[type];
+}
 type Upcoming = { key: string; date: string; title: string; detail: string; kind: "event" | "holiday" | "festival"; event?: CalendarOccurrence };
 
 function parseDate(key: string) {
@@ -24,19 +41,20 @@ function formatDate(key: string) {
   return new Intl.DateTimeFormat("zh-TW", { month: "long", day: "numeric", weekday: "long" }).format(parseDate(key));
 }
 function makeDraft(date: string): Draft {
-  return { title: "", description: "", date, time: "09:00", endDate: date, endTime: "", allDay: false, recurrenceType: "none", color: defaultEventColor };
+  return { title: "", description: "", date, time: "09:00", endDate: date, endTime: "", allDay: false, recurrenceType: "none", color: defaultEventColor, reminders: [], allDayReminderTime: "09:00", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Taipei" };
 }
 function draftFor(event: CalendarOccurrence): Draft {
   const end = event.endsAt ? new Date(event.endsAt) : null;
   const endOffset = end ? Math.round((Date.parse(calendarDateKey(end) + "T12:00:00Z") - Date.parse(event.eventDate + "T12:00:00Z")) / 86_400_000) : 0;
-  const occurrenceEnd = parseDate(event.occurrenceDate);
+  const occurrenceEnd = parseDate(event.eventDate);
   occurrenceEnd.setDate(occurrenceEnd.getDate() + endOffset);
   return {
-    title: event.title, description: event.description ?? "", date: event.occurrenceDate,
+    title: event.title, description: event.description ?? "", date: event.eventDate,
     time: event.eventTime?.slice(0, 5) ?? "09:00",
     endDate: calendarDateKey(occurrenceEnd),
     endTime: end && !event.allDay ? String(end.getHours()).padStart(2, "0") + ":" + String(end.getMinutes()).padStart(2, "0") : "",
     allDay: event.allDay, recurrenceType: event.recurrenceType, color: normalizeEventColor(event.color),
+    reminders: event.reminders, allDayReminderTime: event.allDayReminderTime, timeZone: event.timeZone,
   };
 }
 function eventTime(event: CalendarOccurrence) {
@@ -65,6 +83,10 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
   const [notice, setNotice] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
   const [customColorOpen, setCustomColorOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [reminderChoice, setReminderChoice] = useState("");
+  const [customReminderValue, setCustomReminderValue] = useState(1);
+  const [customReminderUnit, setCustomReminderUnit] = useState<"minute" | "hour" | "day">("hour");
   const range = useMemo(() => rangeForMonth(month), [month]);
   const rangeLoaded = data.range.from <= range.from && data.range.to >= range.to;
 
@@ -126,16 +148,25 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   const startNew = useCallback((date: string) => {
-    setSelectedId(null); setConfirmDelete(false); setDraft(makeDraft(date)); setCustomColorOpen(false); setNotice(null); setEditorOpen(true);
+    setSelectedId(null); setConfirmDelete(false); setDraft(makeDraft(date)); setCustomColorOpen(false); setReminderChoice(""); setNotice(null); setEditorOpen(true);
   }, []);
   const selectEvent = (event: CalendarOccurrence) => {
-    setSelectedId(event.id); setConfirmDelete(false); setDraft(draftFor(event)); setCustomColorOpen(!eventColorPresets.some((preset) => preset.value === normalizeEventColor(event.color))); setSelectedDay(event.occurrenceDate); setNotice(null); setEditorOpen(true);
+    setSelectedId(event.id); setConfirmDelete(false); setDraft(draftFor(event)); setCustomColorOpen(!eventColorPresets.some((preset) => preset.value === normalizeEventColor(event.color))); setReminderChoice(""); setSelectedDay(event.occurrenceDate); setNotice(null); setEditorOpen(true);
   };
   useEffect(() => {
     const open = () => startNew(selectedDay);
     window.addEventListener("personal-vault:new-item", open);
     return () => window.removeEventListener("personal-vault:new-item", open);
   }, [selectedDay, startNew]);
+  useEffect(() => {
+    const date = new URLSearchParams(window.location.search).get("date");
+    if (!date || !isValidDateKey(date)) return;
+    const frame = window.requestAnimationFrame(() => {
+      setSelectedDay(date);
+      setMonth(new Date(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, 1));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
   const navigate = (delta: number) => {
     const next = new Date(month.getFullYear(), month.getMonth() + delta, 1);
     setFetching(true);
@@ -160,12 +191,14 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
       id, title, description: draft.description.trim(), startsAt, endsAt,
       eventDate: draft.date, eventTime: draft.allDay ? null : draft.time,
       allDay: draft.allDay, recurrenceType: draft.recurrenceType, color: draft.color,
+      reminders: draft.reminders, allDayReminderTime: draft.allDayReminderTime, timeZone: draft.timeZone,
     };
     const previousEvent = data.events.find((item) => item.id === id);
     const optimistic: CalendarEvent = {
       id, title, description: payload.description || null, startsAt, endsAt,
       eventDate: draft.date, eventTime: payload.eventTime, allDay: draft.allDay,
       recurrenceType: draft.recurrenceType, color: draft.color, updatedAt: new Date().toISOString(),
+      reminders: draft.reminders, allDayReminderTime: draft.allDayReminderTime, timeZone: draft.timeZone,
     };
     setData((current) => ({ ...current, events: [...current.events.filter((item) => item.id !== id), optimistic] }));
     backgroundJobs.enqueue({
@@ -176,7 +209,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         ...current,
         events: [...current.events.filter((item) => item.id !== id), ...(previousEvent ? [previousEvent] : [])],
       })),
-      onSuccess: () => { setData((current) => ({ ...current, events: [...current.events.filter((item) => item.id !== id), optimistic] })); setNotice(selectedId ? "行程已更新。" : "行程已新增。"); },
+      onSuccess: () => { setData((current) => ({ ...current, events: [...current.events.filter((item) => item.id !== id), optimistic] })); setNotice(selectedId ? "行程已更新。" : "行程已新增。"); if (draft.reminders.length && typeof Notification !== "undefined" && Notification.permission === "default") setNotificationOpen(true); },
       onError: (error) => setNotice(error.message || "無法儲存行程。請從背景儲存佇列重試。"),
     });
     setSelectedDay(draft.date); setMonth(new Date(Number(draft.date.slice(0, 4)), Number(draft.date.slice(5, 7)) - 1, 1));
@@ -209,6 +242,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         <div className={styles.calendarHeader}>
           <div><p className={styles.kicker}>PRIVATE CALENDAR</p><h2>{monthLabel}</h2></div>
           <div className={styles.controls}>
+            <button aria-label="行程通知設定" onClick={() => setNotificationOpen(true)} type="button">🔔</button>
             <button aria-label="上一個月" onClick={() => navigate(-1)} type="button">‹</button>
             <button onClick={() => { const now = new Date(); setFetching(true); setMonth(new Date(now.getFullYear(), now.getMonth(), 1)); setSelectedDay(calendarDateKey(now)); }} type="button">今天</button>
             <button aria-label="下一個月" onClick={() => navigate(1)} type="button">›</button>
@@ -253,10 +287,10 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
           <h3 className={styles.sectionTitle}>當日行程</h3>
           {selectedEvents.length === 0 && <p className={styles.empty}>今天沒有私人行程。可以新增行程，或選擇其他日期。</p>}
           <div className={styles.timeline}>
-            {selectedAllDay.map((event) => <button className={styles.timelineEvent} key={event.id} onClick={() => selectEvent(event)} style={eventStyle(event.color)} type="button"><time>全天</time><i /><span><strong>{event.title}</strong><small>{event.recurrenceType === "yearly" ? "每年重複" : "私人行程"}</small></span></button>)}
+            {selectedAllDay.map((event) => <button className={styles.timelineEvent} key={event.id} onClick={() => selectEvent(event)} style={eventStyle(event.color)} type="button"><time>全天</time><i /><span><strong>{event.title}</strong><small>{recurrenceLabel(event.recurrenceType)}</small></span></button>)}
             {Array.from(new Set(["09:00", "12:00", "14:00", "18:00", "21:00", ...selectedTimed.map((event) => eventTime(event))])).sort().map((time) => {
               const matching = selectedTimed.filter((event) => eventTime(event) === time);
-              return <div className={matching.length ? styles.timelineSlot : styles.timelineEmptySlot} key={time}><time>{time}</time><div className={styles.timelineRail} /><div className={styles.timelineItems}>{matching.map((event) => <button className={styles.timelineDetail} key={event.id} onClick={() => selectEvent(event)} style={eventStyle(event.color)} type="button"><strong>{event.title}</strong><small>{event.recurrenceType === "yearly" ? "每年重複" : "私人行程"}{event.description ? "・" + event.description : ""}</small></button>)}</div></div>;
+              return <div className={matching.length ? styles.timelineSlot : styles.timelineEmptySlot} key={time}><time>{time}</time><div className={styles.timelineRail} /><div className={styles.timelineItems}>{matching.map((event) => <button className={styles.timelineDetail} key={event.id} onClick={() => selectEvent(event)} style={eventStyle(event.color)} type="button"><strong>{event.title}</strong><small>{recurrenceLabel(event.recurrenceType)}{event.description ? "・" + event.description : ""}</small></button>)}</div></div>;
             })}
           </div>
         </section>
@@ -270,7 +304,14 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         <label>行程名稱<input maxLength={300} onChange={(event) => update("title", event.target.value)} placeholder="例如：專題討論" required value={draft.title} /></label>
         <div className={styles.formRow}><label>日期<input onChange={(event) => update("date", event.target.value)} required type="date" value={draft.date} /></label><label className={styles.allDayControl}><input checked={draft.allDay} onChange={(event) => update("allDay", event.target.checked)} type="checkbox" />全天</label></div>
         {!draft.allDay && <><div className={styles.formRow}><label>開始時間<input onChange={(event) => update("time", event.target.value)} required type="time" value={draft.time} /></label><label>結束時間（選填）<input onChange={(event) => update("endTime", event.target.value)} type="time" value={draft.endTime} /></label></div>{draft.endTime && <label>結束日期（跨日行程）<input min={draft.date} onChange={(event) => update("endDate", event.target.value)} required type="date" value={draft.endDate} /></label>}</>}
-        <label>重複<select onChange={(event) => update("recurrenceType", event.target.value as Draft["recurrenceType"])} value={draft.recurrenceType}><option value="none">不重複</option><option value="yearly">每年</option></select></label>
+        <label>重複<select onChange={(event) => update("recurrenceType", event.target.value as Draft["recurrenceType"])} value={draft.recurrenceType}><option value="none">不重複</option><option value="daily">每天</option><option value="weekly">每週</option><option value="yearly">每年</option></select></label>
+        <fieldset className={styles.reminderSection}><legend>提醒</legend>
+          {draft.reminders.length ? <div className={styles.reminderList}>{draft.reminders.map((minutes) => <span className={styles.reminderChip} key={minutes}>🔔 {reminderLabel(minutes)}<button aria-label={`移除${reminderLabel(minutes)}`} onClick={() => update("reminders", draft.reminders.filter((value) => value !== minutes))} type="button">×</button></span>)}</div> : <p className={styles.reminderEmpty}>無提醒</p>}
+          <label>新增提醒<select onChange={(event) => setReminderChoice(event.target.value)} value={reminderChoice}><option value="">選擇提醒時間</option>{reminderPresets.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}<option value="custom">自訂</option></select></label>
+          {reminderChoice === "custom" && <div className={styles.customReminder}><input aria-label="自訂提醒數量" min={1} onChange={(event) => setCustomReminderValue(Number(event.target.value))} type="number" value={customReminderValue} /><select aria-label="自訂提醒單位" onChange={(event) => setCustomReminderUnit(event.target.value as typeof customReminderUnit)} value={customReminderUnit}><option value="minute">分鐘</option><option value="hour">小時</option><option value="day">天</option></select><span>前</span></div>}
+          <button className={styles.addReminder} disabled={!reminderChoice || draft.reminders.length >= 12} onClick={() => { const max = { minute: 1440, hour: 168, day: 30 }[customReminderUnit]; if (reminderChoice === "custom" && (!Number.isInteger(customReminderValue) || customReminderValue < 1 || customReminderValue > max)) { setNotice(`自訂${{ minute: "分鐘", hour: "小時", day: "天" }[customReminderUnit]}須介於 1～${max}。`); return; } const minutes = reminderChoice === "custom" ? customReminderValue * { minute: 1, hour: 60, day: 1440 }[customReminderUnit] : Number(reminderChoice); update("reminders", [...new Set([...draft.reminders, minutes])].sort((a, b) => b - a)); setReminderChoice(""); setNotice(null); }} type="button">＋ 新增提醒</button>
+          {draft.allDay && draft.reminders.length > 0 && <label>全天行程提醒時間<input onChange={(event) => update("allDayReminderTime", event.target.value)} type="time" value={draft.allDayReminderTime} /></label>}
+        </fieldset>
         <label>備註（選填）<textarea maxLength={2000} onChange={(event) => update("description", event.target.value)} placeholder="請勿放入密碼、金鑰或 Recovery Code" rows={3} value={draft.description} /></label>
         <fieldset><legend>行程顏色</legend>
           <div className={styles.colorChoices}>
@@ -285,9 +326,10 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         </fieldset>
         {notice && editorOpen && <p className={styles.formError} role="alert">{notice}</p>}
         <CreateFormActions pending={false} label={selectedId ? "儲存修改" : "新增行程"} pendingLabel="儲存中…" />
-        {selectedId && <button className={styles.deleteButton} onClick={() => setConfirmDelete(true)} type="button">{draft.recurrenceType === "yearly" ? "刪除每年重複行程" : "刪除行程"}</button>}
+        {selectedId && <button className={styles.deleteButton} onClick={() => setConfirmDelete(true)} type="button">{draft.recurrenceType === "none" ? "刪除行程" : `刪除${draft.recurrenceType === "daily" ? "每天" : draft.recurrenceType === "weekly" ? "每週" : "每年"}重複行程`}</button>}
       </form>
     </CreateItemModal>
-    <ConfirmDialog description={draft.recurrenceType === "yearly" ? "這是每年重複的行程，刪除後每一年都不會再顯示。" : "這個行程將永久刪除，無法還原。"} onCancel={() => setConfirmDelete(false)} onConfirm={remove} open={confirmDelete} pending={false} title="刪除行程？" />
+    <ConfirmDialog description={draft.recurrenceType === "none" ? "這個行程將永久刪除，無法還原。" : `這是${draft.recurrenceType === "daily" ? "每天" : draft.recurrenceType === "weekly" ? "每週" : "每年"}重複的行程，刪除後整個系列都會被移除。`} onCancel={() => setConfirmDelete(false)} onConfirm={remove} open={confirmDelete} pending={false} title="刪除行程？" />
+    <CalendarNotificationSettings onClose={() => setNotificationOpen(false)} open={notificationOpen} />
   </section>;
 }

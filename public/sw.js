@@ -51,3 +51,30 @@ self.addEventListener("fetch", (event) => {
     return response;
   }));
 });
+
+self.addEventListener("push", (event) => {
+  event.waitUntil((async () => {
+    let payload = {};
+    try { payload = event.data?.json() ?? {}; } catch { /* Show a generic visible notification. */ }
+    const target = typeof payload.url === "string" && payload.url.startsWith("/calendar?") ? payload.url : "/calendar";
+    await self.registration.showNotification(typeof payload.title === "string" ? payload.title : "行程提醒", {
+      body: typeof payload.body === "string" ? payload.body : "你的私人日曆有一項行程提醒。",
+      icon: "/icon.svg", badge: "/apple-icon", tag: typeof payload.tag === "string" ? payload.tag : undefined,
+      data: { url: target },
+    });
+  })());
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const path = event.notification.data?.url || "/calendar";
+    const target = new URL(path, self.location.origin).href;
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
+    if (existing) {
+      await existing.navigate(target);
+      await existing.focus();
+    } else await self.clients.openWindow(target);
+  })());
+});

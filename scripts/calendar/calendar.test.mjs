@@ -15,6 +15,16 @@ test("one-time event appears only on its own date", () => {
   assert.deepEqual(occurrencesInRange([event("2026-10-24")], "2026-10-01", "2028-10-31").map((row) => row.occurrenceDate), ["2026-10-24"]);
 });
 
+test("daily events begin at their anchor and project only inside the requested range", () => {
+  assert.deepEqual(occurrencesInRange([event("2026-10-01", "daily")], "2026-09-30", "2026-10-04").map((row) => row.occurrenceDate),
+    ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+});
+
+test("weekly events keep the anchor weekday and never appear before it", () => {
+  assert.deepEqual(occurrencesInRange([event("2026-10-02", "weekly")], "2026-09-25", "2026-10-30").map((row) => row.occurrenceDate),
+    ["2026-10-02", "2026-10-09", "2026-10-16", "2026-10-23", "2026-10-30"]);
+});
+
 test("yearly event is one row projected across years, including leap-day only in leap years", () => {
   assert.deepEqual(occurrencesInRange([event("2026-10-24", "yearly")], "2026-01-01", "2028-12-31").map((row) => row.occurrenceDate), ["2026-10-24", "2027-10-24", "2028-10-24"]);
   assert.deepEqual(occurrencesInRange([event("2028-02-29", "yearly")], "2027-01-01", "2032-12-31").map((row) => row.occurrenceDate), ["2028-02-29", "2032-02-29"]);

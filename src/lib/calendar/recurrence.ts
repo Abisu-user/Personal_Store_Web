@@ -20,10 +20,22 @@ export function occurrencesInRange(events: CalendarEvent[], from: string, to: st
       if (event.eventDate >= from && event.eventDate <= to) occurrences.push({ ...event, occurrenceDate: event.eventDate });
       continue;
     }
+    if (event.recurrenceType === "daily" || event.recurrenceType === "weekly") {
+      const start = Math.max(Date.parse(`${event.eventDate}T00:00:00Z`), Date.parse(`${from}T00:00:00Z`));
+      const finish = Date.parse(`${to}T00:00:00Z`);
+      const interval = event.recurrenceType === "weekly" ? 7 : 1;
+      const anchor = Date.parse(`${event.eventDate}T00:00:00Z`);
+      const daysSinceAnchor = Math.round((start - anchor) / 86_400_000);
+      const first = start + ((interval - daysSinceAnchor % interval) % interval) * 86_400_000;
+      for (let time = first; time <= finish; time += interval * 86_400_000) {
+        occurrences.push({ ...event, occurrenceDate: new Date(time).toISOString().slice(0, 10) });
+      }
+      continue;
+    }
     const suffix = event.eventDate.slice(4);
     for (let year = firstYear; year <= lastYear; year += 1) {
       const date = `${year}${suffix}`;
-      if (date >= from && date <= to && isValidDateKey(date)) occurrences.push({ ...event, occurrenceDate: date });
+      if (date >= event.eventDate && date >= from && date <= to && isValidDateKey(date)) occurrences.push({ ...event, occurrenceDate: date });
     }
   }
   return occurrences.sort((a, b) => a.occurrenceDate.localeCompare(b.occurrenceDate) || Number(a.allDay) * -1 - Number(b.allDay) * -1 || (a.eventTime ?? "").localeCompare(b.eventTime ?? ""));
