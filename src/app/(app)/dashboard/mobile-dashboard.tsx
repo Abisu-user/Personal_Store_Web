@@ -2,13 +2,16 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAppProfile } from "@/components/layout/app-profile-provider";
+import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { MobileSection } from "@/components/ui/mobile-layout";
 import type { DashboardData, DashboardKind } from "@/lib/dashboard/types";
 import { getDashboardGreeting, millisecondsUntilNextGreetingBoundary } from "@/lib/dashboard/greeting";
+import { calendarDateKey } from "@/lib/calendar/recurrence";
 import { formatBytes, usagePercentage } from "@/lib/format-bytes";
 import { readClientResource, writeClientResource } from "@/lib/pwa/client-resource-cache";
 import styles from "./dashboard-mobile.module.css";
+import { TodayScheduleRows, todayCalendarHref } from "./today-schedule";
 
 const query = "(max-width: 700px)";
 const subscribe = (callback: () => void) => {
@@ -18,20 +21,22 @@ const subscribe = (callback: () => void) => {
 };
 const snapshot = () => window.matchMedia(query).matches;
 const serverSnapshot = () => false;
-const dashboardCacheKey = "dashboard:summary:v1";
-let dashboardRequest: Promise<DashboardData> | null = null;
+const dashboardCacheKey = () => `dashboard:summary:v2:${calendarDateKey(new Date())}`;
+let dashboardRequest: { date: string; promise: Promise<DashboardData> } | null = null;
 let dashboardHasEntered = false;
 
 async function requestDashboardSummary() {
-  if (dashboardRequest) return dashboardRequest;
-  dashboardRequest = (async () => {
-    const response = await fetch("/api/dashboard", { cache: "no-store", signal: AbortSignal.timeout(15000) });
+  const date = calendarDateKey(new Date());
+  if (dashboardRequest?.date === date) return dashboardRequest.promise;
+  const promise = (async () => {
+    const response = await fetch(`/api/dashboard?date=${date}`, { cache: "no-store", signal: AbortSignal.timeout(15000) });
     if (!response.ok) throw new Error("摘要暫時無法載入");
     const summary = await response.json() as DashboardData;
-    writeClientResource(dashboardCacheKey, summary, 2 * 60_000);
+    writeClientResource(`dashboard:summary:v2:${date}`, summary, 2 * 60_000);
     return summary;
-  })().finally(() => { dashboardRequest = null; });
-  return dashboardRequest;
+  })().finally(() => { if (dashboardRequest?.promise === promise) dashboardRequest = null; });
+  dashboardRequest = { date, promise };
+  return promise;
 }
 
 /** Desktop never mounts the summary loader or makes its data request. */
@@ -66,14 +71,17 @@ function relativeDate(value: string) {
 
 function DashboardContent({ email }: { email: string }) {
   const profile = useAppProfile();
+  const queue = useBackgroundSave();
+  const lastSavedRefresh = useRef(-1);
+  const latestCalendarSave = queue.jobs.reduce((latest, job) => job.type === "calendar" && job.status === "saved" ? Math.max(latest, job.updatedAt) : latest, 0);
   const [firstEntry] = useState(() => {
     if (dashboardHasEntered) return false;
     dashboardHasEntered = true;
     return true;
   });
   const [greeting, setGreeting] = useState(() => getDashboardGreeting());
-  const [data, setData] = useState<DashboardData | null>(() => readClientResource<DashboardData>(dashboardCacheKey));
-  const [pending, setPending] = useState(() => !readClientResource<DashboardData>(dashboardCacheKey));
+  const [data, setData] = useState<DashboardData | null>(() => readClientResource<DashboardData>(dashboardCacheKey()));
+  const [pending, setPending] = useState(() => !readClientResource<DashboardData>(dashboardCacheKey()));
   const [error, setError] = useState("");
   const mounted = useRef(true);
   const hasData = useRef(Boolean(data));
@@ -90,10 +98,11 @@ function DashboardContent({ email }: { email: string }) {
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => { window.clearTimeout(timer); document.removeEventListener("visibilitychange", onVisibilityChange); };
   }, []);
-  const load = useCallback(async () => {
+  const load = useCallback(async (afterCurrentRequest = false) => {
     if (!hasData.current) setPending(true);
     setError("");
     try {
+      if (afterCurrentRequest && dashboardRequest) await dashboardRequest.promise.catch(() => undefined);
       const summary = await requestDashboardSummary();
       if (!mounted.current) return;
       setData(summary);
@@ -120,6 +129,18 @@ function DashboardContent({ email }: { email: string }) {
       window.clearTimeout(start);
       window.removeEventListener("personal-vault:item-created", refresh);
     };
+  }, [load]);
+  useEffect(() => {
+    if (lastSavedRefresh.current < 0) { lastSavedRefresh.current = latestCalendarSave; return; }
+    if (latestCalendarSave <= lastSavedRefresh.current) return;
+    lastSavedRefresh.current = latestCalendarSave;
+    const timer = window.setTimeout(() => void load(true), 300);
+    return () => window.clearTimeout(timer);
+  }, [latestCalendarSave, load]);
+  useEffect(() => {
+    const refreshOnReturn = () => { if (document.visibilityState === "visible") void load(); };
+    document.addEventListener("visibilitychange", refreshOnReturn);
+    return () => document.removeEventListener("visibilitychange", refreshOnReturn);
   }, [load]);
   const databasePercent = data?.capacity?.databaseUnlimited ? 0 : usagePercentage(data?.capacity?.databaseUsedBytes ?? 0, data?.capacity?.databaseQuotaBytes ?? 0);
   const storagePercent = data?.capacity?.storageUnlimited ? 0 : usagePercentage(data?.capacity?.storageUsedBytes ?? 0, data?.capacity?.storageQuotaBytes ?? 0);
@@ -148,6 +169,7 @@ function DashboardContent({ email }: { email: string }) {
       </header>
 
       {error && <div className={styles.loadError} role="status">{error}<button type="button" onClick={() => void load()}>重試</button></div>}
+      {data?.todaySchedule && <MobileSection title="今日行程" action={<Link href={todayCalendarHref(data.todaySchedule)} prefetch={false}>全部</Link>}><div className={`${styles.scheduleCard} mobile-surface`}><TodayScheduleRows schedule={data.todaySchedule} /></div></MobileSection>}
       <MobileSection title="資料概覽">
         <div className={styles.overviewGrid}>{overview.map(item => <Link className={`${styles.overviewCard} mobile-surface`} data-kind={item.kind} href={item.href} key={item.kind} prefetch={false}><span className={styles.iconBox}><AppIcon name={item.icon} /></span>{!data && pending ? <i aria-hidden="true" className={`${styles.valueSkeleton} skeleton-block`} /> : <strong>{data?.counts[item.kind] ?? "—"}</strong>}<small>{item.label}</small></Link>)}</div>
       </MobileSection>

@@ -1,7 +1,13 @@
-import type { CalendarEvent, CalendarOccurrence } from "./types";
+import type { CalendarEvent } from "./types";
 
 export function calendarDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function calendarDateKeyInTimeZone(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 export function isValidDateKey(value: string) {
@@ -11,10 +17,10 @@ export function isValidDateKey(value: string) {
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
 }
 
-export function occurrencesInRange(events: CalendarEvent[], from: string, to: string): CalendarOccurrence[] {
+export function occurrencesInRange<T extends Pick<CalendarEvent, "eventDate" | "eventTime" | "allDay" | "recurrenceType">>(events: T[], from: string, to: string): Array<T & { occurrenceDate: string }> {
   const firstYear = Number(from.slice(0, 4));
   const lastYear = Number(to.slice(0, 4));
-  const occurrences: CalendarOccurrence[] = [];
+  const occurrences: Array<T & { occurrenceDate: string }> = [];
   for (const event of events) {
     if (event.recurrenceType === "none") {
       if (event.eventDate >= from && event.eventDate <= to) occurrences.push({ ...event, occurrenceDate: event.eventDate });

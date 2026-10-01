@@ -1,6 +1,9 @@
+import type { TodayCalendarSchedule } from "@/lib/calendar/today";
+
 export type DashboardKind = "bookmark" | "anime" | "note" | "code" | "photo" | "file";
 export type RecentDashboardItem = { id: string; kind: DashboardKind; title: string; updatedAt: string; href: string };
 export type DashboardData = {
+  todaySchedule: TodayCalendarSchedule | null;
   counts: Record<DashboardKind, number | null>;
   recent: RecentDashboardItem[];
   recentAvailable: boolean;

@@ -8,10 +8,12 @@ import { useAppProfile } from "@/components/layout/app-profile-provider";
 import { AppIcon, type AppIconName } from "@/components/ui/app-icon";
 import { ModalDialog } from "@/components/ui/modal-dialog";
 import { getDashboardGreeting, millisecondsUntilNextGreetingBoundary } from "@/lib/dashboard/greeting";
+import { calendarDateKey } from "@/lib/calendar/recurrence";
 import { formatBytes } from "@/lib/format-bytes";
 import type { DashboardKind } from "@/lib/dashboard/types";
 import type { DesktopDashboardData, DesktopDashboardItem } from "@/lib/dashboard/desktop-data";
 import styles from "./desktop-dashboard.module.css";
+import { TodayScheduleRows, todayCalendarHref } from "./today-schedule";
 
 const desktopQuery = "(min-width: 701px)";
 const subscribe = (listener: () => void) => { const media = matchMedia(desktopQuery); media.addEventListener("change", listener); return () => media.removeEventListener("change", listener); };
@@ -47,21 +49,23 @@ function DesktopContent({ email }: { email: string }) {
   const [greeting, setGreeting] = useState(() => getDashboardGreeting());
   const [today, setToday] = useState("");
   const mounted = useRef(true);
-  const lastSavedRefresh = useRef<number | null>(null);
+  const loadSequence = useRef(0);
+  const lastSavedRefresh = useRef(-1);
   const latestSavedAt = queue.jobs.reduce<number | null>((latest, job) => job.status === "saved" && (latest === null || job.updatedAt > latest) ? job.updatedAt : latest, null);
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     try {
       // Never keep old titles on screen while lock state is being rechecked.
       setData(null);
       setLoading(true);
       setError("");
-      const response = await fetch("/api/dashboard/desktop", { cache: "no-store", signal: AbortSignal.timeout(18000) });
+      const response = await fetch(`/api/dashboard/desktop?date=${calendarDateKey(new Date())}`, { cache: "no-store", signal: AbortSignal.timeout(18000) });
       if (!response.ok) throw new Error("首頁資料暫時無法載入。");
       const result = await response.json() as DesktopDashboardData;
-      if (mounted.current) setData(result);
+      if (mounted.current && sequence === loadSequence.current) setData(result);
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : "首頁資料暫時無法載入。");
-    } finally { if (mounted.current) setLoading(false); }
+      if (mounted.current && sequence === loadSequence.current) setError(cause instanceof Error ? cause.message : "首頁資料暫時無法載入。");
+    } finally { if (mounted.current && sequence === loadSequence.current) setLoading(false); }
   }, []);
   useEffect(() => {
     mounted.current = true;
@@ -71,8 +75,8 @@ function DesktopContent({ email }: { email: string }) {
     return () => { mounted.current = false; window.removeEventListener("personal-vault:item-created", onCreated); };
   }, [load]);
   useEffect(() => {
+    if (lastSavedRefresh.current < 0) { lastSavedRefresh.current = latestSavedAt ?? 0; return; }
     if (latestSavedAt === null) return;
-    if (lastSavedRefresh.current === null) { lastSavedRefresh.current = latestSavedAt; return; }
     if (latestSavedAt <= lastSavedRefresh.current) return;
     lastSavedRefresh.current = latestSavedAt;
     const timer = window.setTimeout(() => void load(), 300);
@@ -106,7 +110,7 @@ function DesktopContent({ email }: { email: string }) {
       <button aria-label="搜尋全部" onClick={() => setSearchOpen(true)} type="button"><AppIcon name="search" /></button>
       <button aria-label="背景儲存佇列" onClick={queue.open} type="button"><AppIcon name="storage" />{queue.jobs.some((job) => ["queued", "saving", "retrying", "failed", "offline"].includes(job.status)) && <i />}</button>
     </div></div>
-    <section className={styles.hero}><div className={styles.heroCopy}><p className={styles.eyebrow}>YOUR PERSONAL SPACE</p><h1>{greeting === "晚安" ? "晚上好" : greeting}，{displayName}</h1><p>你的資料都在這裡。快速回到最近使用的內容，或開始新增資料。</p><div className={styles.heroActions}><button className={styles.primaryButton} onClick={() => setQuickOpen(true)} type="button"><AppIcon name="plus" /> 快速新增</button><button className={styles.secondaryButton} onClick={() => setSearchOpen(true)} type="button"><AppIcon name="search" /> 搜尋全部 <kbd>⌘ / Ctrl K</kbd></button></div></div><div className={styles.today}><span className={styles.todayCaption}>今日概覽</span><strong>{today || "今天"}</strong><div><span>安全狀態</span><b>{data?.appLock ? data.appLock.configured && data.appLock.autoLockEnabled ? "App Lock 已啟用" : "App Lock 未啟用" : "—"}</b></div><div><span>最近開啟</span><b>{data ? `${data.recentOpened.length} 筆` : "—"}</b></div>{storage && <div><span>儲存空間</span><b>{storage}</b></div>}</div></section>
+    <section className={`${styles.hero} ${data?.todaySchedule ? styles.heroWithSchedule : ""}`}><div className={styles.heroCopy}><p className={styles.eyebrow}>YOUR PERSONAL SPACE</p><h1>{greeting === "晚安" ? "晚上好" : greeting}，{displayName}</h1><p>你的資料都在這裡。快速回到最近使用的內容，或開始新增資料。</p><div className={styles.heroActions}><button className={styles.primaryButton} onClick={() => setQuickOpen(true)} type="button"><AppIcon name="plus" /> 快速新增</button><button className={styles.secondaryButton} onClick={() => setSearchOpen(true)} type="button"><AppIcon name="search" /> 搜尋全部 <kbd>⌘ / Ctrl K</kbd></button></div></div><div className={styles.today}><span className={styles.todayCaption}>今日概覽</span><strong>{today || "今天"}</strong><div><span>安全狀態</span><b>{data?.appLock ? data.appLock.configured && data.appLock.autoLockEnabled ? "App Lock 已啟用" : "App Lock 未啟用" : "—"}</b></div><div><span>最近開啟</span><b>{data ? `${data.recentOpened.length} 筆` : "—"}</b></div>{storage && <div><span>儲存空間</span><b>{storage}</b></div>}</div>{data?.todaySchedule && <section className={styles.schedule}><Link className={styles.scheduleHeading} href={todayCalendarHref(data.todaySchedule)} prefetch={false}>今日行程 <span aria-hidden="true">›</span></Link><TodayScheduleRows schedule={data.todaySchedule} /></section>}</section>
     {error && <div className={styles.notice} role="status">{error} <button onClick={() => void load()} type="button">重試</button></div>}
     {data?.unavailable.length ? <p className={styles.partial}>部分來源暫時無法更新；已取得的資料仍可使用。</p> : null}
     <section className={styles.section}><div className={styles.sectionHeading}><div><p className={styles.eyebrow}>SHORTCUTS</p><h2>常用網站</h2></div><Link href="/bookmarks?manageShortcuts=1" prefetch={false}>管理常用網站 →</Link></div><div className={styles.shortcutList}>{loading && !data ? <p className={styles.empty}>正在載入常用網站…</p> : data?.shortcuts.length ? data.shortcuts.map((item) => <a className={styles.shortcut} href={item.url} key={item.id} rel="noopener noreferrer" target="_blank" title={item.title}><span>{item.imageUrl ? <img alt="" src={item.imageUrl} /> : <AppIcon name="bookmark" />}</span><b>{item.title}</b></a>) : <p className={styles.empty}>尚未指定常用網站，可至網站收藏設定。</p>}</div></section>

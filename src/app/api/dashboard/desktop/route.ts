@@ -4,6 +4,7 @@ import { getDesktopDashboardData, searchDesktopDashboard } from "@/lib/dashboard
 import type { DashboardKind } from "@/lib/dashboard/types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { z } from "zod";
+import { calendarDateKeyInTimeZone, isValidDateKey } from "@/lib/calendar/recurrence";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,9 @@ export async function GET(request: Request) {
       if (!valid.includes(kind)) return NextResponse.json({ error: "無效的搜尋類型。" }, { status: 400 });
       return NextResponse.json({ items: await searchDesktopDashboard(user.id, params.get("q") ?? "", kind as DashboardKind | "all") }, { headers: { "Cache-Control": "private, no-store" } });
     }
-    return NextResponse.json(await getDesktopDashboardData(user.id), { headers: { "Cache-Control": "private, no-store" } });
+    const date = params.get("date") ?? calendarDateKeyInTimeZone(new Date(), "Asia/Taipei");
+    if (!isValidDateKey(date)) return NextResponse.json({ error: "日期格式不正確。" }, { status: 400 });
+    return NextResponse.json(await getDesktopDashboardData(user.id, date), { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("[dashboard:desktop] failed", error);
     return NextResponse.json({ error: "目前無法取得首頁資料，請稍後重試。" }, { status: 503 });

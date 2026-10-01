@@ -1,6 +1,7 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getUserCapacity } from "@/lib/system/quota";
+import { getDashboardTodaySchedule } from "@/lib/calendar/dashboard-today";
 import type { DashboardData, DashboardKind, RecentDashboardItem } from "./types";
 
 const entryKinds = ["bookmark", "note", "code", "photo", "file"] as const;
@@ -123,12 +124,13 @@ export function privateByFolder(row: PrivacyRow, locked: Set<string>) {
   });
 }
 
-export async function getDashboardData(userId: string): Promise<DashboardData> {
+export async function getDashboardData(userId: string, todayDate: string): Promise<DashboardData> {
   // The browser still makes one Dashboard request. Server reads are parallel and
   // relation checks are limited to a handful of recent candidates per type.
-  const [entriesResult, animeResult, locksResult, capacityResult] = await Promise.allSettled([
-    getEntries(userId), getAnime(userId), getProtectedFolders(userId), capacityWithinDeadline(userId),
+  const [entriesResult, animeResult, locksResult, capacityResult, todayResult] = await Promise.allSettled([
+    getEntries(userId), getAnime(userId), getProtectedFolders(userId), capacityWithinDeadline(userId), getDashboardTodaySchedule(userId, todayDate),
   ]);
+  if (todayResult.status === "rejected") logSupabaseError("today schedule", todayResult.reason);
   const counts: DashboardData["counts"] = { bookmark: null, anime: null, note: null, code: null, photo: null, file: null };
   const recent: RecentDashboardItem[] = [];
   const recentUnavailableKinds = new Set<DashboardKind>();
@@ -185,6 +187,7 @@ export async function getDashboardData(userId: string): Promise<DashboardData> {
   recent.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || a.id.localeCompare(b.id));
   const capacity = capacityResult.status === "fulfilled" ? capacityResult.value : null;
   return {
+    todaySchedule: todayResult.status === "fulfilled" ? todayResult.value : null,
     counts,
     recent: recent.slice(0, 5),
     recentAvailable: recentUnavailableKinds.size === 0,

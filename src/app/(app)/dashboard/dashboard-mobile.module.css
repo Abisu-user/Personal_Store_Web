@@ -29,6 +29,7 @@
   .loadError::before { content: "i"; display: grid; width: 20px; height: 20px; place-items: center; border: 1px solid color-mix(in srgb, var(--brand) 48%, transparent); border-radius: 50%; color: var(--brand); font-family: ui-sans-serif, system-ui, sans-serif; font-size: .72rem; font-style: normal; font-weight: 850; }
   .loadError button { min-width: 44px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 11px; color: var(--brand); background: transparent; font: inherit; font-weight: 850; }
   .loadError button:active { background: var(--brand-soft); }
+  .scheduleCard { min-width: 0; overflow: hidden; padding: 2px 0; border-radius: 15px; }
   .overviewGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .overviewCard { --widget-accent: var(--brand); min-width: 0; min-height: 70px; display: grid; grid-template-columns: 29px minmax(0, 1fr); grid-template-rows: 29px auto; align-items: center; gap: 4px 6px; padding: 8px 9px; border-radius: 15px; transition: transform var(--mobile-motion-fast) ease, border-color var(--mobile-motion-fast) ease; }
   .overviewCard:active { transform: scale(.975); }

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getAppLockPinStatus } from "@/lib/app-lock/data";
+import { getDashboardTodaySchedule } from "@/lib/calendar/dashboard-today";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { capacityWithinDeadline, getEntryPrivacy, getProtectedFolders, privateByFolder, type EntryKind, type PrivacyRow } from "./data";
 import type { DashboardData, DashboardKind } from "./types";
@@ -26,6 +27,7 @@ export type DesktopDashboardItem = { id: string; kind: DashboardKind; title: str
 export type DesktopShortcut = { id: string; title: string; url: string; imageUrl: string | null };
 export type DesktopFolder = { id: string; kind: FolderKind; name: string; locked: boolean; updatedAt: string; href: string };
 export type DesktopDashboardData = {
+  todaySchedule: DashboardData["todaySchedule"];
   shortcuts: DesktopShortcut[];
   recentOpened: DesktopDashboardItem[];
   recentAdded: DesktopDashboardItem[];
@@ -114,17 +116,18 @@ function err(scope: string, cause: unknown) {
   console.warn(`[dashboard:desktop] ${scope} unavailable`, { code: value?.code ?? null, message: value?.message ?? String(cause) });
 }
 
-export async function getDesktopDashboardData(userId: string): Promise<DesktopDashboardData> {
-  const [locksResult, hiddenAnimeResult, newestResult, openedResult, animeResult, shortcutsResult, foldersResult, capacityResult, appLockResult] = await Promise.allSettled([
+export async function getDesktopDashboardData(userId: string, todayDate: string): Promise<DesktopDashboardData> {
+  const [locksResult, hiddenAnimeResult, newestResult, openedResult, animeResult, shortcutsResult, foldersResult, capacityResult, appLockResult, todayResult] = await Promise.allSettled([
     getProtectedFolders(userId), getHiddenAnimeFolders(userId), getEntryCandidates(userId, "created_at"), getEntryCandidates(userId, "last_opened_at"),
     getAnimeCandidates(userId), getShortcutCandidates(userId), getFolderCandidates(userId),
-    capacityWithinDeadline(userId), getAppLockPinStatus(userId),
+    capacityWithinDeadline(userId), getAppLockPinStatus(userId), getDashboardTodaySchedule(userId, todayDate),
   ]);
   const unavailable: string[] = [];
   for (const [name, result] of [["locks", locksResult], ["anime privacy", hiddenAnimeResult], ["newest", newestResult], ["opened", openedResult], ["anime", animeResult], ["shortcuts", shortcutsResult], ["folders", foldersResult], ["capacity", capacityResult], ["appLock", appLockResult]] as const) {
     if (result.status === "rejected") { unavailable.push(name); err(name, result.reason); }
   }
-  const empty: DesktopDashboardData = { shortcuts: [], recentOpened: [], recentAdded: [], folders: [], capacity: null, appLock: null, unavailable };
+  if (todayResult.status === "rejected") err("today schedule", todayResult.reason);
+  const empty: DesktopDashboardData = { todaySchedule: todayResult.status === "fulfilled" ? todayResult.value : null, shortcuts: [], recentOpened: [], recentAdded: [], folders: [], capacity: null, appLock: null, unavailable };
   if (capacityResult.status === "fulfilled") {
     const value = capacityResult.value;
     empty.capacity = { databaseUsedBytes: value.databaseUsedBytes, databaseQuotaBytes: value.databaseQuotaBytes, databaseUnlimited: value.databaseUnlimited,
