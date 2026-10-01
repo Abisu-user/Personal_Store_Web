@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSecurityContext } from "@/lib/security/activity";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { callPushDispatcher } from "@/lib/calendar/push-dispatcher";
+import { callPushDispatcher, pushServerConfiguration } from "@/lib/calendar/push-dispatcher";
 
 export const dynamic = "force-dynamic";
 const subscriptionSchema = z.object({
@@ -35,6 +35,7 @@ export async function GET() {
     dispatcher: dispatch.ok ? "ready" : dispatch.code === "VAPID_KEY_MISMATCH" ? "key-mismatch" :
       dispatch.code === "DISPATCH_UNREACHABLE" ? "unreachable" : "unconfigured",
     dispatcherCode: dispatch.ok ? null : dispatch.code,
+    configuration: { vercel: pushServerConfiguration(), edge: dispatch.configuration ?? null },
   }, { headers });
 }
 

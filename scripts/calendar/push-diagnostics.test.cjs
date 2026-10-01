@@ -89,9 +89,10 @@ test("DB failure preserves subscription; Safari gesture rejection is actionable,
   const failed = await safari.inspect(); assert.equal(failed.diagnostics.subscriptionExists, false); assert.match(failed.diagnostics.error, /Gesture/);
 });
 
-function edgeFixture({ status = 201, ownerMismatch = false, disableFails = false } = {}) {
+function edgeFixture({ status = 201, ownerMismatch = false, disableFails = false, missing = [] } = {}) {
   let handler, sends = 0; const filters = [], updates = [];
   const env = { CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key", VAPID_PRIVATE_KEY: "private-key", VAPID_SUBJECT: "mailto:contact@example.test", SUPABASE_URL: "https://db.test", SUPABASE_SERVICE_ROLE_KEY: "service-key" };
+  for (const name of missing) delete env[name];
   const device = { id: "00000000-0000-0000-0000-000000000001", endpoint: "https://web.push.apple.com/secret", auth: "secret-auth", p256dh: "secret-key" };
   const db = { from(table) { assert.equal(table, "calendar_push_subscriptions", "test push cannot query reminders or deliveries"); const query = {
     select() { return this; }, eq(field, value) { filters.push([field, value]); return this; },
@@ -114,6 +115,7 @@ test("Edge diagnostics never send; rejects unauthorized and mismatched VAPID", a
 test("Edge test sends only to authenticated owner's selected device and returns provider acceptance", async () => {
   const f = edgeFixture(), result = await (await f.invoke(testBody)).json();
   assert.equal(result.code, "PUSH_ACCEPTED"); assert.equal(result.providerStatus, 201); assert.equal(f.stats().sends, 1);
+  assert.equal(result.serverConfigured, true); assert.equal(result.subscriptionFound, true); assert.equal(result.pushAttempted, true); assert.equal(result.invalidSubscription, false);
   assert.ok(f.stats().filters.some(([key, value]) => key === "owner_id" && value === testBody.ownerId));
   assert.ok(!JSON.stringify(result).includes("secret"));
   const other = edgeFixture({ ownerMismatch: true }); assert.equal((await other.invoke(testBody)).status, 404); assert.equal(other.stats().sends, 0);
@@ -135,16 +137,73 @@ test("Next test route enforces auth, origin and ownership before forwarding", as
   const route = load("src/app/api/calendar/test-push/route.ts", {
     "next/server": { NextResponse: { json: (body, options) => Response.json(body, options) } },
     "zod": require("zod"), "@/lib/security/activity": { getSecurityContext: async () => owner },
-    "@/lib/supabase/admin": { createAdminClient: () => db }, "@/lib/calendar/push-dispatcher": { callPushDispatcher: async () => { forwarded++; return { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201 }; } },
+    "@/lib/supabase/admin": { createAdminClient: () => db }, "@/lib/calendar/push-dispatcher": {
+      pushServerConfiguration: () => ({ NEXT_PUBLIC_SUPABASE_URL: "configured", CALENDAR_DISPATCH_SECRET: "configured", VAPID_PUBLIC_KEY: "configured" }),
+      callPushDispatcher: async () => { forwarded++; return { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, serverConfigured: true, pushAttempted: true }; } },
   }, { console: { info() {} } });
   const req = origin => Object.assign(new Request("https://app.test/api/calendar/test-push", { method: "POST", headers: { origin }, body: JSON.stringify({ subscriptionId: testBody.subscriptionId }) }), { nextUrl: new URL("https://app.test/api/calendar/test-push") });
   assert.equal((await route.POST(req("https://app.test"))).status, 401);
   owner = { userId: testBody.ownerId };
   assert.equal((await route.POST(req("https://evil.test"))).status, 403);
   allowed = false; assert.equal((await route.POST(req("https://app.test"))).status, 404);
-  allowed = true; assert.equal((await route.POST(req("https://app.test"))).status, 200);
+  allowed = true; const response = await route.POST(req("https://app.test")); assert.equal(response.status, 200);
+  const outcome = await response.json();
+  assert.equal(outcome.subscriptionFound, true); assert.equal(outcome.pushAttempted, true); assert.equal(outcome.pushProviderStatus, 201); assert.equal(outcome.serverBuild, "unknown");
   assert.equal((await route.POST(req("https://app.test"))).status, 429);
   assert.equal(forwarded, 1); assert.ok(filters.some(([key, value]) => key === "owner_id" && value === owner.userId));
+});
+
+test("Vercel missing configuration names are safe; no Edge request or subscription mutation", async () => {
+  const required = ["NEXT_PUBLIC_SUPABASE_URL", "CALENDAR_DISPATCH_SECRET", "VAPID_PUBLIC_KEY"];
+  for (const missing of required) {
+    let requests = 0;
+    const env = { NEXT_PUBLIC_SUPABASE_URL: "https://db.test", CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key" };
+    delete env[missing];
+    const helper = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => { requests++; } });
+    assert.equal(helper.pushServerConfiguration()[missing], "missing");
+    assert.equal(helper.pushServerConfiguration().NEXT_PUBLIC_APP_URL, "missing");
+    const result = await helper.callPushDispatcher(testBody);
+    assert.equal(result.code, "SERVER_NOT_CONFIGURED"); assert.equal(result.pushAttempted, false); assert.equal(result.serverConfigured, false);
+    assert.equal(requests, 0); assert.ok(!JSON.stringify(helper.pushServerConfiguration()).includes("private-dispatch"));
+  }
+});
+
+test("Edge missing VAPID fields are diagnosed individually without exposing secrets", async () => {
+  for (const name of ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT", "SUPABASE_SERVICE_ROLE_KEY"]) {
+    const fixture = edgeFixture({ missing: [name] });
+    const body = await (await fixture.invoke({ action: "diagnostics", expectedPublicKey: "public-key" })).json();
+    assert.equal(body.code, "EDGE_NOT_CONFIGURED"); assert.equal(body.configuration[name], "missing");
+    assert.equal(body.serverConfigured, false); assert.equal(body.pushAttempted, false); assert.equal(fixture.stats().sends, 0);
+    assert.ok(!JSON.stringify(body).includes("private-key")); assert.ok(!JSON.stringify(body).includes("service-key"));
+  }
+  const denied = await (await edgeFixture().invoke(testBody, "wrong")).json();
+  assert.equal(denied.configuration, undefined, "configuration unavailable before authentication");
+});
+
+test("forwarder allowlists configuration and preserves unknown timeout outcome", async () => {
+  const env = { NEXT_PUBLIC_SUPABASE_URL: "https://db.test", CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key" };
+  const helper = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({
+    ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, serverConfigured: true, pushAttempted: true,
+    configuration: { VAPID_PRIVATE_KEY: "configured", VAPID_SUBJECT: "private-subject", unknown: "private-auth" }, auth: "private-auth" }) });
+  const outcome = await helper.callPushDispatcher(testBody);
+  assert.equal(outcome.ok, true); assert.equal(outcome.configuration.VAPID_PRIVATE_KEY, "configured");
+  assert.ok(!JSON.stringify(outcome).includes("private-auth")); assert.ok(!JSON.stringify(outcome).includes("private-subject"));
+  const timeout = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => { throw new Error("timeout"); } });
+  assert.equal((await timeout.callPushDispatcher(testBody)).pushAttempted, null);
+  const fake = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({ ok: true, code: "PUSH_ACCEPTED" }) });
+  assert.equal((await fake.callPushDispatcher(testBody)).ok, false, "missing provider status cannot claim success");
+});
+
+test("last sent and user-confirmed receipt persist separately and remain account/device scoped", () => {
+  const storage = new Map();
+  const history = load("src/lib/calendar/push-test-history.ts", {}, { localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } });
+  const acceptedAt = "2026-10-01T12:00:00Z", received = "2026-10-01T12:00:30Z";
+  history.writePushTestHistory("a", "device", { acceptedAt, last_confirmed_received_at: null, auth: "must-not-store" });
+  assert.equal(history.readPushTestHistory("a", "device").last_confirmed_received_at, null);
+  assert.equal(history.readPushTestHistory("b", "device"), null); assert.equal(history.readPushTestHistory("a", "other"), null);
+  history.writePushTestHistory("a", "device", { acceptedAt, last_confirmed_received_at: received });
+  assert.equal(history.readPushTestHistory("a", "device").last_confirmed_received_at, received);
+  assert.ok(![...storage.values()].join().includes("must-not-store"));
 });
 
 test("existing SW push waits for showNotification and click focuses/navigates calendar", async () => {

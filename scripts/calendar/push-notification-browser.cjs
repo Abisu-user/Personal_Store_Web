@@ -17,7 +17,7 @@ async function main() {
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   try {
     const page = await browser.newPage(), errors = [], requests = [];
-    let syncs = 0, tests = 0, enabled = true, testStatus = 201, serverMissing = false, failSync = false;
+    let syncs = 0, tests = 0, enabled = true, testStatus = 201, serverMissing = false, failSync = false, unconfigured = false;
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(() => {
       // Next replaces this constant during production compilation; standalone fixture needs it explicitly.
@@ -33,9 +33,11 @@ async function main() {
     });
     await page.route("**/api/calendar/**", route => {
       const request = route.request(), url = new URL(request.url()); requests.push(url.pathname);
-      if (url.pathname.endsWith("test-push")) { tests++; return route.fulfill({ status: testStatus === 201 ? 200 : 503,
-        json: testStatus === 201 ? { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, acceptedAt: new Date().toISOString() } : { ok: false, code: "VAPID_REJECTED", providerStatus: 403 } }); }
-      if (request.method() === "GET") return route.fulfill({ json: { publicKey: "AQID", accountId: "account-fixture", buildId: "server-fixture", productionOrigin: null, dispatcher: "ready", dispatcherCode: null } });
+      if (url.pathname.endsWith("test-push")) { tests++; return route.fulfill({ status: unconfigured || testStatus !== 201 ? 503 : 200,
+        json: unconfigured ? { ok: false, code: "SERVER_NOT_CONFIGURED", serverConfigured: false, subscriptionFound: true, pushAttempted: false, invalidSubscription: false, serverBuild: "server-fixture" } : testStatus === 201 ? { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, acceptedAt: new Date().toISOString(), serverConfigured: true, subscriptionFound: true, pushAttempted: true, invalidSubscription: false, serverBuild: "server-fixture" } : { ok: false, code: "VAPID_REJECTED", providerStatus: 403 } }); }
+      if (request.method() === "GET") return route.fulfill({ json: { publicKey: "AQID", accountId: "account-fixture", buildId: "server-fixture", productionOrigin: null,
+        dispatcher: unconfigured ? "unconfigured" : "ready", dispatcherCode: unconfigured ? "SERVER_NOT_CONFIGURED" : null,
+        configuration: { vercel: { VAPID_PUBLIC_KEY: "configured", CALENDAR_DISPATCH_SECRET: unconfigured ? "missing" : "configured" }, edge: null } } });
       if (request.method() === "DELETE") { enabled = false; return route.fulfill({ json: { ok: true } }); }
       const body = request.postDataJSON(); if (body.action !== "inspect") {
         syncs++;
@@ -66,9 +68,24 @@ async function main() {
     await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
     await page.getByText(/伺服器已送出測試通知/).waitFor(); assert.equal(tests, 1);
     assert.match(await page.getByRole("status").textContent(), /不代表手機已顯示/);
+    await page.getByRole("button", { name: "我已收到", exact: true }).click();
+    await page.getByText(/· 使用者確認/).waitFor();
+    await page.reload(); await page.getByText("已開啟", { exact: true }).waitFor();
+    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText(/· Provider 已接受/).waitFor(); await page.getByText(/· 使用者確認/).waitFor();
+    assert.equal(await page.getByRole("button", { name: "我已收到", exact: true }).count(), 0, "receipt confirmation persisted");
     testStatus = 403;
     await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
     await page.getByText(/推播服務拒絕 VAPID/).waitFor(); assert.equal(tests, 2);
+    unconfigured = true;
+    await page.reload(); await page.getByText("伺服器待完成設定", { exact: true }).waitFor();
+    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("Vercel · CALENDAR_DISPATCH_SECRET", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "Web Push 伺服器尚未設定完成。" }).waitFor();
+    assert.ok(!(await page.getByRole("status").textContent()).includes("伺服器已送出"));
+    assert.equal(tests, 3);
+    unconfigured = false;
     await page.getByRole("button", { name: "關閉此裝置通知", exact: true }).click();
     await page.getByText("此裝置通知已關閉。", { exact: true }).waitFor();
     const previous = syncs;

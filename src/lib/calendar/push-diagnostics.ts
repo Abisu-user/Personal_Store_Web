@@ -1,4 +1,14 @@
 /** Shared diagnostic model. None of these fields contain push credentials. */
+export type PushConfiguration = Record<string, "configured" | "missing">;
+
+export type PushTestOutcome = {
+  serverConfigured: boolean | null;
+  subscriptionFound: boolean | null;
+  pushAttempted: boolean | null;
+  pushProviderStatus: number | null;
+  invalidSubscription: boolean;
+};
+
 export type PushServerConfig = {
   publicKey: string;
   accountId: string;
@@ -6,6 +16,7 @@ export type PushServerConfig = {
   productionOrigin: string | null;
   dispatcher: "ready" | "unconfigured" | "unreachable" | "key-mismatch";
   dispatcherCode: string | null;
+  configuration?: { vercel: PushConfiguration; edge: PushConfiguration | null };
 };
 
 export type PushDeviceRecord = {

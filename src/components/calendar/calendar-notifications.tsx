@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ModalDialog } from "@/components/ui/modal-dialog";
-import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics } from "@/lib/calendar/push-diagnostics";
+import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics, type PushTestOutcome } from "@/lib/calendar/push-diagnostics";
 import { inspectPushDevice, setDeviceOptOut, syncPushSubscription } from "@/lib/calendar/push-device";
+import { readPushTestHistory, writePushTestHistory, type PushTestHistory } from "@/lib/calendar/push-test-history";
 import styles from "./calendar-mobile.module.css";
 
-type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number };
+type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number; serverBuild?: string } & Partial<PushTestOutcome>;
+const flagLabel = (value: boolean | null | undefined) => value === true ? "是" : value === false ? "否" : "未確認";
 const testErrors: Record<string, string> = {
-  SERVER_NOT_CONFIGURED: "網站伺服器尚未設定測試推播金鑰。",
+  SERVER_NOT_CONFIGURED: "Web Push 伺服器尚未設定完成。",
   EDGE_NOT_CONFIGURED: "Edge Function 的 VAPID 設定不完整。",
   EDGE_UPDATE_REQUIRED: "請部署新版 send-calendar-test-push Function。",
   DISPATCH_UNAUTHORIZED: "網站與 Edge 的派送密鑰不一致。",
@@ -29,8 +31,16 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   const [inspecting, setInspecting] = useState(true);
   const [message, setMessage] = useState("");
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [history, setHistory] = useState<(PushTestHistory & { accountId: string; subscriptionId: string }) | null>(null);
   const operation = useRef(false);
   const inspection = useRef<Promise<Awaited<ReturnType<typeof inspectPushDevice>>> | null>(null);
+
+  function restoreHistory(value: PushDiagnostics) {
+    const accountId = value.config?.accountId, subscriptionId = value.server?.id;
+    const saved = accountId && subscriptionId ? readPushTestHistory(accountId, subscriptionId) : null;
+    setHistory(saved && accountId && subscriptionId ? { ...saved, accountId, subscriptionId } : null);
+    setTestResult(null);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -40,17 +50,24 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
     inspection.current ??= inspectPushDevice();
     const pending = inspection.current;
     void pending.then((result) => {
-      if (!cancelled) { setDiagnostics(result.diagnostics); setRegistration(result.registration); setInspecting(false); }
+      if (!cancelled) { setDiagnostics(result.diagnostics); setRegistration(result.registration); restoreHistory(result.diagnostics); setInspecting(false); }
     }).finally(() => { if (inspection.current === pending) inspection.current = null; });
     return () => { cancelled = true; };
   }, [open]);
+
+  function saveHistory(value: PushTestHistory) {
+    const accountId = diagnostics?.config?.accountId, subscriptionId = diagnostics?.server?.id;
+    if (!accountId || !subscriptionId) return;
+    writePushTestHistory(accountId, subscriptionId, value);
+    setHistory({ ...value, accountId, subscriptionId });
+  }
 
   async function refresh() {
     if (operation.current) return;
     operation.current = true; setBusy(true); setMessage("正在同步裝置…");
     try {
       const result = await inspectPushDevice();
-      setDiagnostics(result.diagnostics); setRegistration(result.registration);
+      setDiagnostics(result.diagnostics); setRegistration(result.registration); restoreHistory(result.diagnostics);
       setMessage(result.diagnostics.error ?? (notificationEnabled(result.diagnostics) ? "此裝置訂閱已同步。請發送測試通知確認實際接收。" : "尚未完成設定，請查看診斷詳情。"));
     } finally { operation.current = false; setBusy(false); }
   }
@@ -113,8 +130,13 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriptionId: diagnostics.server.id }) });
       const body = await response.json().catch(() => ({}));
       const result: TestResult = { ok: response.ok && body.ok === true, code: typeof body.code === "string" ? body.code : "HTTP_ERROR",
-        httpStatus: response.status, providerStatus: body.providerStatus, acceptedAt: body.acceptedAt };
+        httpStatus: response.status, providerStatus: body.pushProviderStatus ?? body.providerStatus, acceptedAt: body.acceptedAt,
+        serverConfigured: body.serverConfigured, subscriptionFound: body.subscriptionFound, pushAttempted: body.pushAttempted,
+        invalidSubscription: body.invalidSubscription, serverBuild: body.serverBuild };
       setTestResult(result);
+      if (result.ok && result.code === "PUSH_ACCEPTED" && result.acceptedAt) {
+        saveHistory({ acceptedAt: result.acceptedAt, last_confirmed_received_at: null });
+      }
       setMessage(result.ok ? "伺服器已送出測試通知；請確認此裝置是否實際收到。此結果不代表手機已顯示通知。" :
         "測試通知發送失敗。" + (testErrors[result.code] ?? "請查看診斷詳情。"));
       if (result.code === "SUBSCRIPTION_EXPIRED" || result.code === "SUBSCRIPTION_NOT_REGISTERED") {
@@ -134,6 +156,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   const title = inspecting || !diagnostics ? "正在檢查…" : unsupported ? "裝置不支援" : denied ? "已被系統封鎖" :
     enabled ? "已開啟" : registered && !diagnostics.error ? "伺服器待完成設定" : !diagnostics.config?.publicKey ? "尚未完成伺服器設定" : "通知尚未完成設定";
   const productionMismatch = diagnostics?.config?.productionOrigin && typeof location !== "undefined" && location.origin !== diagnostics.config.productionOrigin;
+  const deviceHistory = history?.accountId === diagnostics?.config?.accountId && history?.subscriptionId === diagnostics?.server?.id ? history : null;
 
   return <ModalDialog className={styles.notificationDialog} eyebrow="CALENDAR REMINDERS" onClose={onClose} open={open} pending={busy} title="行程通知">
     <div className={styles.notificationSettings}>
@@ -164,15 +187,24 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
           <div><dt>訂閱 ID（遮蔽）</dt><dd>{maskSubscriptionId(diagnostics?.server?.id)}</dd></div>
           <div><dt>最近同步</dt><dd>{diagnostics?.server?.lastSyncedAt ? new Date(diagnostics.server.lastSyncedAt).toLocaleString("zh-TW") : "—"}</dd></div>
           <div><dt>Web Push 伺服器</dt><dd>{diagnostics?.config?.dispatcher === "ready" ? "公鑰一致；接收仍需實測" : diagnostics?.config?.dispatcherCode ?? "未確認"}</dd></div>
-          <div><dt>此裝置最後測試送出</dt><dd>{testResult?.acceptedAt ? new Date(testResult.acceptedAt).toLocaleString("zh-TW") : "本次尚無紀錄"}</dd></div>
-          <div><dt>手機實際接收</dt><dd>需由裝置確認，無法以 HTTP 成功判定</dd></div>
+          {Object.entries(diagnostics?.config?.configuration?.vercel ?? {}).map(([name, status]) => <div key={name}><dt>Vercel · {name}</dt><dd>{status}</dd></div>)}
+          {diagnostics?.config?.configuration?.edge ? Object.entries(diagnostics.config.configuration.edge).map(([name, status]) =>
+            <div key={name}><dt>Supabase Edge · {name}</dt><dd>{status}</dd></div>) : <div><dt>Supabase Edge 設定</dt><dd>未確認，需先連通網站派送端</dd></div>}
+          <div><dt>此裝置最後測試送出</dt><dd>{deviceHistory ? `${new Date(deviceHistory.acceptedAt).toLocaleString("zh-TW")} · Provider 已接受` : "尚無成功送出紀錄"}</dd></div>
+          <div><dt>手機實際接收</dt><dd>{deviceHistory?.last_confirmed_received_at ? `${new Date(deviceHistory.last_confirmed_received_at).toLocaleString("zh-TW")} · 使用者確認` : "需由裝置確認，無法以 HTTP 成功判定"}</dd></div>
           <div><dt>頁面 / 伺服器 Build</dt><dd>{process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown"} / {diagnostics?.config?.buildId ?? "—"}</dd></div>
           <div><dt>Worker 版本</dt><dd>{diagnostics?.workerVersion ?? "未取得"}</dd></div>
           <div><dt>目前 Origin</dt><dd>{typeof location === "undefined" ? "—" : location.origin}</dd></div>
           <div><dt>正式 Origin</dt><dd>{diagnostics?.config?.productionOrigin ?? "伺服器尚未設定"}</dd></div>
           {testResult && <><div><dt>測試 HTTP / Provider</dt><dd>{testResult.httpStatus || "無回應"} / {testResult.providerStatus ?? "—"}</dd></div>
-            <div><dt>測試代碼</dt><dd>{testResult.code}</dd></div></>}
+            <div><dt>測試代碼</dt><dd>{testResult.code}</dd></div>
+            <div><dt>Server 已設定 / 找到訂閱</dt><dd>{flagLabel(testResult.serverConfigured)} / {flagLabel(testResult.subscriptionFound)}</dd></div>
+            <div><dt>已嘗試 Push / 訂閱失效</dt><dd>{flagLabel(testResult.pushAttempted)} / {flagLabel(testResult.invalidSubscription)}</dd></div>
+            <div><dt>測試 Server Build</dt><dd>{testResult.serverBuild ?? "—"}</dd></div></>}
         </dl>
+        {deviceHistory && !deviceHistory.last_confirmed_received_at && <button className="secondary-button" disabled={busy}
+          onClick={() => saveHistory({ acceptedAt: deviceHistory.acceptedAt, last_confirmed_received_at: new Date().toISOString() })} type="button">我已收到</button>}
+        <p>測試紀錄只保留在此裝置、此帳號與此訂閱；「我已收到」是使用者確認，不是伺服器自動偵測。</p>
       </details>
       <button className="secondary-button" disabled={busy} onClick={onClose} type="button">完成</button>
     </div>
