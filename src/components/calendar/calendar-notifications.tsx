@@ -187,7 +187,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
           <div><dt>伺服器登記</dt><dd>{diagnostics?.server?.enabled ? "已登記" : "未完成 / 已停用"}</dd></div>
           <div><dt>訂閱 ID（遮蔽）</dt><dd>{maskSubscriptionId(diagnostics?.server?.id)}</dd></div>
           <div><dt>最近同步</dt><dd>{diagnostics?.server?.lastSyncedAt ? new Date(diagnostics.server.lastSyncedAt).toLocaleString("zh-TW") : "—"}</dd></div>
-          <div><dt>Web Push 伺服器</dt><dd>{diagnostics?.config?.dispatcher === "ready" ? "公鑰一致；接收仍需實測" : diagnostics?.config?.dispatcherCode ?? "未確認"}</dd></div>
+          <div><dt>Web Push 伺服器</dt><dd>{diagnostics?.config?.dispatcher === "ready" ? "READY；接收仍需實測" : diagnostics?.config?.dispatcherCode ?? "未確認"}</dd></div>
           {Object.entries(diagnostics?.config?.configuration?.vercel ?? {}).map(([name, status]) => <div key={name}><dt>Vercel · {name}</dt><dd>{status}</dd></div>)}
           {diagnostics?.config?.configuration?.edge ? Object.entries(diagnostics.config.configuration.edge).map(([name, status]) =>
             <div key={name}><dt>Supabase Edge · {name}</dt><dd>{status}</dd></div>) : <div><dt>Supabase Edge 設定</dt><dd>未確認，需先連通網站派送端</dd></div>}
@@ -196,8 +196,13 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
               const value = vapid[key], label = key === "publicKey" ? "Public Key" : key === "privateKey" ? "Private Key" : "Subject";
               const keyValue = key !== "subject" ? vapid[key] : null;
               return <div key={key}><dt>VAPID · {label}</dt><dd>
-                {value.exists ? "configured" : "missing"} · {value.formatValid ? "valid" : "INVALID FORMAT"}<br />
+                {value.exists ? "configured" : "missing"} · {value.formatValid ? "VALID" : "驗證未通過"}<br />
                 長度 {value.length}{keyValue && <> · 解碼 {keyValue.decodedLength ?? "—"} bytes · Base64URL {keyValue.base64urlValid ? "valid" : "invalid"}</>}<br />
+                {keyValue && <>格式：{key === "publicKey" ? "raw Base64URL · P-256 公鑰（65 bytes）" : "raw Base64URL · P-256 私鑰（32 bytes）"}<br />
+                  Structural：{keyValue.structuralValid ? "PASS" : "FAIL"} · P-256 import：{keyValue.importValidation ?? "not-checked"}<br /></>}
+                {key === "publicKey" && <>First byte：{vapid.publicKey.firstByte === null || vapid.publicKey.firstByte === undefined ? "未確認" : `0x${vapid.publicKey.firstByte.toString(16).padStart(2, "0")}`}{vapid.publicKey.firstByte === 4 ? "（uncompressed）" : ""}<br />
+                  P-256 curve point：{flagLabel(vapid.publicKey.pointOnCurve)}<br /></>}
+                {key === "subject" && <>Contact URI：{vapid.subject.uriType ?? "未確認"}<br /></>}
                 引號 / 空白 / 換行：{flagLabel(value.containsQuotes)} / {flagLabel(value.containsWhitespace)} / {flagLabel(value.containsNewline)}<br />
                 前 / 後空白：{flagLabel(value.leadingWhitespace)} / {flagLabel(value.trailingWhitespace)}
                 {value.issues.length > 0 && <><br />{value.issues.join(" · ")}</>}

@@ -5,9 +5,15 @@ export type VapidValueDiagnostics = {
   exists: boolean; length: number; leadingWhitespace: boolean; trailingWhitespace: boolean;
   containsWhitespace: boolean; containsNewline: boolean; containsQuotes: boolean; formatValid: boolean; issues: string[];
 };
-export type VapidKeyDiagnostics = VapidValueDiagnostics & { base64urlValid: boolean; decodedLength: number | null };
+export type VapidKeyDiagnostics = VapidValueDiagnostics & {
+  base64urlValid: boolean; decodedLength: number | null; structuralValid: boolean;
+  expectedFormat: "raw-base64url-p256-public" | "raw-base64url-p256-private";
+  importValidation: "valid" | "invalid" | "not-checked";
+};
 export type VapidValidationDiagnostics = {
-  publicKey: VapidKeyDiagnostics; privateKey: VapidKeyDiagnostics; subject: VapidValueDiagnostics;
+  publicKey: VapidKeyDiagnostics & { firstByte: number | null; pointOnCurve: boolean | null };
+  privateKey: VapidKeyDiagnostics;
+  subject: VapidValueDiagnostics & { uriType: "https" | "mailto" | "unsupported" | "invalid" };
   pairMatch: boolean | null; publicKeyMatch: boolean | null;
   fingerprints: { expectedPublic: string | null; edgePublic: string | null };
   libraryValidation: "valid" | "invalid" | "not-checked";

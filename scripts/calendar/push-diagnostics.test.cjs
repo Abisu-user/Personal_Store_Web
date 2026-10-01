@@ -187,8 +187,8 @@ test("Edge missing VAPID fields are diagnosed individually without exposing secr
 });
 
 test("forwarder allowlists configuration and preserves unknown timeout outcome", async () => {
-  const format = { exists: true, formatValid: true, base64urlValid: true, length: 43, decodedLength: 32 };
-  const validation = { publicKey: format, privateKey: format, subject: format, pairMatch: true, publicKeyMatch: true, libraryValidation: "valid", failure: null };
+  const format = { exists: true, formatValid: true, base64urlValid: true, structuralValid: true, importValidation: "valid", length: 43, decodedLength: 32 };
+  const validation = { publicKey: { ...format, firstByte: 4, pointOnCurve: true, length: 87, decodedLength: 65 }, privateKey: format, subject: format, pairMatch: true, publicKeyMatch: true, libraryValidation: "valid", failure: null };
   const env = { NEXT_PUBLIC_SUPABASE_URL: "https://db.test", CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key" };
   const helper = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({
     ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, serverConfigured: true, pushAttempted: true,
@@ -204,6 +204,12 @@ test("forwarder allowlists configuration and preserves unknown timeout outcome",
   const legacy = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({ ok: true, code: "DISPATCH_READY", serverConfigured: true }) });
   const old = await legacy.callPushDispatcher({ action: "diagnostics" });
   assert.equal(old.ok, false); assert.equal(old.code, "EDGE_UPDATE_REQUIRED"); assert.equal(old.serverConfigured, null);
+  const incomplete = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({
+    ok: true, code: "DISPATCH_READY", serverConfigured: true,
+    vapidValidation: { ...validation, publicKey: { ...validation.publicKey, importValidation: "not-checked" } },
+  }) });
+  const unchecked = await incomplete.callPushDispatcher({ action: "diagnostics" });
+  assert.equal(unchecked.ok, false); assert.equal(unchecked.code, "EDGE_UPDATE_REQUIRED"); assert.equal(unchecked.serverConfigured, false);
 });
 
 test("last sent and user-confirmed receipt persist separately and remain account/device scoped", () => {
@@ -223,7 +229,10 @@ test("VAPID format reports quotes, whitespace, newline, PEM, encoding and decode
   const privateKey = privateFixture.toString("base64url"), subject = "https://personal-store-web.vercel.app";
   const good = await validateVapid(fixturePublic, privateKey, subject, fixturePublic);
   assert.equal(good.publicKey.length, 87); assert.equal(good.publicKey.decodedLength, 65);
+  assert.equal(good.publicKey.firstByte, 4); assert.equal(good.publicKey.pointOnCurve, true);
+  assert.equal(good.publicKey.structuralValid, true); assert.equal(good.publicKey.importValidation, "valid");
   assert.equal(good.privateKey.length, 43); assert.equal(good.privateKey.decodedLength, 32);
+  assert.equal(good.privateKey.importValidation, "valid"); assert.equal(good.subject.uriType, "https");
   assert.equal(good.pairMatch, true); assert.equal(good.publicKeyMatch, true); assert.equal(good.failure, null);
   assert.equal(good.fingerprints.expectedPublic, good.fingerprints.edgePublic);
   for (const value of ['"' + privateKey + '"', "'" + privateKey + "'", privateKey + "=", "\r\n" + privateKey, privateKey + "\n", "-----BEGIN PRIVATE KEY-----\ninvalid\n-----END PRIVATE KEY-----", "abc+def/", "AQID"]) {
@@ -235,7 +244,43 @@ test("VAPID format reports quotes, whitespace, newline, PEM, encoding and decode
   assert.equal(whitespace.privateKey.leadingWhitespace, true); assert.equal(whitespace.privateKey.trailingWhitespace, true);
   assert.equal(whitespace.privateKey.containsNewline, true);
   const zero = await validateVapid(fixturePublic, Buffer.alloc(32).toString("base64url"), subject, fixturePublic);
-  assert.equal(zero.failure, "PRIVATE_KEY"); assert.ok(zero.privateKey.issues.includes("P256_PRIVATE_IMPORT_FAILED"));
+  assert.equal(zero.failure, "PRIVATE_KEY"); assert.ok(zero.privateKey.issues.includes("PRIVATE_KEY_SCALAR_OUT_OF_RANGE"));
+});
+
+test("public validator accepts unpadded 87-char points even if convertKey is unimplemented", async () => {
+  const { validateVapid } = load("supabase/functions/send-calendar-test-push/vapid-validation.ts", {
+    "node:crypto": { ...nodeCrypto, ECDH: { convertKey() { throw new Error("Not implemented"); } } },
+  });
+  const result = await validateVapid(fixturePublic, privateFixture.toString("base64url"), "https://personal-store-web.vercel.app", fixturePublic);
+  assert.equal(result.publicKey.importValidation, "valid"); assert.equal(result.pairMatch, true); assert.equal(result.failure, null);
+});
+
+test("WebCrypto public import failure is distinct from encoding and curve validation", async () => {
+  const { validateVapid } = load("supabase/functions/send-calendar-test-push/vapid-validation.ts", {}, {
+    crypto: { subtle: { importKey: async (format, ...args) => {
+      if (format === "raw") throw new Error("runtime failure that must not leak");
+      return nodeCrypto.webcrypto.subtle.importKey(format, ...args);
+    } } },
+  });
+  const result = await validateVapid(fixturePublic, privateFixture.toString("base64url"), "https://personal-store-web.vercel.app", fixturePublic);
+  assert.equal(result.publicKey.structuralValid, true); assert.equal(result.publicKey.pointOnCurve, true);
+  assert.equal(result.publicKey.importValidation, "invalid"); assert.equal(result.failure, "PUBLIC_KEY");
+  assert.ok(result.publicKey.issues.includes("PUBLIC_KEY_P256_IMPORT_FAILED"));
+  assert.ok(!JSON.stringify(result).includes("must not leak"));
+});
+
+test("private JWK import failure cannot pass configuration or pair validation", async () => {
+  const { validateVapid } = load("supabase/functions/send-calendar-test-push/vapid-validation.ts", {}, {
+    crypto: { subtle: { importKey: async (format, ...args) => {
+      if (format === "jwk") throw new Error("private import exception must not leak");
+      return nodeCrypto.webcrypto.subtle.importKey(format, ...args);
+    } } },
+  });
+  const result = await validateVapid(fixturePublic, privateFixture.toString("base64url"), "https://personal-store-web.vercel.app", fixturePublic);
+  assert.equal(result.publicKey.importValidation, "valid"); assert.equal(result.privateKey.structuralValid, true);
+  assert.equal(result.privateKey.importValidation, "invalid"); assert.equal(result.failure, "PRIVATE_KEY"); assert.equal(result.pairMatch, null);
+  assert.ok(result.privateKey.issues.includes("P256_PRIVATE_IMPORT_FAILED"));
+  assert.ok(!JSON.stringify(result).includes("exception must not leak"));
 });
 
 test("VAPID validates the curve, pair and real contact URI before any provider call", async () => {
@@ -261,10 +306,13 @@ test("VAPID validates the curve, pair and real contact URI before any provider c
 
 test("server sanitizes nested VAPID diagnostics rather than trusting raw Edge objects", () => {
   const { safeVapidValidation } = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} });
-  const safe = safeVapidValidation({ publicKey: { value: "raw-public", issues: ["INVALID_BASE64URL", "private-secret"] },
-    privateKey: { value: "raw-private", formatValid: true, length: 43 }, subject: { raw: "private-contact" },
+  const safe = safeVapidValidation({ publicKey: { value: "raw-public", firstByte: 4, pointOnCurve: true, issues: ["INVALID_BASE64URL", "private-secret"] },
+    privateKey: { value: "raw-private", firstByte: 123, importValidation: "private-secret", formatValid: true, length: 43 }, subject: { raw: "private-contact", uriType: "private-contact" },
     fingerprints: { expectedPublic: "private-secret", edgePublic: "a".repeat(64) }, failure: "private-secret", privateKeyValue: "raw-private" });
   assert.equal(safe.privateKey.length, 43); assert.equal(safe.fingerprints.expectedPublic, null);
+  assert.equal(safe.publicKey.firstByte, 4); assert.equal(safe.publicKey.pointOnCurve, true);
+  assert.equal("firstByte" in safe.privateKey, false); assert.equal(safe.privateKey.importValidation, "not-checked");
+  assert.equal(safe.subject.uriType, "invalid");
   assert.equal(safe.fingerprints.edgePublic, "a".repeat(64)); assert.equal(safe.failure, null);
   assert.ok(!JSON.stringify(safe).includes("raw-private")); assert.ok(!JSON.stringify(safe).includes("private-secret"));
   assert.ok(!JSON.stringify(safe).includes("private-contact"));

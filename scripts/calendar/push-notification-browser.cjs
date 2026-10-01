@@ -20,9 +20,10 @@ async function main() {
     let syncs = 0, tests = 0, enabled = true, testStatus = 201, serverMissing = false, failSync = false, unconfigured = false, vapidFailure = false;
     function validation() {
       const format = { exists: true, length: 87, formatValid: true, leadingWhitespace: false, trailingWhitespace: false,
-        containsWhitespace: false, containsNewline: false, containsQuotes: false, base64urlValid: true, decodedLength: 65, issues: [] };
-      return { publicKey: format, privateKey: { ...format, length: 43, decodedLength: 32 },
-        subject: { ...format, length: 42, formatValid: !vapidFailure, issues: vapidFailure ? ["INVALID_CONTACT_URI"] : [] },
+        containsWhitespace: false, containsNewline: false, containsQuotes: false, base64urlValid: true, decodedLength: 65,
+        structuralValid: true, importValidation: "valid", issues: [] };
+      return { publicKey: { ...format, firstByte: 4, pointOnCurve: true }, privateKey: { ...format, length: 43, decodedLength: 32 },
+        subject: { ...format, uriType: vapidFailure ? "invalid" : "https", length: 35, formatValid: !vapidFailure, issues: vapidFailure ? ["INVALID_CONTACT_URI"] : [] },
         pairMatch: true, publicKeyMatch: true, fingerprints: { expectedPublic: "a".repeat(64), edgePublic: "a".repeat(64) },
         libraryValidation: vapidFailure ? "not-checked" : "valid", failure: vapidFailure ? "SUBJECT" : null };
     }
@@ -71,6 +72,8 @@ async function main() {
       const content = await dialog.textContent();
       assert.ok(!content.includes("private-test-endpoint") && !content.includes("private-auth") && !content.includes("private-key"));
       assert.match(content, /12345678…9abc/); assert.match(content, /worker-fixture/);
+      assert.match(content, /0x04（uncompressed）/); assert.match(content, /P-256 import：valid/);
+      assert.match(content, /READY；接收仍需實測/);
       await page.screenshot({ path: path.join(out, "push-" + width + ".png") });
       console.log("PASS notification modal", width, "light/dark, masked diagnostics, no overflow");
     }
