@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ModalDialog } from "@/components/ui/modal-dialog";
-import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics, type PushTestOutcome, type VapidValidationDiagnostics } from "@/lib/calendar/push-diagnostics";
-import { inspectPushDevice, setDeviceOptOut, syncPushSubscription } from "@/lib/calendar/push-device";
+import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, notificationStatus, notificationStatusLabels, notificationStatusHints, subscriptionKeyMatches, type PushDiagnostics, type PushTestOutcome, type VapidValidationDiagnostics } from "@/lib/calendar/push-diagnostics";
+import { deviceOptedOut, inspectPushDevice, setDeviceOptOut, syncPushSubscription } from "@/lib/calendar/push-device";
 import { readPushTestHistory, writePushTestHistory, type PushTestHistory } from "@/lib/calendar/push-test-history";
 import styles from "./calendar-mobile.module.css";
 
 type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number; serverBuild?: string; vapidValidation?: VapidValidationDiagnostics } & Partial<PushTestOutcome>;
+// Compile-time gate: a query string or localStorage flag cannot expose these tools in Production.
+const developerMode = process.env.NODE_ENV !== "production";
 const flagLabel = (value: boolean | null | undefined) => value === true ? "是" : value === false ? "否" : "未確認";
 const testErrors: Record<string, string> = {
   SERVER_NOT_CONFIGURED: "Web Push 伺服器尚未設定完成。",
@@ -36,6 +38,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   const inspection = useRef<Promise<Awaited<ReturnType<typeof inspectPushDevice>>> | null>(null);
 
   function restoreHistory(value: PushDiagnostics) {
+    if (!developerMode) return;
     const accountId = value.config?.accountId, subscriptionId = value.server?.id;
     const saved = accountId && subscriptionId ? readPushTestHistory(accountId, subscriptionId) : null;
     setHistory(saved && accountId && subscriptionId ? { ...saved, accountId, subscriptionId } : null);
@@ -45,7 +48,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    void Promise.resolve().then(() => { if (!cancelled) setInspecting(true); });
+    void Promise.resolve().then(() => { if (!cancelled) { setInspecting(true); setMessage(""); } });
     // Share Strict Mode's duplicate inspection. No automatic permission prompt.
     inspection.current ??= inspectPushDevice();
     const pending = inspection.current;
@@ -56,6 +59,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   }, [open]);
 
   function saveHistory(value: PushTestHistory) {
+    if (!developerMode) return;
     const accountId = diagnostics?.config?.accountId, subscriptionId = diagnostics?.server?.id;
     if (!accountId || !subscriptionId) return;
     writePushTestHistory(accountId, subscriptionId, value);
@@ -64,11 +68,12 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
 
   async function refresh() {
     if (operation.current) return;
-    operation.current = true; setBusy(true); setMessage("正在同步裝置…");
+    operation.current = true; setBusy(true); setMessage(developerMode ? "正在同步裝置…" : "");
     try {
       const result = await inspectPushDevice();
       setDiagnostics(result.diagnostics); setRegistration(result.registration); restoreHistory(result.diagnostics);
-      setMessage(result.diagnostics.error ?? (notificationEnabled(result.diagnostics) ? "此裝置訂閱已同步。請發送測試通知確認實際接收。" : "尚未完成設定，請查看診斷詳情。"));
+      const status = notificationStatus(result.diagnostics, Boolean(result.diagnostics.config && deviceOptedOut(result.diagnostics.config.accountId)));
+      setMessage(developerMode ? result.diagnostics.error ?? (notificationEnabled(result.diagnostics) ? "此裝置訂閱已同步。請發送測試通知確認實際接收。" : "尚未完成設定，請查看診斷詳情。") : notificationStatusHints[status]);
     } finally { operation.current = false; setBusy(false); }
   }
 
@@ -89,12 +94,13 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
       // Temporary DB failure must not destroy the browser subscription.
       const server = await syncPushSubscription(subscription);
       setDeviceOptOut(diagnostics.config.accountId, false);
-      setDiagnostics({ ...current, server, error: null });
-      setMessage("此裝置已完成訂閱登記。請發送測試通知，確認手機是否收到。");
+      const updated = { ...current, server, error: null };
+      setDiagnostics(updated);
+      setMessage(developerMode ? "此裝置已完成訂閱登記。請發送測試通知，確認手機是否收到。" : notificationEnabled(updated) ? "此裝置的行程通知已開啟。" : notificationStatusHints[notificationStatus(updated)]);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "通知設定失敗。";
       setDiagnostics({ ...current, permission: Notification.permission, error: errorMessage });
-      setMessage(errorMessage);
+      setMessage(developerMode ? errorMessage : Notification.permission === "denied" ? notificationStatusHints.blocked : "通知連線尚未完成，請重新同步或稍後再試。");
     } finally { operation.current = false; setBusy(false); }
   }
 
@@ -112,18 +118,18 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
         setDiagnostics({ ...diagnostics, server: diagnostics.server ? { ...diagnostics.server, enabled: false } : null, error: null });
         const removed = await subscription.unsubscribe();
         setDiagnostics({ ...diagnostics, subscriptionExists: !removed, server: diagnostics.server ? { ...diagnostics.server, enabled: false } : null });
-        setMessage(removed ? "此裝置通知已關閉。" : "伺服器通知已關閉；裝置訂閱尚未移除，可再按一次關閉。");
+        setMessage(removed ? developerMode ? "此裝置通知已關閉。" : "" : "通知關閉尚未完成，請再試一次。");
       } else {
         setDeviceOptOut(diagnostics.config.accountId, true);
         setDiagnostics({ ...diagnostics, subscriptionExists: false, server: null });
-        setMessage("此裝置通知已關閉。");
+        setMessage(developerMode ? "此裝置通知已關閉。" : "");
       }
     } catch { setMessage("關閉未完成，請重新同步並重試。"); }
     finally { operation.current = false; setBusy(false); }
   }
 
   async function sendTest() {
-    if (!diagnostics?.server?.id || operation.current) return;
+    if (!developerMode || !diagnostics?.server?.id || operation.current) return;
     operation.current = true; setBusy(true); setMessage("正在發送真正的伺服器測試通知…");
     try {
       const response = await fetch("/api/calendar/test-push", { method: "POST", signal: AbortSignal.timeout(20_000),
@@ -158,26 +164,29 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
   const productionMismatch = diagnostics?.config?.productionOrigin && typeof location !== "undefined" && location.origin !== diagnostics.config.productionOrigin;
   const deviceHistory = history?.accountId === diagnostics?.config?.accountId && history?.subscriptionId === diagnostics?.server?.id ? history : null;
   const vapid = testResult?.vapidValidation ?? diagnostics?.config?.vapidValidation;
+  const status = diagnostics ? notificationStatus(diagnostics, Boolean(diagnostics.config && deviceOptedOut(diagnostics.config.accountId))) : null;
+  const publicHint = status ? notificationStatusHints[status] : "";
 
   return <ModalDialog className={styles.notificationDialog} eyebrow="CALENDAR REMINDERS" onClose={onClose} open={open} pending={busy} title="行程通知">
     <div className={styles.notificationSettings}>
-      <p>通知由伺服器發送，不依賴日曆頁面保持開啟。各裝置需分別登記。</p>
-      <div className={styles.notificationState}><strong>此裝置</strong><span>{title}</span></div>
-      {unsupported && <p>目前環境不支援 Web Push。iPhone 請從「加入主畫面」的 Personal Store 開啟，並確認 iOS 支援通知。</p>}
-      {denied && <p>請至裝置的通知設定開啟權限；網站不會重複要求授權。</p>}
-      {productionMismatch && <p>目前網址與設定的正式網址不同。不同網域不能沿用通知訂閱，請固定使用正式網址測試。</p>}
-      {diagnostics?.config && diagnostics.config.dispatcher !== "ready" && <p>{testErrors[diagnostics.config.dispatcherCode ?? ""] ?? "推播伺服器尚未完成連線檢查。"}</p>}
-      {diagnostics?.error && <p role="alert">{diagnostics.error}</p>}
+      <p>通知由伺服器發送，Personal Store 不需要保持開啟。各裝置需分別設定。</p>
+      <div className={styles.notificationState}><strong>此裝置</strong><span>{developerMode ? title : inspecting || !status ? "正在檢查…" : notificationStatusLabels[status]}</span></div>
+      {!developerMode && !inspecting && publicHint && publicHint !== message && <p role="alert">{publicHint}</p>}
+      {developerMode && unsupported && <p>目前環境不支援 Web Push。iPhone 請從「加入主畫面」的 Personal Store 開啟，並確認 iOS 支援通知。</p>}
+      {developerMode && denied && <p>請至裝置的通知設定開啟權限；網站不會重複要求授權。</p>}
+      {productionMismatch && <p>請從 Personal Store 的正式網站或已安裝的 App 開啟通知設定。</p>}
+      {developerMode && diagnostics?.config && diagnostics.config.dispatcher !== "ready" && <p>{testErrors[diagnostics.config.dispatcherCode ?? ""] ?? "推播伺服器尚未完成連線檢查。"}</p>}
+      {developerMode && diagnostics?.error && <p role="alert">{diagnostics.error}</p>}
       {message && <p role="status" aria-live="polite">{message}</p>}
       <div className={styles.notificationActions}>
         {!registered && !requiresReset && !denied && !unsupported && <button className="button" disabled={busy || inspecting || !registration || !diagnostics?.config?.publicKey} onClick={enable} type="button">
-          {diagnostics?.permission === "granted" ? "修復通知" : "開啟行程通知"}</button>}
-        {registered && <button className="button" disabled={busy || inspecting} onClick={sendTest} type="button">發送測試通知</button>}
+          {diagnostics?.permission === "granted" ? developerMode ? "修復通知" : "開啟此裝置通知" : "開啟行程通知"}</button>}
+        {developerMode && registered && <button className="button" disabled={busy || inspecting} onClick={sendTest} type="button">發送測試通知</button>}
         {!unsupported && <button className="secondary-button" disabled={busy || inspecting || !diagnostics} onClick={refresh} type="button">重新同步裝置</button>}
-        {diagnostics?.subscriptionExists && <button className="secondary-button" disabled={busy || inspecting} onClick={disable} type="button">{requiresReset ? "清除舊訂閱" : "關閉此裝置通知"}</button>}
+        {diagnostics?.subscriptionExists && <button className="secondary-button" disabled={busy || inspecting} onClick={disable} type="button">{developerMode && requiresReset ? "清除舊訂閱" : "關閉此裝置通知"}</button>}
       </div>
-      <details className={styles.notificationDetails}>
-        <summary>通知診斷詳情</summary>
+      {developerMode && <details className={styles.notificationDetails}>
+        <summary>開發者診斷</summary>
         <dl>
           <div><dt>系統通知權限</dt><dd>{diagnostics?.permission ?? "檢查中"}</dd></div>
           <div><dt>Service Worker</dt><dd>{diagnostics?.workerActive ? "正常 / active" : "未啟動"}</dd></div>
@@ -230,7 +239,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
         {deviceHistory && !deviceHistory.last_confirmed_received_at && <button className="secondary-button" disabled={busy}
           onClick={() => saveHistory({ acceptedAt: deviceHistory.acceptedAt, last_confirmed_received_at: new Date().toISOString() })} type="button">我已收到</button>}
         <p>測試紀錄只保留在此裝置、此帳號與此訂閱；「我已收到」是使用者確認，不是伺服器自動偵測。</p>
-      </details>
+      </details>}
       <button className="secondary-button" disabled={busy} onClick={onClose} type="button">完成</button>
     </div>
   </ModalDialog>;

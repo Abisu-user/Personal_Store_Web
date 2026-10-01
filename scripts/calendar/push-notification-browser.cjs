@@ -5,8 +5,10 @@ const assert = require("node:assert/strict"), fs = require("node:fs"), os = requ
 const { chromium } = require("playwright");
 const webpack = require("next/dist/compiled/webpack/webpack").webpack;
 const root = path.resolve(__dirname, "../.."), out = fs.mkdtempSync(path.join(os.tmpdir(), "vault-calendar-push-"));
+const production = process.argv.includes("--production");
 async function main() {
-  await new Promise((resolve, reject) => webpack({ mode: "development", devtool: false, entry: path.join(__dirname, "push-notification-fixture.tsx"), output: { path: out, filename: "test.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], alias: { "@": path.join(root, "src") } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(root, "scripts/tests/ts-loader.cjs") }, { test: /\.module\.css$/, use: path.join(root, "scripts/tests/global-header-css-loader.cjs") }] } }, (error, stats) => error || stats.hasErrors() ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve()));
+  // Production NODE_ENV inlining/React behavior, without Next's unavailable standalone Terser path.
+  await new Promise((resolve, reject) => webpack({ mode: production ? "production" : "development", optimization: { minimize: false }, devtool: false, entry: path.join(__dirname, "push-notification-fixture.tsx"), output: { path: out, filename: "test.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], alias: { "@": path.join(root, "src") } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(root, "scripts/tests/ts-loader.cjs") }, { test: /\.module\.css$/, use: path.join(root, "scripts/tests/global-header-css-loader.cjs") }] } }, (error, stats) => error || stats.hasErrors() ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve()));
   const css = ["globals.css", "ui-foundation.css", "mobile-design-system.css"].map(file => fs.readFileSync(path.join(root, "src/app", file), "utf8")).join("\n");
   const server = http.createServer((req, res) => {
     if (req.url === "/test.js") { res.setHeader("Content-Type", "text/javascript"); return res.end(fs.readFileSync(path.join(out, "test.js"))); }
@@ -31,13 +33,14 @@ async function main() {
     await page.addInitScript(() => {
       // Next replaces this constant during production compilation; standalone fixture needs it explicitly.
       window.process = { env: { NEXT_PUBLIC_BUILD_ID: "page-fixture" } };
+      window.pushCalls = { subscribe: 0, permission: 0 };
       const permission = { value: new URL(location.href).searchParams.get("permission") || "granted" };
       const subscription = { endpoint: "https://web.push.apple.com/private-test-endpoint", options: { applicationServerKey: Uint8Array.from([1, 2, 3]).buffer },
         toJSON() { return { endpoint: this.endpoint, keys: { p256dh: "private-key", auth: "private-auth" } }; }, async unsubscribe() { return true; } };
       Object.defineProperty(window, "PushManager", { configurable: true, value: class {} });
       Object.defineProperty(window, "Notification", { configurable: true, value: { get permission() { return permission.value; } } });
       const registration = { scope: location.origin + "/", active: { state: "activated", postMessage(_message, ports) { ports[0].postMessage({ buildId: "worker-fixture" }); } },
-        pushManager: { getSubscription: async () => subscription, subscribe: async () => { permission.value = "granted"; return subscription; } } };
+        pushManager: { getSubscription: async () => subscription, subscribe: async () => { window.pushCalls.subscribe++; permission.value = "granted"; return subscription; } } };
       Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: { register: async () => registration, ready: Promise.resolve(registration) } });
     });
     await page.route("**/api/calendar/**", route => {
@@ -61,7 +64,7 @@ async function main() {
       await page.goto("http://127.0.0.1:" + server.address().port);
       const dialog = page.getByRole("dialog", { name: "行程通知", exact: true });
       await dialog.getByText("已開啟", { exact: true }).waitFor().catch(async error => { console.error("Fixture state:", await page.locator("body").innerText(), "Page errors:", errors); throw error; });
-      await dialog.getByText("通知診斷詳情", { exact: true }).click();
+      if (!production) await dialog.getByText("開發者診斷", { exact: true }).click();
       for (const theme of ["light", "dark"]) {
         await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
         const bounds = await dialog.boundingBox();
@@ -71,11 +74,65 @@ async function main() {
       }
       const content = await dialog.textContent();
       assert.ok(!content.includes("private-test-endpoint") && !content.includes("private-auth") && !content.includes("private-key"));
-      assert.match(content, /12345678…9abc/); assert.match(content, /worker-fixture/);
-      assert.match(content, /0x04（uncompressed）/); assert.match(content, /P-256 import：valid/);
-      assert.match(content, /READY；接收仍需實測/);
+      if (production) {
+        assert.ok(!/發送測試通知|我已收到|診斷|VAPID|Worker|SHA|HTTP|Build|Provider|PUSH_ACCEPTED|實際接收/.test(content), "no debug UI in production");
+        assert.equal(await dialog.locator("details").count(), 0);
+      } else {
+        assert.match(content, /12345678…9abc/); assert.match(content, /worker-fixture/);
+        assert.match(content, /0x04（uncompressed）/); assert.match(content, /P-256 import：valid/);
+        assert.match(content, /READY；接收仍需實測/);
+      }
       await page.screenshot({ path: path.join(out, "push-" + width + ".png") });
-      console.log("PASS notification modal", width, "light/dark, masked diagnostics, no overflow");
+      console.log("PASS notification modal", production ? "production" : "development", width, "light/dark, no overflow");
+    }
+    if (production) {
+      await page.goto("http://127.0.0.1:" + server.address().port + "?debug=notifications");
+      await page.getByText("已開啟", { exact: true }).waitFor();
+      assert.equal(await page.locator("details").count(), 0, "public query cannot expose diagnostics");
+      await page.getByRole("button", { name: "重新同步裝置", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('button[disabled]'));
+      assert.equal(await page.getByRole("status").count(), 0, "successful reconcile is silent");
+      await page.getByRole("button", { name: "關閉此裝置通知", exact: true }).click();
+      await page.getByText("尚未開啟", { exact: true }).waitFor();
+      const beforeOptOut = syncs;
+      await page.getByRole("button", { name: "重新同步裝置", exact: true }).click();
+      await page.waitForFunction(() => !document.querySelector('button[disabled]'));
+      assert.equal(syncs, beforeOptOut);
+      await page.evaluate(() => localStorage.clear()); enabled = true;
+      unconfigured = true;
+      await page.reload(); await page.getByText("伺服器暫時無法使用", { exact: true }).waitFor();
+      assert.ok(!(await page.getByRole("dialog").innerText()).includes("SERVER_NOT_CONFIGURED"));
+      unconfigured = false; serverMissing = true; failSync = true;
+      await page.reload(); await page.getByText("需要重新同步", { exact: true }).waitFor();
+      assert.ok(!(await page.getByRole("dialog").innerText()).includes("測試DB"));
+      await page.getByRole("button", { name: "重新同步裝置", exact: true }).click();
+      await page.getByText("已開啟", { exact: true }).waitFor();
+      await page.goto("http://127.0.0.1:" + server.address().port + "?permission=denied");
+      await page.getByText("通知已被系統封鎖", { exact: true }).waitFor();
+      await page.goto("http://127.0.0.1:" + server.address().port + "?permission=default");
+      await page.getByText("尚未開啟", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "開啟行程通知", exact: true }).click();
+      await page.getByText("已開啟", { exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => window.pushCalls.subscribe), 1, "first enable is user-initiated");
+      const startupBefore = syncs;
+      const startupSynced = page.waitForResponse(response => response.url().includes("push-subscription") && response.request().method() === "POST" && !response.request().postDataJSON().action);
+      await page.goto("http://127.0.0.1:" + server.address().port + "?startup=1");
+      await startupSynced;
+      assert.equal(syncs, startupBefore + 1, "startup quietly upserts existing endpoint");
+      assert.equal(await page.evaluate(() => window.pushCalls.subscribe), 0, "same-origin restart reuses subscription");
+      assert.equal(await page.getByRole("dialog").count(), 0); assert.equal(await page.getByRole("status").count(), 0);
+      const startupRequests = requests.length;
+      for (const permission of ["default", "denied"]) {
+        await page.goto("http://127.0.0.1:" + server.address().port + "?startup=1&permission=" + permission);
+        await page.getByRole("button", { name: "行程通知", exact: true }).waitFor();
+        assert.equal(await page.evaluate(() => window.pushCalls.subscribe), 0);
+      }
+      assert.equal(requests.length, startupRequests, "startup does not touch push APIs before grant");
+      assert.equal(tests, 0, "production has no Test Push request");
+      assert.deepEqual(errors, []);
+      console.log("PASS production cleanup, friendly failures, silent sync, opt-out, granted startup reuse, no automatic prompt");
+      console.log("Screenshots:", out);
+      return;
     }
     await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
     await page.getByText(/伺服器已送出測試通知/).waitFor(); assert.equal(tests, 1);
@@ -83,7 +140,7 @@ async function main() {
     await page.getByRole("button", { name: "我已收到", exact: true }).click();
     await page.getByText(/· 使用者確認/).waitFor();
     await page.reload(); await page.getByText("已開啟", { exact: true }).waitFor();
-    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("開發者診斷", { exact: true }).click();
     await page.getByText(/· Provider 已接受/).waitFor(); await page.getByText(/· 使用者確認/).waitFor();
     assert.equal(await page.getByRole("button", { name: "我已收到", exact: true }).count(), 0, "receipt confirmation persisted");
     testStatus = 403;
@@ -91,7 +148,7 @@ async function main() {
     await page.getByText(/推播服務拒絕 VAPID/).waitFor(); assert.equal(tests, 2);
     unconfigured = true;
     await page.reload(); await page.getByText("伺服器待完成設定", { exact: true }).waitFor();
-    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("開發者診斷", { exact: true }).click();
     await page.getByText("Vercel · CALENDAR_DISPATCH_SECRET", { exact: true }).waitFor();
     await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "Web Push 伺服器尚未設定完成。" }).waitFor();
@@ -100,7 +157,7 @@ async function main() {
     unconfigured = false;
     vapidFailure = true;
     await page.reload(); await page.getByText("伺服器待完成設定", { exact: true }).waitFor();
-    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("開發者診斷", { exact: true }).click();
     await page.getByText("SUBJECT", { exact: true }).waitFor();
     await page.locator("dd").filter({ hasText: "INVALID_CONTACT_URI" }).waitFor();
     await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
@@ -119,7 +176,7 @@ async function main() {
     await page.getByRole("button", { name: "開啟行程通知", exact: true }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "開啟行程通知", exact: true }).click();
     await page.getByRole("alert").filter({ hasText: "測試DB暫時失敗" }).waitFor();
-    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("開發者診斷", { exact: true }).click();
     await page.getByText("已建立", { exact: true }).waitFor();
     assert.equal(await page.getByText("已開啟", { exact: true }).count(), 0, "DB save failure cannot claim enabled");
     await page.getByRole("button", { name: "修復通知", exact: true }).click();

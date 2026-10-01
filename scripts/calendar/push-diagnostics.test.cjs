@@ -36,6 +36,24 @@ test("enabled requires every layer; permission alone never suffices", () => {
   assert.equal(maskSubscriptionId("12345678-0000-0000-0000-123456789abc"), "12345678…9abc");
 });
 
+test("production statuses are friendly and preserve strict health requirements", () => {
+  const { notificationStatus, notificationStatusLabels } = load("src/lib/calendar/push-diagnostics.ts");
+  assert.equal(notificationStatus(good), "enabled");
+  assert.equal(notificationStatus(good, true), "off");
+  assert.equal(notificationStatus({ ...good, permission: "default" }), "off");
+  assert.equal(notificationStatus({ ...good, permission: "denied" }), "blocked");
+  assert.equal(notificationStatus({ ...good, supported: false }), "unsupported");
+  assert.equal(notificationStatus({ ...good, config: null }), "unavailable");
+  assert.equal(notificationStatus({ ...good, config: { dispatcher: "unreachable" } }), "unavailable");
+  for (const key of ["workerActive", "subscriptionExists", "keyMatches"]) {
+    assert.equal(notificationStatus({ ...good, [key]: false }), "resync");
+  }
+  assert.equal(notificationStatus({ ...good, server: null }), "resync");
+  assert.equal(notificationStatus({ ...good, server: { enabled: false } }), "resync", "expired server row is not an explicit opt-out");
+  assert.equal(notificationStatus({ ...good, error: "HTTP 503 VAPID_CONFIG_INVALID" }), "resync");
+  assert.ok(Object.values(notificationStatusLabels).every(label => !/HTTP|VAPID|SUBSCRIPTION|PUSH/.test(label)));
+});
+
 function browserFixture({ permission = "granted", exists = true, server = null, keyMismatch = false, optOut = false, syncFails = false, gestureRequired = false, workerActive = true } = {}) {
   let subscription = exists ? makeSubscription() : null;
   let subscribed = 0, synced = 0;

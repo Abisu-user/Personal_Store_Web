@@ -67,6 +67,29 @@ export function notificationEnabled(value: PushDiagnostics) {
   return notificationRegistered(value) && value.config?.dispatcher === "ready" && !value.error;
 }
 
+/** Presentation only. Keep the detailed health model and strict enabled gate above intact. */
+export function notificationStatus(value: PushDiagnostics, optedOut = false): "enabled" | "off" | "resync" | "blocked" | "unsupported" | "unavailable" {
+  if (!value.supported || value.permission === "unsupported") return "unsupported";
+  if (value.permission === "denied") return "blocked";
+  if (optedOut || value.permission !== "granted") return "off";
+  if (notificationEnabled(value)) return "enabled";
+  if (!value.config || value.config.dispatcher !== "ready") return "unavailable";
+  return "resync";
+}
+
+export const notificationStatusLabels = {
+  enabled: "已開啟", off: "尚未開啟", resync: "需要重新同步", blocked: "通知已被系統封鎖",
+  unsupported: "此裝置不支援", unavailable: "伺服器暫時無法使用",
+};
+
+export const notificationStatusHints = {
+  enabled: "", off: "",
+  resync: "此裝置的通知連線需要重新同步。",
+  blocked: "此裝置已關閉 Personal Store 通知，請從系統設定重新允許。",
+  unsupported: "此裝置目前不支援行程通知。iPhone 請從已加入主畫面的 Personal Store 開啟。",
+  unavailable: "通知服務目前暫時無法使用，請稍後再試。",
+};
+
 export function maskSubscriptionId(id: string | null | undefined) {
   return id ? `${id.slice(0, 8)}…${id.slice(-4)}` : "尚未登記";
 }
