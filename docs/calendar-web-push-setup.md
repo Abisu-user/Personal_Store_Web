@@ -1,5 +1,7 @@
 # Calendar Web Push production setup
 
+For the diagnostic/test-push rollout, see [the Phase 1–4 handoff](calendar-push-diagnostics-2026-10-01.md). The new `send-calendar-test-push` function is deployed separately from the reminder cron function. Next/Vercel also needs the existing server-only `CALENDAR_DISPATCH_SECRET`; do not generate a new VAPID pair for a deployment. A test provider acceptance response is not proof that an iPhone displayed the notification.
+
 Code deployment alone cannot enable delivery. Apply the `20260930090000_calendar_reminders_push.sql` migration **before** deploying the new web app or Edge Function. Existing calendar rows stay intact.
 
 1. Generate one VAPID key pair (for example, with `npx web-push generate-vapid-keys`). Keep the private key outside Git. Set `VAPID_PUBLIC_KEY` in the Next/Vercel server environment. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (`mailto:` contact) as Supabase Edge Function secrets. Both public keys must match.
