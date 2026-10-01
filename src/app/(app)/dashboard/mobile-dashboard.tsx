@@ -1,4 +1,5 @@
 "use client";
+import { GlobalHeaderActions } from "@/components/layout/global-header-actions";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAppProfile } from "@/components/layout/app-profile-provider";
@@ -160,9 +161,8 @@ function DashboardContent({ email }: { email: string }) {
         <div className={styles.headerMain}>
           <div className={styles.headerCopy}><p>PERSONAL DASHBOARD</p><h1>{greeting} <span aria-hidden="true">👋</span></h1><small>{email}</small></div>
           <nav className={styles.headerActions} aria-label="首頁快速導覽">
-            <Link aria-label="搜尋" prefetch={false} href="/bookmarks"><AppIcon name="search" /></Link>
-            <Link aria-label="外觀與設定" prefetch={false} href="/appearance"><AppIcon name="settings" /></Link>
             <Link aria-label="個人檔案" className={styles.avatarButton} prefetch={false} href="/profile"><span aria-hidden="true">{profile.avatar}</span></Link>
+            <GlobalHeaderActions />
           </nav>
         </div>
         <p className={styles.personalMessage}>把重要的事，一個個收進自己的宇宙 <span aria-hidden="true">✦</span></p>

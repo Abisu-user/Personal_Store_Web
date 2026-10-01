@@ -14,8 +14,11 @@
   }
 
   .vaultPage > :global(.dashboard-card) > :global(.eyebrow),
+  .vaultPage :global(.page-heading .eyebrow),
+  .vaultPage :global(.page-heading > div:first-child > p:last-child),
   .vaultPage > :global(.dashboard-card) > h1 + p { display: none; }
   .vaultPage > :global(.dashboard-card) > h1 { margin: 0 0 14px; font-size: 1.55rem; line-height: 1.2; }
+  .vaultPage :global(.page-heading) { margin-bottom: 12px; }
 
   .vaultWorkspace { gap: 9px; margin-top: 0; }
   .vaultWorkspace :global(.vault-status-panel) {

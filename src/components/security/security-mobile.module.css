@@ -15,10 +15,13 @@
   }
 
   .securityPage > :global(.dashboard-card) > :global(.eyebrow),
+  .securityPage :global(.page-heading .eyebrow),
+  .securityPage :global(.page-heading > div:first-child > p:last-child),
   .securityPage > :global(.dashboard-card) > h1 + p,
   .desktopTitle,
   .desktopMfaLink { display: none; }
   .mobileTitle { display: inline; }
+  .securityPage :global(.page-heading) { margin-bottom: 12px; }
   .securityPage > :global(.dashboard-card) > h1 { margin: 0 0 12px; font-size: 1.55rem; line-height: 1.2; }
 
   .mobileSecuritySummary {

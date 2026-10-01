@@ -1,5 +1,6 @@
 "use client";
 
+import { GlobalHeaderActions } from "@/components/layout/global-header-actions";
 import { AppIcon } from "@/components/ui/app-icon";
 
 export type AnimeTab = "home" | "library" | "discover" | "stats" | "adult";
@@ -54,6 +55,7 @@ export function AnimeHeader({
             <AppIcon name="plus" />{activeTab === "adult" ? "新增成人作品" : "新增動漫"}
           </button>
         )}
+        <GlobalHeaderActions />
       </div>
     </header>
   );

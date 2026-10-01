@@ -1,15 +1,10 @@
 .desktopDashboard { display: none; }
 
 @media (min-width: 701px) {
-  :global(.app-main:has([data-desktop-dashboard]) [data-dashboard-queue-entry]) { display: none; }
   :global(.desktop-app-shell > .desktop-app-main .dashboard):has(.desktopDashboard) { width: calc(100% - 48px); max-width: none; height: auto; min-height: 100%; margin-inline: auto; padding: 20px 0 40px; overflow: visible; }
   .desktopDashboard { display: grid; gap: 16px; min-width: 0; color: var(--ink); }
-  .topbar, .topActions, .sectionHeading, .heroActions, .dialogHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .topbar, .sectionHeading, .heroActions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .topbarLabel, .eyebrow { margin: 0; color: var(--brand); font-size: .68rem; font-weight: 850; letter-spacing: .15em; }
-  .topActions { justify-content: flex-end; gap: 9px; }
-  .topActions button, .dialogHead button { position: relative; display: grid; width: 42px; height: 42px; place-items: center; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: color-mix(in srgb, var(--surface) 85%, transparent); cursor: pointer; }
-  .topActions :global(.app-icon) { width: 19px; height: 19px; }
-  .topActions i { position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
   .hero, .section { border: 1px solid color-mix(in srgb, var(--line) 80%, transparent); border-radius: 24px; background: color-mix(in srgb, var(--surface) var(--workspace-surface-opacity, 84%), transparent); box-shadow: 0 12px 36px rgb(20 37 75 / 8%); backdrop-filter: blur(18px); }
   .hero { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(280px, .9fr); align-items: stretch; gap: 18px; padding: clamp(18px, 1.5vw, 24px); background: linear-gradient(115deg, color-mix(in srgb, var(--surface) 92%, var(--brand-soft)), color-mix(in srgb, var(--surface) 76%, var(--brand-soft))); }
   .heroWithSchedule { grid-template-columns: minmax(0, 2.5fr) minmax(0, 1fr) minmax(0, 1.05fr); }
@@ -64,24 +59,11 @@
   .partial { padding: 0 4px; }
   .notice { display: flex; align-items: center; justify-content: space-between; padding: 12px 15px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   .notice button { border: 0; color: var(--brand); background: transparent; font-weight: 800; cursor: pointer; }
-  .overlay { position: fixed; z-index: 1000; inset: 0; display: grid; align-items: start; justify-items: center; padding: min(12vh, 100px) 20px 30px; overflow-y: auto; background: rgb(10 21 42 / 49%); backdrop-filter: blur(5px); animation: fadeIn .18s ease both; }
   .dialog { width: min(100%, 580px); max-height: min(78vh, 750px); overflow: hidden; padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: var(--surface); box-shadow: 0 24px 70px rgb(3 10 25 / 25%); animation: dialogIn .22s cubic-bezier(.2,.8,.2,1) both; }
-  .dialogHead { margin-bottom: 18px; }
-  .dialogHead h2 { margin: 3px 0 0; font-size: 1.3rem; }
-  .dialogHead button { font-size: 1.35rem; }
   .quickGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
   .quickGrid > button, .quickGrid > a { display: flex; min-height: 54px; align-items: center; gap: 11px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: color-mix(in srgb, var(--surface) 88%, var(--brand-soft)); font: inherit; font-size: .85rem; font-weight: 750; text-align: left; text-decoration: none; cursor: pointer; }
   .quickGrid :global(.app-icon) { width: 19px; height: 19px; color: var(--brand); }
   .quickNote { margin: 14px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.5; }
-  .searchDialog { width: min(100%, 660px); }
-  .searchInput { display: flex; align-items: center; gap: 11px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; }
-  .searchInput :global(.app-icon) { width: 19px; height: 19px; color: var(--brand); }
-  .searchInput input { width: 100%; min-height: 49px; padding: 0; border: 0 !important; outline: 0; color: var(--ink); background: transparent !important; font: inherit; }
-  .filters { display: flex; flex-wrap: wrap; gap: 7px; margin: 13px 0; }
-  .filters button { min-height: 33px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface); cursor: pointer; }
-  .filters button[aria-pressed="true"] { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
-  .searchResults { display: grid; max-height: 46vh; gap: 7px; overflow-y: auto; }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   @keyframes dialogIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 }
 

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { BackgroundJobIndicator } from "@/components/background-save/background-save-provider";
 import { ContextCreateButton } from "@/components/layout/context-create-button";
 import { MobileAppNavigation } from "@/components/layout/mobile-app-navigation";
 import { AppPageTransition } from "@/components/layout/app-page-transition";
@@ -109,8 +108,7 @@ export function DesktopAppShell({
         onLogoClick={toggleLogo}
         onPinClick={togglePin}
       />
-      <div className="app-main desktop-app-main app-main-with-job-status">
-        <BackgroundJobIndicator />
+      <div className="app-main desktop-app-main">
         <AppPageTransition>{children}</AppPageTransition>
         <ContextCreateButton />
       </div>

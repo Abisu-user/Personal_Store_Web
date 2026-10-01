@@ -1,4 +1,6 @@
 "use client";
+
+import { GlobalHeaderActions } from "@/components/layout/global-header-actions";
 import styles from "./anime-mobile.module.css";
 import { resolveAnimeDisplayTitle, type AnimeAlias } from "@/lib/anime/anime-alias";
 import { usePathname } from "next/navigation";
@@ -1674,9 +1676,10 @@ export function AnimeWorkspace({
             onClick={() => setAdding(true)}
             type="button"
           >
-            <AppIcon name="plus" />新增
+            <AppIcon name="plus" /><span className="sr-only">新增動漫</span>
           </button>
         )}
+        <GlobalHeaderActions />
         </div>
       </div>
       <AnimeHeader

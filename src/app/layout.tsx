@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import "./ui-foundation.css";
 import "./mobile-design-system.css";
+import "./global-header-layout.css";
 import { AppearanceProvider } from "@/components/appearance/appearance-provider";
 import { PwaClient } from "@/components/pwa/pwa-client";
 import { AppStartupProvider } from "@/components/startup/app-startup-provider";

@@ -1,3 +1,4 @@
+import { PageHeaderActions } from "@/components/layout/global-header-actions";
 import { BookmarksWorkspace } from "@/components/bookmarks/bookmarks-workspace";
 import styles from "@/components/bookmarks/bookmarks-mobile.module.css";
 import { CreateItemButton } from "@/components/layout/create-item-provider";
@@ -20,7 +21,7 @@ export default async function BookmarksPage() {
             <h1>網站收藏</h1>
             <p>將常用網址放入個人保管庫，依分類與標籤快速找回。</p>
           </div>
-          <CreateItemButton kind="bookmark">＋ 新增網站收藏</CreateItemButton>
+          <PageHeaderActions><CreateItemButton kind="bookmark">＋ 新增網站收藏</CreateItemButton></PageHeaderActions>
         </div>
         <BookmarksWorkspace />
       </section>

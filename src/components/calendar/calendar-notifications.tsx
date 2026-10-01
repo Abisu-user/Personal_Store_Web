@@ -1,103 +1,180 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ModalDialog } from "@/components/ui/modal-dialog";
+import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics } from "@/lib/calendar/push-diagnostics";
+import { inspectPushDevice, setDeviceOptOut, syncPushSubscription } from "@/lib/calendar/push-device";
 import styles from "./calendar-mobile.module.css";
 
-type Status = "loading" | "unsupported" | "unconfigured" | "denied" | "off" | "on";
-
-function decodeVapidKey(value: string) {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
-}
+type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number };
+const testErrors: Record<string, string> = {
+  SERVER_NOT_CONFIGURED: "網站伺服器尚未設定測試推播金鑰。",
+  EDGE_NOT_CONFIGURED: "Edge Function 的 VAPID 設定不完整。",
+  EDGE_UPDATE_REQUIRED: "請部署新版 send-calendar-test-push Function。",
+  DISPATCH_UNAUTHORIZED: "網站與 Edge 的派送密鑰不一致。",
+  DISPATCH_UNREACHABLE: "無法連線到推播伺服器，請稍後重新測試。",
+  VAPID_CONFIG_INVALID: "Edge 的 VAPID 格式不正確。",
+  VAPID_KEY_MISMATCH: "網站與 Edge 使用不同 VAPID 公鑰。",
+  VAPID_REJECTED: "推播服務拒絕 VAPID 驗證，請檢查固定金鑰組。",
+  SUBSCRIPTION_EXPIRED: "此裝置訂閱已失效，請先清除舊訂閱，再按修復通知建立新訂閱。",
+  SUBSCRIPTION_NOT_REGISTERED: "此裝置尚未登記，請重新同步。",
+  TEST_RATE_LIMITED: "測試太頻繁，請等待 15 秒再試。",
+  PROVIDER_RATE_LIMITED: "推播服務暫時限制請求，請稍後再試。",
+};
 
 export function CalendarNotificationSettings({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [status, setStatus] = useState<Status>("loading");
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [publicKey, setPublicKey] = useState("");
+  const [diagnostics, setDiagnostics] = useState<PushDiagnostics | null>(null);
   const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [inspecting, setInspecting] = useState(true);
+  const [message, setMessage] = useState("");
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const operation = useRef(false);
+  const inspection = useRef<Promise<Awaited<ReturnType<typeof inspectPushDevice>>> | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    async function inspect() {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
-        if (!cancelled) setStatus("unsupported");
-        return;
-      }
-      if (Notification.permission === "denied") { if (!cancelled) setStatus("denied"); return; }
-      try {
-        const sw = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-        const ready = await navigator.serviceWorker.ready;
-        const subscription = await ready.pushManager.getSubscription();
-        const response = await fetch(`/api/calendar/push-subscription${subscription ? `?endpoint=${encodeURIComponent(subscription.endpoint)}` : ""}`, { cache: "no-store" });
-        if (!response.ok) throw new Error("無法取得通知設定。");
-        const result = await response.json() as { publicKey: string; enabled: boolean };
-        if (cancelled) return;
-        setRegistration(ready ?? sw);
-        setPublicKey(result.publicKey);
-        setStatus(!result.publicKey ? "unconfigured" : subscription && result.enabled ? "on" : "off");
-      } catch (error) {
-        if (!cancelled) { setStatus("off"); setMessage(error instanceof Error ? error.message : "無法取得通知設定。"); }
-      }
-    }
-    void inspect();
+    void Promise.resolve().then(() => { if (!cancelled) setInspecting(true); });
+    // Share Strict Mode's duplicate inspection. No automatic permission prompt.
+    inspection.current ??= inspectPushDevice();
+    const pending = inspection.current;
+    void pending.then((result) => {
+      if (!cancelled) { setDiagnostics(result.diagnostics); setRegistration(result.registration); setInspecting(false); }
+    }).finally(() => { if (inspection.current === pending) inspection.current = null; });
     return () => { cancelled = true; };
   }, [open]);
 
-  async function enable() {
-    if (!registration || !publicKey || busy) return;
-    setBusy(true); setMessage("");
+  async function refresh() {
+    if (operation.current) return;
+    operation.current = true; setBusy(true); setMessage("正在同步裝置…");
     try {
-      // subscribe is called directly from the button gesture, including on iOS Home Screen PWAs.
-      const promise = registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeVapidKey(publicKey) });
-      const subscription = await promise;
-      const response = await fetch("/api/calendar/push-subscription", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(subscription.toJSON()),
-      });
-      if (!response.ok) {
-        await subscription.unsubscribe();
-        throw new Error((await response.json().catch(() => null))?.error ?? "通知訂閱無法儲存。");
-      }
-      setStatus("on");
-      setMessage("此裝置已開啟行程通知。");
+      const result = await inspectPushDevice();
+      setDiagnostics(result.diagnostics); setRegistration(result.registration);
+      setMessage(result.diagnostics.error ?? (notificationEnabled(result.diagnostics) ? "此裝置訂閱已同步。請發送測試通知確認實際接收。" : "尚未完成設定，請查看診斷詳情。"));
+    } finally { operation.current = false; setBusy(false); }
+  }
+
+  async function enable() {
+    if (!registration || !diagnostics?.config?.publicKey || operation.current) return;
+    operation.current = true; setBusy(true); setMessage("");
+    let current = diagnostics;
+    try {
+      if (Notification.permission === "denied") throw new Error("通知已被系統封鎖，請至系統設定調整。");
+      if (!diagnostics.workerActive) throw new Error("Service Worker 尚未正常啟動，請重新同步裝置。");
+      // Called directly in the gesture; permission is requested by the browser only if default.
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true,
+        applicationServerKey: decodeVapidKey(diagnostics.config.publicKey) });
+      current = { ...diagnostics, permission: Notification.permission, subscriptionExists: true,
+        keyMatches: subscriptionKeyMatches(subscription, diagnostics.config.publicKey) };
+      setDiagnostics(current);
+      if (!current.keyMatches) throw new Error("此訂閱使用不同 VAPID 公鑰，請先清除舊訂閱再重新開啟。");
+      // Temporary DB failure must not destroy the browser subscription.
+      const server = await syncPushSubscription(subscription);
+      setDeviceOptOut(diagnostics.config.accountId, false);
+      setDiagnostics({ ...current, server, error: null });
+      setMessage("此裝置已完成訂閱登記。請發送測試通知，確認手機是否收到。");
     } catch (error) {
-      setStatus(Notification.permission === "denied" ? "denied" : "off");
-      setMessage(error instanceof Error ? error.message : "無法開啟行程通知。");
-    } finally { setBusy(false); }
+      const errorMessage = error instanceof Error ? error.message : "通知設定失敗。";
+      setDiagnostics({ ...current, permission: Notification.permission, error: errorMessage });
+      setMessage(errorMessage);
+    } finally { operation.current = false; setBusy(false); }
   }
 
   async function disable() {
-    if (!registration || busy) return;
-    setBusy(true); setMessage("");
+    if (!registration || !diagnostics?.config || operation.current) return;
+    operation.current = true; setBusy(true); setMessage("");
     try {
       const subscription = await registration.pushManager.getSubscription();
       if (subscription) {
-        const response = await fetch("/api/calendar/push-subscription", {
-          method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
-        if (!response.ok) throw new Error("無法關閉此裝置的通知。");
-        await subscription.unsubscribe();
+        const response = await fetch("/api/calendar/push-subscription", { method: "DELETE", signal: AbortSignal.timeout(15_000),
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: subscription.endpoint }) });
+        if (!response.ok) throw new Error("無法關閉伺服器訂閱，請重試。");
+        setDeviceOptOut(diagnostics.config.accountId, true);
+        // Reflect the confirmed server disable even if the browser's unsubscribe then throws.
+        setDiagnostics({ ...diagnostics, server: diagnostics.server ? { ...diagnostics.server, enabled: false } : null, error: null });
+        const removed = await subscription.unsubscribe();
+        setDiagnostics({ ...diagnostics, subscriptionExists: !removed, server: diagnostics.server ? { ...diagnostics.server, enabled: false } : null });
+        setMessage(removed ? "此裝置通知已關閉。" : "伺服器通知已關閉；裝置訂閱尚未移除，可再按一次關閉。");
+      } else {
+        setDeviceOptOut(diagnostics.config.accountId, true);
+        setDiagnostics({ ...diagnostics, subscriptionExists: false, server: null });
+        setMessage("此裝置通知已關閉。");
       }
-      setStatus("off"); setMessage("此裝置已關閉行程通知。");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "無法關閉行程通知。"); }
-    finally { setBusy(false); }
+    } catch { setMessage("關閉未完成，請重新同步並重試。"); }
+    finally { operation.current = false; setBusy(false); }
   }
 
-  const unsupportedHint = typeof navigator !== "undefined" && /iPhone|iPad|iPod/i.test(navigator.userAgent) &&
-    !window.matchMedia("(display-mode: standalone)").matches;
+  async function sendTest() {
+    if (!diagnostics?.server?.id || operation.current) return;
+    operation.current = true; setBusy(true); setMessage("正在發送真正的伺服器測試通知…");
+    try {
+      const response = await fetch("/api/calendar/test-push", { method: "POST", signal: AbortSignal.timeout(20_000),
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscriptionId: diagnostics.server.id }) });
+      const body = await response.json().catch(() => ({}));
+      const result: TestResult = { ok: response.ok && body.ok === true, code: typeof body.code === "string" ? body.code : "HTTP_ERROR",
+        httpStatus: response.status, providerStatus: body.providerStatus, acceptedAt: body.acceptedAt };
+      setTestResult(result);
+      setMessage(result.ok ? "伺服器已送出測試通知；請確認此裝置是否實際收到。此結果不代表手機已顯示通知。" :
+        "測試通知發送失敗。" + (testErrors[result.code] ?? "請查看診斷詳情。"));
+      if (result.code === "SUBSCRIPTION_EXPIRED" || result.code === "SUBSCRIPTION_NOT_REGISTERED") {
+        setDiagnostics({ ...diagnostics, server: { ...diagnostics.server, enabled: false } });
+      }
+    } catch {
+      setTestResult({ ok: false, code: "NETWORK_OR_TIMEOUT", httpStatus: 0 });
+      setMessage("測試請求逾時或網路中斷；送出結果未知，請先確認手機是否收到，避免重複測試。");
+    } finally { operation.current = false; setBusy(false); }
+  }
+
+  const enabled = diagnostics ? notificationEnabled(diagnostics) : false;
+  const registered = diagnostics ? notificationRegistered(diagnostics) : false;
+  const requiresReset = Boolean(diagnostics?.subscriptionExists && (!diagnostics.keyMatches || diagnostics.server?.enabled === false));
+  const unsupported = diagnostics?.supported === false;
+  const denied = diagnostics?.permission === "denied";
+  const title = inspecting || !diagnostics ? "正在檢查…" : unsupported ? "裝置不支援" : denied ? "已被系統封鎖" :
+    enabled ? "已開啟" : registered && !diagnostics.error ? "伺服器待完成設定" : !diagnostics.config?.publicKey ? "尚未完成伺服器設定" : "通知尚未完成設定";
+  const productionMismatch = diagnostics?.config?.productionOrigin && typeof location !== "undefined" && location.origin !== diagnostics.config.productionOrigin;
+
   return <ModalDialog className={styles.notificationDialog} eyebrow="CALENDAR REMINDERS" onClose={onClose} open={open} pending={busy} title="行程通知">
     <div className={styles.notificationSettings}>
-      <p>行程提醒可在 Personal Store 關閉時送到此裝置。多台裝置可各自開啟或關閉。</p>
-      <div className={styles.notificationState}><strong>此裝置</strong><span>{status === "loading" ? "正在檢查…" : status === "on" ? "已開啟" : status === "denied" ? "已封鎖" : status === "unsupported" ? "裝置不支援" : status === "unconfigured" ? "尚未完成伺服器設定" : "未設定"}</span></div>
-      {status === "denied" && <p>通知權限已被瀏覽器或系統封鎖，請至裝置通知設定重新開啟。</p>}
-      {status === "unsupported" && <p>{unsupportedHint ? "若要接收行程通知，請將 Personal Store 加入主畫面後開啟。" : "目前瀏覽器或裝置不支援 Web Push。"}</p>}
-      {status === "unconfigured" && <p>通知伺服器尚未設定 VAPID，行程仍可正常儲存。</p>}
-      {message && <p role="status">{message}</p>}
-      {status === "off" && <button className="button" disabled={busy || !registration || !publicKey} onClick={enable} type="button">{busy ? "正在開啟通知…" : "開啟行程通知"}</button>}
-      {status === "on" && <button className="secondary-button" disabled={busy} onClick={disable} type="button">{busy ? "正在關閉…" : "關閉此裝置通知"}</button>}
-      <button className="secondary-button" disabled={busy} onClick={onClose} type="button">稍後再說</button>
+      <p>通知由伺服器發送，不依賴日曆頁面保持開啟。各裝置需分別登記。</p>
+      <div className={styles.notificationState}><strong>此裝置</strong><span>{title}</span></div>
+      {unsupported && <p>目前環境不支援 Web Push。iPhone 請從「加入主畫面」的 Personal Store 開啟，並確認 iOS 支援通知。</p>}
+      {denied && <p>請至裝置的通知設定開啟權限；網站不會重複要求授權。</p>}
+      {productionMismatch && <p>目前網址與設定的正式網址不同。不同網域不能沿用通知訂閱，請固定使用正式網址測試。</p>}
+      {diagnostics?.config && diagnostics.config.dispatcher !== "ready" && <p>{testErrors[diagnostics.config.dispatcherCode ?? ""] ?? "推播伺服器尚未完成連線檢查。"}</p>}
+      {diagnostics?.error && <p role="alert">{diagnostics.error}</p>}
+      {message && <p role="status" aria-live="polite">{message}</p>}
+      <div className={styles.notificationActions}>
+        {!registered && !requiresReset && !denied && !unsupported && <button className="button" disabled={busy || inspecting || !registration || !diagnostics?.config?.publicKey} onClick={enable} type="button">
+          {diagnostics?.permission === "granted" ? "修復通知" : "開啟行程通知"}</button>}
+        {registered && <button className="button" disabled={busy || inspecting} onClick={sendTest} type="button">發送測試通知</button>}
+        {!unsupported && <button className="secondary-button" disabled={busy || inspecting || !diagnostics} onClick={refresh} type="button">重新同步裝置</button>}
+        {diagnostics?.subscriptionExists && <button className="secondary-button" disabled={busy || inspecting} onClick={disable} type="button">{requiresReset ? "清除舊訂閱" : "關閉此裝置通知"}</button>}
+      </div>
+      <details className={styles.notificationDetails}>
+        <summary>通知診斷詳情</summary>
+        <dl>
+          <div><dt>系統通知權限</dt><dd>{diagnostics?.permission ?? "檢查中"}</dd></div>
+          <div><dt>Service Worker</dt><dd>{diagnostics?.workerActive ? "正常 / active" : "未啟動"}</dd></div>
+          <div><dt>Scope</dt><dd>{diagnostics?.workerScope ?? "—"}</dd></div>
+          <div><dt>Push Subscription</dt><dd>{diagnostics?.subscriptionExists ? "已建立" : "未建立"}</dd></div>
+          <div><dt>訂閱公鑰一致</dt><dd>{diagnostics?.keyMatches ? "是" : "未確認"}</dd></div>
+          <div><dt>伺服器登記</dt><dd>{diagnostics?.server?.enabled ? "已登記" : "未完成 / 已停用"}</dd></div>
+          <div><dt>訂閱 ID（遮蔽）</dt><dd>{maskSubscriptionId(diagnostics?.server?.id)}</dd></div>
+          <div><dt>最近同步</dt><dd>{diagnostics?.server?.lastSyncedAt ? new Date(diagnostics.server.lastSyncedAt).toLocaleString("zh-TW") : "—"}</dd></div>
+          <div><dt>Web Push 伺服器</dt><dd>{diagnostics?.config?.dispatcher === "ready" ? "公鑰一致；接收仍需實測" : diagnostics?.config?.dispatcherCode ?? "未確認"}</dd></div>
+          <div><dt>此裝置最後測試送出</dt><dd>{testResult?.acceptedAt ? new Date(testResult.acceptedAt).toLocaleString("zh-TW") : "本次尚無紀錄"}</dd></div>
+          <div><dt>手機實際接收</dt><dd>需由裝置確認，無法以 HTTP 成功判定</dd></div>
+          <div><dt>頁面 / 伺服器 Build</dt><dd>{process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown"} / {diagnostics?.config?.buildId ?? "—"}</dd></div>
+          <div><dt>Worker 版本</dt><dd>{diagnostics?.workerVersion ?? "未取得"}</dd></div>
+          <div><dt>目前 Origin</dt><dd>{typeof location === "undefined" ? "—" : location.origin}</dd></div>
+          <div><dt>正式 Origin</dt><dd>{diagnostics?.config?.productionOrigin ?? "伺服器尚未設定"}</dd></div>
+          {testResult && <><div><dt>測試 HTTP / Provider</dt><dd>{testResult.httpStatus || "無回應"} / {testResult.providerStatus ?? "—"}</dd></div>
+            <div><dt>測試代碼</dt><dd>{testResult.code}</dd></div></>}
+        </dl>
+      </details>
+      <button className="secondary-button" disabled={busy} onClick={onClose} type="button">完成</button>
     </div>
   </ModalDialog>;
 }

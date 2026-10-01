@@ -17,6 +17,7 @@
 .workspace { display: grid; gap: 16px; min-width: 0; color: var(--ink); }
 .hero, .calendarHeader, .selectedHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .hero { padding: 0 2px 4px; }
+.hero > div:first-child { min-width: 0; }
 .hero h1 { margin: 3px 0 5px; font-size: clamp(1.5rem, 2vw, 2rem); line-height: 1.2; }
 .heroDescription { margin: 0; color: var(--muted); font-size: .87rem; }
 .kicker { margin: 0; color: var(--muted); font-size: .67rem; font-weight: 800; letter-spacing: .15em; }
@@ -156,6 +157,14 @@
 .notificationSettings button { min-height: 42px; }
 .notificationState { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: .85rem; }
 .notificationState span { color: var(--brand); font-weight: 700; }
+.notificationActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.notificationActions button { flex: 1 1 160px; }
+.notificationDetails { min-width: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.notificationDetails summary { cursor: pointer; font-size: .85rem; font-weight: 700; }
+.notificationDetails dl { display: grid; gap: 8px; margin: 12px 0 0; font-size: .76rem; }
+.notificationDetails dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px; }
+.notificationDetails dt { color: var(--muted); }
+.notificationDetails dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 @keyframes enterMonth { from { opacity: .68; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (min-width: 701px) and (max-width: 1050px) {

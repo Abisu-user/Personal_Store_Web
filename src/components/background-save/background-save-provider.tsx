@@ -22,11 +22,14 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import { useDialogFocus } from "@/components/ui/use-dialog-focus";
+import { useMobileModalLayout } from "@/components/ui/mobile-modal-layout";
 import styles from "./background-save.module.css";
 
 type RuntimeJob = EnqueueBackgroundSave & { request?: BackgroundSaveRequest; maxRetries: number };
 type SaveContextValue = {
   jobs: BackgroundSaveJob[];
+  isOpen: boolean;
   enqueue: (input: EnqueueBackgroundSave) => string;
   retry: (id: string) => void;
   open: () => void;
@@ -334,7 +337,11 @@ export function BackgroundSaveProvider({ userId, children }: { userId: string; c
     setJobs((current) => current.filter((job) => job.status !== "saved"));
   }, []);
 
-  const value = useMemo<SaveContextValue>(() => ({ jobs, enqueue, retry, open: () => setPanelOpen(true) }), [enqueue, jobs, retry]);
+  const closePanel = useCallback(() => setPanelOpen(false), []);
+  const panel = useRef<HTMLElement>(null);
+  useDialogFocus(panelOpen, panel, closePanel);
+  useMobileModalLayout(panelOpen);
+  const value = useMemo<SaveContextValue>(() => ({ jobs, enqueue, retry, isOpen: panelOpen, open: () => setPanelOpen(true) }), [enqueue, jobs, retry, panelOpen]);
   const savingCount = jobs.filter((job) => ["queued", "saving", "retrying"].includes(job.status)).length;
   const failedCount = jobs.filter((job) => job.status === "failed").length;
   const offlineCount = jobs.filter((job) => job.status === "offline").length;
@@ -346,7 +353,7 @@ export function BackgroundSaveProvider({ userId, children }: { userId: string; c
       {panelOpen ? (
         <>
           <button className={styles.backdrop} type="button" aria-label="關閉儲存狀態" onClick={() => setPanelOpen(false)} />
-          <section className={styles.panel} role="dialog" aria-modal="true" aria-label="背景工作中心">
+          <section ref={panel} className={styles.panel} role="dialog" aria-modal="true" aria-label="背景工作中心">
             <header className={styles.panelHeader}>
               <div><h2 className={styles.heading}>背景工作中心</h2><p className={styles.summary}>{label}</p></div>
               <button className={styles.closeButton} type="button" onClick={() => setPanelOpen(false)} aria-label="關閉">×</button>
@@ -380,50 +387,4 @@ export function useBackgroundSave() {
   const context = useContext(BackgroundSaveContext);
   if (!context) throw new Error("useBackgroundSave 必須在 BackgroundSaveProvider 內使用。");
   return context;
-}
-
-/**
- * App-shell owned status entry. Keeping the entry outside the provider's
- * overlay guarantees one stable, reserved location across every route.
- */
-export function BackgroundJobIndicator() {
-  const context = useBackgroundSave();
-  const savingCount = context.jobs.filter((job) => ["queued", "saving", "retrying"].includes(job.status)).length;
-  const failedCount = context.jobs.filter((job) => job.status === "failed").length;
-  const offlineCount = context.jobs.filter((job) => job.status === "offline").length;
-  const tone = failedCount ? "failed" : offlineCount ? "offline" : savingCount ? "saving" : "saved";
-  const count = failedCount || offlineCount || savingCount;
-  const lastCompleted = context.jobs
-    .filter((job) => job.status === "saved")
-    .reduce<number | null>((latest, job) => latest === null || job.updatedAt > latest ? job.updatedAt : latest, null);
-  const lastSync = lastCompleted
-    ? new Intl.DateTimeFormat("zh-TW", { hour: "2-digit", minute: "2-digit" }).format(lastCompleted)
-    : null;
-  const label = failedCount
-    ? `${failedCount} 筆背景工作失敗`
-    : offlineCount
-      ? `${offlineCount} 筆工作等待連線`
-      : savingCount
-        ? `${savingCount} 筆背景工作處理中`
-        : `所有變更已同步${lastSync ? `，最後同步 ${lastSync}` : ""}`;
-
-  return (
-    <div className={styles.indicatorSlot} data-dashboard-queue-entry>
-      <button
-        aria-label={`開啟背景工作中心：${label}`}
-        className={styles.statusButton}
-        data-tone={tone}
-        onClick={context.open}
-        title={label}
-        type="button"
-      >
-        {savingCount ? (
-          <AppIcon className={`${styles.statusIcon} ${styles.spinner}`} name="storage" />
-        ) : (
-          <span className={styles.statusGlyph} aria-hidden="true">{failedCount ? "!" : offlineCount ? "↯" : "✓"}</span>
-        )}
-        {count > 0 ? <span className={styles.statusBadge}>{count > 99 ? "99+" : count}</span> : null}
-      </button>
-    </div>
-  );
 }

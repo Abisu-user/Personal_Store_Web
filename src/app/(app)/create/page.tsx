@@ -1,5 +1,6 @@
 "use client";
 
+import { PageHeaderActions } from "@/components/layout/global-header-actions";
 import { CreateItemButton, type CreateKind } from "@/components/layout/create-item-provider";
 
 const choices = [
@@ -12,5 +13,5 @@ const choices = [
 ];
 
 export default function CreatePage() {
-  return <main className="dashboard"><section className="dashboard-card"><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1><p>選擇想要新增的資料類型；你的網站收藏、筆記、程式碼與檔案頁會專心顯示已儲存的內容。</p><div className="create-choice-grid">{choices.map((choice) => <CreateItemButton className="create-choice" kind={(choice.href.includes("vocabulary") ? "vocabulary" : choice.href.split("/").pop()) as CreateKind} key={choice.href}><i>{choice.icon}</i><div><h2>{choice.title}</h2><p>{choice.description}</p></div><span>→</span></CreateItemButton>)}</div></section></main>;
+  return <main className="dashboard"><section className="dashboard-card"><header className="page-heading"><div><p className="eyebrow">CREATE NEW ITEM</p><h1>新增資料</h1><p>選擇想要新增的資料類型；你的網站收藏、筆記、程式碼與檔案頁會專心顯示已儲存的內容。</p></div><PageHeaderActions /></header><div className="create-choice-grid">{choices.map((choice) => <CreateItemButton className="create-choice" kind={(choice.href.includes("vocabulary") ? "vocabulary" : choice.href.split("/").pop()) as CreateKind} key={choice.href}><i>{choice.icon}</i><div><h2>{choice.title}</h2><p>{choice.description}</p></div><span>→</span></CreateItemButton>)}</div></section></main>;
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeaderActions } from "@/components/layout/global-header-actions";
+
 import { CSSProperties, FormEvent, useCallback, useEffect, useState } from "react";
 
 import { formatBytes, usagePercentage } from "@/lib/format-bytes";
@@ -122,7 +124,7 @@ export function StorageUsageWorkspace() {
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(null), 3000); return () => window.clearTimeout(timer); }, [notice]);
 
   return <div className="storage-usage-workspace">
-    <header className="page-heading storage-page-heading"><div><p className="eyebrow">MY STORAGE</p><h1>儲存空間</h1><p>先查看我的使用量；管理員可在下方另外查看整個系統。</p></div><button className="secondary-button storage-refresh" disabled={updating} onClick={() => void refresh(true)} type="button">{updating ? "↻ 更新中" : "↻ 更新"}</button></header>
+<header className="page-heading storage-page-heading"><div><p className="eyebrow">MY STORAGE</p><h1>儲存空間</h1><p>先查看我的使用量；管理員可在下方另外查看整個系統。</p></div><PageHeaderActions><button className="secondary-button storage-refresh" disabled={updating} onClick={() => void refresh(true)} type="button">{updating ? "↻ 更新中" : "↻ 更新"}</button></PageHeaderActions></header>
     {notice && <p className={notice.startsWith("✓") ? "notice success" : "notice error"} role="status">{notice}</p>}
     {loading && !usage ? <div className="storage-skeletons"><div /><div /></div> : <>
       <section className="storage-section-heading"><p className="eyebrow">MY USAGE</p><h2>我的使用量</h2></section>

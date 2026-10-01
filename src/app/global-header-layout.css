@@ -1,0 +1,30 @@
+/* Layout only. The icon buttons themselves belong to GlobalHeaderActions. */
+.page-header-actions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 12px; }
+.page-header-actions > .button, .page-header-actions > .secondary-button { width: auto; }
+.app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) { align-items: flex-start; gap: 12px; }
+.app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) > div:first-child { min-width: 0; flex: 1 1 auto; }
+.app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) h1 { overflow-wrap: anywhere; }
+.app-main :is(.page-heading, .dashboard-header):has([data-global-header-actions]) > div:first-child > p:last-child { color: var(--muted); }
+@media (min-width: 701px) {
+  .anime-shared-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .anime-shared-header .anime-header-title { grid-column: 1; grid-row: 1; }
+  .anime-shared-header .anime-toolbar-actions { grid-column: 2; grid-row: 1; justify-content: flex-end; align-self: start; }
+  .anime-shared-header .anime-tabs { grid-column: 1 / -1; grid-row: 2; width: fit-content; max-width: 100%; }
+}
+@media (max-width: 700px) {
+  .page-header-actions { gap: 8px; }
+  .page-header-actions > :is(.button, .secondary-button) { min-width: 44px; min-height: 44px; max-width: 108px; padding-inline: 8px; font-size: .78rem; }
+  .app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) { flex-direction: row; align-items: flex-start; gap: 8px; }
+  .app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) h1 { font-size: clamp(1.25rem, 5.5vw, 1.55rem); line-height: 1.2; }
+  .mobile-page-header { gap: 4px; }
+  .mobile-page-header-copy { flex: 1 1 auto; }
+  .mobile-page-eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-page-header h1 { overflow: hidden; font-size: clamp(1.25rem, 5.5vw, 1.55rem); text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-page-header-actions { gap: 4px; }
+  .mobile-page-header-actions > button:has(.app-icon) { display: inline-flex; width: 44px; min-width: 44px; height: 44px; align-items: center; justify-content: center; padding: 0; }
+  .mobile-page-header-actions > button:has(.app-icon) > span:not(.sr-only) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .anime-mobile-heading { gap: 8px; }
+  .anime-mobile-heading h1 { flex: 1 1 auto; font-size: clamp(1.25rem, 5.5vw, 1.55rem); }
+  .anime-mobile-heading > div:last-child { flex: 0 0 auto; gap: 4px; }
+  .anime-mobile-heading .anime-mobile-create-button { width: 44px; min-width: 44px; height: 44px; padding: 0; }
+}

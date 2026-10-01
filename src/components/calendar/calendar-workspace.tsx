@@ -1,5 +1,7 @@
 "use client";
 
+import { GlobalHeaderActions } from "@/components/layout/global-header-actions";
+
 import { CSSProperties, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -280,7 +282,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
   return <section className={styles.workspace}>
     <header className={styles.hero}>
       <div><p className={styles.kicker}>CALENDAR</p><h1>私人日曆</h1><p className={styles.heroDescription}>行程、節日與提醒集中在同一個月曆裡；放假日以紅色標示。</p></div>
-      <div className={styles.stats}><div><strong>{monthEventCount}</strong><span>本月行程</span></div><div><strong>{monthOfficialAvailable ? monthHolidayCount : "—"}</strong><span>本月放假</span></div></div>
+      <div className="page-header-actions"><div className={styles.stats}><div><strong>{monthEventCount}</strong><span>本月行程</span></div><div><strong>{monthOfficialAvailable ? monthHolidayCount : "—"}</strong><span>本月放假</span></div></div><GlobalHeaderActions /></div>
     </header>
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     <div className={styles.layout}>
