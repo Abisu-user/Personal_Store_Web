@@ -1,6 +1,14 @@
 .mobileStatusIcon { display: none; }
+.pageContent { min-width: 0; padding: 0 28px 24px; }
+.pageContent > :global(.page-heading) { margin: 0; }
+.pageContent > :global(.page-heading) h1 { margin: 0; }
+.pageContent > :global(.vault-workspace) { margin-top: 16px; }
+.pageContent:has(:global(.vault-lock-screen)) { padding: 0; }
+.pageContent:has(:global(.vault-lock-screen)) > :global(.page-heading) { display: none; }
 
 @media (max-width: 700px) {
+  .pageContent { padding: 14px 12px; }
+  .pageContent > :global(.vault-workspace) { margin-top: 12px; }
   :global(.app-main) .vaultPage:global(.dashboard) {
     width: calc(100% - 16px);
     max-width: none;
@@ -8,16 +16,9 @@
     padding: 0 0 16px;
   }
 
-  :global(.app-main) .vaultPage > :global(.dashboard-card) {
-    padding: 14px 12px;
-    border-radius: 22px;
-  }
-
-  .vaultPage > :global(.dashboard-card) > :global(.eyebrow),
   .vaultPage :global(.page-heading .eyebrow),
-  .vaultPage :global(.page-heading > div:first-child > p:last-child),
-  .vaultPage > :global(.dashboard-card) > h1 + p { display: none; }
-  .vaultPage > :global(.dashboard-card) > h1 { margin: 0 0 14px; font-size: 1.55rem; line-height: 1.2; }
+  .vaultPage :global(.page-heading > div:first-child > p:last-child) { display: none; }
+  .vaultPage :global(.page-heading h1) { font-size: 1.55rem; line-height: 1.2; }
   .vaultPage :global(.page-heading) { margin-bottom: 12px; }
 
   .vaultWorkspace { gap: 9px; margin-top: 0; }
@@ -98,7 +99,7 @@
   .vaultPage :global(.vault-gate-security li) { padding-left: 9px; }
   .vaultPage :global(.vault-gate-security span) { font-size: .74rem; }
 
-  :global(html[data-density="compact"]) .vaultPage > :global(.dashboard-card) { padding-block: 10px; }
+  :global(html[data-density="compact"]) .pageContent:not(:has(:global(.vault-lock-screen))) { padding-block: 10px; }
 }
 
 @media (max-width: 350px) {

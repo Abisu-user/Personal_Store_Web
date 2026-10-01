@@ -31,13 +31,13 @@ const fixtureCss = `
   * { box-sizing:border-box; }
   html, body { width:100%; min-height:100%; margin:0; color:var(--ink); background:linear-gradient(145deg,#dbeafe,#f8fafc 46%,#ede9fe); font-family:Arial,sans-serif; }
   .app-main { width:100%; min-height:100dvh; }
-  .dashboard, .dashboard-card { width:100%; height:100dvh; }
-  .dashboard-card { padding:20px; }
+  .dashboard, .vault-page-content { width:100%; height:100dvh; }
+  .vault-page-content { padding:20px; }
   @media (min-width:1100px) { .app-main { width:calc(100% - 80px); margin-left:80px; } }
   ${moduleCss}`;
 
 const fixture = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><style>${fixtureCss}</style></head><body>
-  <main class="app-main"><div class="dashboard"><section class="dashboard-card">
+  <main class="app-main"><div class="dashboard"><section class="vault-page-content">
     <section class="lockScreen vault-lock-screen" data-phase="locked"><div class="lockPanel">
       <section class="visualColumn">
         <header class="header"><span class="headerIcon">◆</span><div><p>PERSONAL STORE · PRIVATE VAULT</p><h2>私密保管庫</h2><span>輸入 Vault 密碼，開啟只在這台裝置記憶體中存在的解鎖金鑰。</span></div></header>
@@ -60,7 +60,7 @@ async function measure(client, viewport) {
   await client.send("Emulation.setDeviceMetricsOverride", { width:viewport.width, height:viewport.height, deviceScaleFactor:1, mobile:viewport.mode === "mobile" });
   await client.send("Runtime.evaluate", { expression:`document.open();document.write(${JSON.stringify(fixture)});document.close();`, returnByValue:true });
   await client.send("Runtime.evaluate", { expression:"new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))", awaitPromise:true });
-  const response = await client.send("Runtime.evaluate", { expression:`(() => { const rect = (selector) => { const value = document.querySelector(selector)?.getBoundingClientRect(); return value ? { x:value.x, y:value.y, width:value.width, height:value.height, right:value.right, bottom:value.bottom } : null; }; const display = (selector) => getComputedStyle(document.querySelector(selector)).display; return { innerWidth, scrollWidth:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth), card:rect('.dashboard-card'), lockScreen:rect('.lockScreen'), panel:rect('.lockPanel'), visual:rect('.visualColumn'), safe:rect('.safe'), auth:rect('.authCard'), input:rect('.passwordControl input'), statusDisplay:display('.statusRow'), consoleDisplay:display('.consoleHeading'), gridColumns:getComputedStyle(document.querySelector('.lockPanel')).gridTemplateColumns }; })()`, returnByValue:true });
+  const response = await client.send("Runtime.evaluate", { expression:`(() => { const rect = (selector) => { const value = document.querySelector(selector)?.getBoundingClientRect(); return value ? { x:value.x, y:value.y, width:value.width, height:value.height, right:value.right, bottom:value.bottom } : null; }; const display = (selector) => getComputedStyle(document.querySelector(selector)).display; return { innerWidth, scrollWidth:Math.max(document.documentElement.scrollWidth,document.body.scrollWidth), card:rect('.vault-page-content'), lockScreen:rect('.lockScreen'), panel:rect('.lockPanel'), visual:rect('.visualColumn'), safe:rect('.safe'), auth:rect('.authCard'), input:rect('.passwordControl input'), statusDisplay:display('.statusRow'), consoleDisplay:display('.consoleHeading'), gridColumns:getComputedStyle(document.querySelector('.lockPanel')).gridTemplateColumns }; })()`, returnByValue:true });
   if ([390, 1024, 1440].includes(viewport.width) && viewport.height !== 700) { const screenshot = await client.send("Page.captureScreenshot", { format:"png", fromSurface:true }); writeFileSync(join(process.env.TEMP, `vault-lock-${viewport.width}.png`), Buffer.from(screenshot.data, "base64")); }
   return response.result.value;
 }

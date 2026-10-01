@@ -1,4 +1,7 @@
-.vaultScope :global(.vault-item) { min-height: 0; gap: 9px; }
+.vaultScope :global(.vault-item) { grid-template-columns: minmax(0, 1fr); justify-content: stretch; min-height: 0; gap: 9px; }
+.vaultScope :global(.vault-toolbar) { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; }
+.vaultScope :global(.vault-toolbar > button) { white-space: nowrap; min-width: 64px; }
+.vaultScope :global(.vault-grid) { align-items: start; }
 .vaultScope :global(.vault-item > header) { min-height: 32px; }
 .vaultScope :global(.vault-item-content) { gap: 8px; }
 .vaultScope :global(.vault-item-menu-popover) { z-index: 6; }

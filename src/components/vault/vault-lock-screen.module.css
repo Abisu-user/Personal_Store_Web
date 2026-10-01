@@ -15,10 +15,7 @@
   isolation: isolate;
 }
 
-:global(.app-main) :global(.dashboard) > :global(.dashboard-card:has(.vault-lock-screen)) { overflow: hidden; padding: 0; }
-:global(.dashboard-card:has(.vault-lock-screen)) > :global(.eyebrow),
-:global(.dashboard-card:has(.vault-lock-screen)) > h1,
-:global(.dashboard-card:has(.vault-lock-screen)) > h1 + p { display: none; }
+:global(.app-main) :global(.dashboard) > :global(.vault-page-content:has(.vault-lock-screen)) { overflow: hidden; padding: 0; }
 
 .lockPanel { display: grid; width: min(100%, 760px); justify-items: center; gap: clamp(18px, 2.8vh, 28px); }
 .visualColumn { display: grid; width: 100%; justify-items: center; gap: clamp(14px, 2vh, 20px); }
@@ -174,7 +171,8 @@ html[data-theme="dark"] .errorMessage { color: #ff98a2; background: rgb(127 29 2
 
 @media (min-width: 1100px) {
   :global(.app-main) :global(.dashboard:has(.vault-lock-screen)) { display: grid; place-items: center; padding: clamp(16px, 2vw, 32px); }
-  :global(.app-main) :global(.dashboard) > :global(.dashboard-card:has(.vault-lock-screen)) { width: min(100%, 1320px); height: min(780px, calc(100dvh - 32px)); min-height: 0; border: 1px solid color-mix(in srgb, var(--line) 68%, transparent); border-radius: clamp(24px, 2.2vw, 34px); background: color-mix(in srgb, var(--surface) 44%, transparent); box-shadow: 0 28px 70px rgb(15 34 68 / 13%), inset 0 1px 0 rgb(255 255 255 / 25%); backdrop-filter: blur(22px) saturate(112%); }
+  :global(.app-main) :global(.dashboard) > :global(.vault-page-content:has(.vault-lock-screen)) { width: min(100%, 1320px); height: min(780px, calc(100dvh - 32px)); min-height: 0; }
+  .lockScreen { border-radius: clamp(24px, 2.2vw, 34px); }
   .lockScreen { min-height: 100%; padding: clamp(26px, 3.5vw, 58px); }
   .lockPanel { width: 100%; max-width: 1200px; grid-template-columns: minmax(0, 1.08fr) minmax(360px, .72fr); align-items: center; justify-items: stretch; gap: clamp(34px, 4.5vw, 72px); }
   .visualColumn { justify-items: start; gap: clamp(16px, 2vh, 22px); }
@@ -195,7 +193,6 @@ html[data-theme="dark"] .errorMessage { color: #ff98a2; background: rgb(127 29 2
 
 @media (max-width: 700px) {
   .lockScreen { min-height: calc(var(--app-interactive-height, 100dvh) - 8px); padding: max(14px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(18px, calc(env(safe-area-inset-bottom) + 8px)) max(12px, env(safe-area-inset-left)); border-radius: 0; overflow-y: auto; overscroll-behavior: contain; }
-  :global(.app-main) :global(.dashboard) > :global(.dashboard-card:has(.vault-lock-screen)) { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
   .lockPanel { width: min(100%, 430px); gap: clamp(10px, 1.8vh, 15px); }
   .visualColumn { gap: clamp(10px, 1.8vh, 15px); }
   .header { width: min(100%, 400px); grid-template-columns: 42px minmax(0, 1fr); gap: 10px; }

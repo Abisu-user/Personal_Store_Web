@@ -1,6 +1,6 @@
 "use client";
 
-import { PageHeaderActions } from "@/components/layout/global-header-actions";
+import { VocabularyHeader } from "@/components/vocabulary/vocabulary-header";
 import { CreateItemModal, useCreateFlow, useCreatedItemRefresh } from "@/components/ui/create-item-modal";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 
@@ -381,7 +381,7 @@ export function VocabularyWorkspace({ initialData, createMode = false }: { initi
   return <section className="vocabulary-workspace">
     {pending && <OperationStatus label="正在更新單字資料…" />}
     {notice && <p className="notice success" role="status">{notice}</p>}
-<header className="vocabulary-header"><div><p className="eyebrow">VOCABULARY LEARNING</p><h1>單字學習</h1><p>記錄、整理與間隔複習你的日文、英文及更多語言。</p></div><PageHeaderActions><button className="button vocabulary-primary-action" onClick={() => setDraft(blankDraft())} type="button">＋ 新增單字</button></PageHeaderActions></header>
+<VocabularyHeader onCreate={() => setDraft(blankDraft())} />
     <nav aria-label="單字學習功能" className="vocabulary-tabs">{tabs.map((item) => { const isPrimary = primaryTabs.some((primary) => primary.id === item.id); const mobileItem = primaryTabs.find((primary) => primary.id === item.id); return <button className={`${tab === item.id ? "active" : ""} ${item.id === "decks" ? "vocabulary-decks-tab" : ""} ${isPrimary ? "" : "vocabulary-tab-overflow"}`} key={item.id} onClick={() => activateTab(item.id)} type="button"><span className="vocabulary-tab-wide">{item.label}</span><span className="vocabulary-mobile-only">{mobileItem?.mobileLabel || item.label}</span>{item.id === "review" && dueCards.length > 0 ? <b>{dueCards.length}</b> : null}</button>; })}<button aria-expanded={moreOpen} className={`vocabulary-tab-more ${moreTabs.some((item) => item.id === tab) ? "active" : ""} ${tab === "decks" ? "deck-active" : ""}`} onClick={() => setMoreOpen(true)} type="button">更多</button></nav>
 
     {tab === "home" && <VocabularyFeatureHome data={data} loaded={loaded && dataMode === "active"} dueCount={dueCards.length} onReview={() => activateTab("review")} onOverview={() => activateTab("overview", true)} onOpen={setSelected} onCreate={() => setDraft(blankDraft())} />}
