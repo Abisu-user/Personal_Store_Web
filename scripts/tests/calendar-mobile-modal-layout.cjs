@@ -74,8 +74,8 @@ async function main() {
     const ready = await send("Runtime.evaluate", { expression: `document.readyState === 'complete' && document.styleSheets.length === ${cssFiles.length}`, returnByValue: true });
     if (!ready.result.result.value) throw new Error("Stylesheet not loaded yet");
   });
-  for (const width of [375, 390, 402, 430]) {
-    await send("Emulation.setDeviceMetricsOverride", { width, height: width === 375 ? 650 : 844, deviceScaleFactor: 2, mobile: true });
+  for (const width of [350, 375, 390, 402, 430]) {
+    await send("Emulation.setDeviceMetricsOverride", { width, height: width <= 375 ? 650 : 844, deviceScaleFactor: 2, mobile: true });
     await pause(350);
     const result = await send("Runtime.evaluate", { expression: `(() => {
       const dialogs = [...document.querySelectorAll('.modal-dialog')];
@@ -84,9 +84,28 @@ async function main() {
       const footer = editor.querySelector('.create-item-footer');
       content.scrollTop = content.scrollHeight;
       const color = editor.querySelector('fieldset:last-of-type');
+      const form = editor.querySelector('form');
+      const titleInput = form.querySelector('input[placeholder]');
+      const dateSection = form.querySelector('.${cal("dateSection")}');
+      const dateLabel = dateSection.querySelector('label');
+      const dateInput = dateLabel.querySelector('input');
+      const timeRow = form.querySelector('.${cal("timeRow")}');
+      const timeInputs = [...timeRow.querySelectorAll('input')];
+      const box = (element) => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
+        clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, computedWidth: getComputedStyle(element).width,
+        minWidth: getComputedStyle(element).minWidth, maxWidth: getComputedStyle(element).maxWidth,
+        boxSizing: getComputedStyle(element).boxSizing });
       return { width: innerWidth, overflow: document.documentElement.scrollWidth - innerWidth,
         editorBottom: editor.getBoundingClientRect().bottom, footerTop: footer.getBoundingClientRect().top,
         colorBottom: color.getBoundingClientRect().bottom, editorScrolls: content.scrollHeight > content.clientHeight,
+        boxes: { content: box(content), form: box(form), title: box(titleInput), dateSection: box(dateSection),
+          dateLabel: box(dateLabel), dateInput: box(dateInput), timeRow: box(timeRow), timeInputs: timeInputs.map(box),
+          footer: box(footer) },
+        timeColumns: getComputedStyle(timeRow).gridTemplateColumns,
+        timeGap: getComputedStyle(timeRow).columnGap,
+        footerMetrics: { height: footer.getBoundingClientRect().height, paddingTop: getComputedStyle(footer).paddingTop,
+          paddingBottom: getComputedStyle(footer).paddingBottom,
+          buttonBottomGap: footer.getBoundingClientRect().bottom - footer.querySelector('button').getBoundingClientRect().bottom },
         sheetTop: sheet.getBoundingClientRect().top, sheetBottom: sheet.getBoundingClientRect().bottom,
         sheetScrolls: sheet.querySelector('.modal-dialog-content').scrollHeight > sheet.querySelector('.modal-dialog-content').clientHeight,
         sheetLayer: getComputedStyle(sheet.parentElement).zIndex, editorLayer: getComputedStyle(editor.parentElement).zIndex,
@@ -94,11 +113,43 @@ async function main() {
         optionAnimation: getComputedStyle(sheet).animationName, optionRules: [...document.styleSheets].flatMap(style => [...style.cssRules]).filter(rule => rule.cssText.includes('option-backdrop-in')).length };
     })()`, returnByValue: true });
     const metrics = result.result.result.value;
-    console.log(`${width}px`, metrics);
-    if (metrics.overflow > 1 || metrics.colorBottom > metrics.footerTop - 15 || metrics.sheetBottom > (width === 375 ? 650 : 844) + 1 || Number(metrics.sheetLayer) <= Number(metrics.editorLayer)) {
+    const { boxes } = metrics;
+    console.log(`${width}px`, JSON.stringify({
+      form: boxes.form.computedWidth, title: [boxes.title.left, boxes.title.right],
+      date: [boxes.dateInput.left, boxes.dateInput.right], dateMinWidth: boxes.dateSection.minWidth,
+      time: boxes.timeInputs.map(({ left, right }) => [left, right]), timeColumns: metrics.timeColumns, timeGap: metrics.timeGap,
+      footerHeight: metrics.footerMetrics.height, footerBottomGap: metrics.footerMetrics.buttonBottomGap,
+      footerPadding: [metrics.footerMetrics.paddingTop, metrics.footerMetrics.paddingBottom],
+      overflow: metrics.overflow, colorGap: metrics.footerTop - metrics.colorBottom,
+    }));
+    if (metrics.overflow > 1 || metrics.colorBottom > metrics.footerTop - 15 || metrics.sheetBottom > (width <= 375 ? 650 : 844) + 1 || Number(metrics.sheetLayer) <= Number(metrics.editorLayer)
+      || boxes.form.scrollWidth > boxes.form.clientWidth + 1 || boxes.dateSection.scrollWidth > boxes.dateSection.clientWidth + 1
+      || boxes.timeRow.scrollWidth > boxes.timeRow.clientWidth + 1 || Math.abs(boxes.dateInput.left - boxes.title.left) > 1
+      || Math.abs(boxes.dateInput.right - boxes.title.right) > 1 || boxes.timeInputs.some((item) => item.left < boxes.timeRow.left - 1 || item.right > boxes.timeRow.right + 1)
+      || boxes.dateInput.boxSizing !== "border-box" || boxes.timeInputs.some((item) => item.boxSizing !== "border-box")
+      || metrics.footerMetrics.buttonBottomGap > 20 || metrics.footerMetrics.height > 85
+      || (width >= 375 && boxes.timeInputs[1].left <= boxes.timeInputs[0].right + 4)) {
       throw new Error(`${width}px calendar modal layout failed`);
     }
   }
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  const safeAreaCommand = await send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 0, right: 0, bottom: 34, left: 0 } });
+  if (!safeAreaCommand.error) {
+    const safeAreaResult = await send("Runtime.evaluate", { expression: `(() => {
+      const editor = document.querySelector('.modal-dialog.create-item-dialog');
+      const footer = editor.querySelector('.create-item-footer');
+      return { footerBottomPadding: getComputedStyle(footer).paddingBottom,
+        backdropBottomPadding: getComputedStyle(editor.parentElement).paddingBottom,
+        buttonBottomGap: footer.getBoundingClientRect().bottom - footer.querySelector('button').getBoundingClientRect().bottom,
+        editorBottom: editor.getBoundingClientRect().bottom };
+    })()`, returnByValue: true });
+    const safeArea = safeAreaResult.result.result.value;
+    console.log("390px simulated 34px safe area", safeArea);
+    if (safeArea.footerBottomPadding !== "12px" || safeArea.buttonBottomGap > 20 || safeArea.editorBottom > 811) {
+      throw new Error("Calendar modal double-counted bottom safe area");
+    }
+    await send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 0, right: 0, bottom: 0, left: 0 } });
+  } else console.log("Chrome Safe Area emulation unavailable:", safeAreaCommand.error.message);
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   const keyboardResult = await send("Runtime.evaluate", { expression: `(() => {
     document.documentElement.style.setProperty('--mobile-modal-viewport-height', '480px');
