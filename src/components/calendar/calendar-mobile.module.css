@@ -104,8 +104,15 @@
 .form input:not([type="checkbox"]), .form select, .form textarea { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; font-size: .87rem; }
 .form textarea { resize: vertical; }
 .formRow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.dateSection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
 .form .allDayControl { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); font-size: .85rem; cursor: pointer; }
 .allDayControl input { width: 17px; height: 17px; accent-color: var(--brand); }
+.allDaySwitch { display: none; }
+.allDaySwitch::after { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 3px rgb(0 0 0 / 18%); content: ""; transition: transform .18s ease; }
+.allDayControl input:checked + .allDaySwitch { background: var(--brand); }
+.allDayControl input:checked + .allDaySwitch::after { transform: translateX(16px); }
+.mobileRecurrence, .mobileAddReminder { display: none; }
+.desktopReminderControls { display: grid; gap: 8px; }
 .form fieldset { margin: 0; padding: 0; border: 0; }
 .form legend { margin-bottom: 7px; color: var(--muted); font-size: .78rem; font-weight: 700; }
 .colorChoices { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 3px; }
@@ -127,6 +134,20 @@
 .customReminder { display: grid; grid-template-columns: 80px minmax(0, 130px) auto; align-items: center; gap: 8px; }
 .addReminder { justify-self: start; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--brand); font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
 .addReminder:disabled { opacity: .5; cursor: not-allowed; }
+.customPicker { display: grid; gap: 10px; border-top: 1px solid var(--line); }
+.customPickerToggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; padding: 8px 3px; border: 0; background: transparent; color: var(--ink); text-align: left; font: inherit; font-weight: 700; cursor: pointer; }
+.customPickerToggle > span { color: var(--muted); font-size: 1.3rem; }
+.customPickerSelected { display: flex; flex-wrap: wrap; gap: 8px; }
+.customPickerSelected button { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--brand); border-radius: 10px; background: var(--brand-soft); color: var(--ink); font: inherit; font-size: .84rem; cursor: pointer; }
+.customPickerSelected button > span { color: var(--brand); font-size: 1rem; }
+.customPickerControls { display: grid; gap: 10px; padding-bottom: 8px; }
+.customPickerControls label { display: grid; gap: 6px; color: var(--muted); font-size: .78rem; font-weight: 700; }
+.customPickerControls input { width: 100%; min-height: 46px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); color: var(--ink); font: inherit; font-size: 1rem; }
+.customPickerUnits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.customPickerUnits button { min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font: inherit; cursor: pointer; }
+.customPickerUnits button[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); font-weight: 800; }
+.customPickerControls > button { justify-self: start; min-height: 44px; }
+.pickerError { margin: 0; color: var(--danger, #b04461); font-size: .8rem; }
 .notificationDialog { width: min(94vw, 450px); }
 .notificationSettings { display: grid; gap: 12px; }
 .notificationSettings p { margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.5; }
@@ -175,10 +196,45 @@
   .timelineEmptySlot { display: none; }
   .timelineSlot { min-height: 43px; }
   .upcomingRow:nth-child(n + 5) { display: none; }
-  .editorDialog { width: 100%; max-height: min(92dvh, 820px); }
+  :global(.modal-dialog-backdrop):has(> .editorDialog) { padding: max(14px, env(safe-area-inset-top)) 10px max(18px, env(safe-area-inset-bottom)); }
+  .editorDialog:global(.modal-dialog.create-item-dialog) { width: calc(100vw - 20px) !important; height: min(92dvh, calc(var(--mobile-modal-viewport-height, 100dvh) - max(28px, env(safe-area-inset-top)) - max(36px, env(safe-area-inset-bottom)))) !important; max-height: min(92dvh, calc(var(--mobile-modal-viewport-height, 100dvh) - max(28px, env(safe-area-inset-top)) - max(36px, env(safe-area-inset-bottom)))) !important; min-height: 0; }
+  .editorDialog > :global(.modal-dialog-header) { align-items: center; padding: 12px 16px 10px; }
+  .editorDialog :global(.modal-dialog-header .eyebrow) { margin-bottom: 2px; font-size: .61rem; }
+  .editorDialog :global(.modal-dialog-header h2) { font-size: 1.18rem; }
+  .editorDialog :global(.modal-dialog-close) { width: 44px; height: 44px; min-height: 44px; }
+  .editorDialog > :global(.modal-dialog-content) { min-height: 0; padding: 14px 16px 26px !important; scroll-padding-bottom: 24px; }
+  .editorDialog > :global(.create-item-footer) { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  .editorDialog :global(.create-form-actions) { width: 100%; }
+  .editorDialog :global(.create-form-actions > button) { min-height: 44px !important; }
+  .editorDialog :global(.create-form-actions > button:last-child) { min-width: 120px; }
+  .form { gap: 16px; }
+  .form label, .form legend, .mobileRecurrence > span { font-size: .8rem; font-weight: 750; }
+  .form input:not([type="checkbox"]), .form select { min-width: 0; max-width: 100%; min-height: 50px; padding: 9px 12px; font-size: 1rem; box-sizing: border-box; }
+  .dateSection { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .form .allDayControl { position: relative; display: flex; justify-content: space-between; min-height: 44px; padding: 5px 2px; border: 0; background: transparent; }
+  .allDayControl input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .allDayControl:focus-within { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .allDaySwitch { position: relative; display: block; flex: 0 0 38px; height: 22px; border-radius: 999px; background: var(--line); transition: background .18s ease; }
   .formRow { gap: 8px; }
-  .form { gap: 10px; }
+  .timeRow > label { min-width: 0; }
+  .desktopRecurrence, .desktopReminderControls { display: none !important; }
+  .mobileRecurrence { display: grid; gap: 5px; color: var(--muted); }
+  .mobileRecurrence > button { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 50px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); text-align: left; font: inherit; font-size: 1rem; cursor: pointer; }
+  .mobileRecurrence > button > span { color: var(--muted); font-size: 1.3rem; }
+  .reminderSection { gap: 8px; }
+  .reminderList { display: grid; gap: 6px; }
+  .reminderChip { justify-content: space-between; min-height: 48px; padding: 2px 2px 2px 12px; }
+  .reminderChip button { width: 44px; height: 44px; font-size: 1.25rem; }
+  .mobileAddReminder { display: inline-flex; align-items: center; min-height: 44px; }
+  .form textarea { min-height: 94px; padding: 10px 12px; font-size: 1rem; }
+  .form textarea::placeholder { color: var(--muted); font-size: .83rem; font-weight: 400; }
+  .colorChoices { gap: 5px; padding: 5px 4px 7px; }
+  .colorChoice { width: 44px; height: 44px; border-width: 4px; }
+  .customColorButton { min-height: 44px; }
   .notificationDialog { width: 100%; }
+}
+@media (max-width: 375px) {
+  .timeRow { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 390px) {
   .calendarPage:global(.dashboard) { width: calc(100% - 12px); }

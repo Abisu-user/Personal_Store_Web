@@ -6,16 +6,18 @@ import { ConfirmDialog } from "./confirm-dialog";
 type CreateFlow = { close: () => void; dismiss: () => void; complete: () => void; setPending: (pending: boolean) => void; footer: HTMLDivElement | null };
 const CreateFlowContext = createContext<CreateFlow | null>(null);
 export const useCreateFlow = () => useContext(CreateFlowContext);
-type CreateItemModalProps = { title: string; open: boolean; onClose: () => void; onSaved?: () => void; pending?: boolean; className?: string; children: ReactNode };
+type CreateItemModalProps = { title: string; open: boolean; onClose: () => void; onSaved?: () => void; pending?: boolean; className?: string; dirtyKey?: string; children: ReactNode };
 export function CreateItemModal(props: CreateItemModalProps) {
   return props.open ? <CreateItemModalBody {...props} /> : null;
 }
-function CreateItemModalBody({ title, open, onClose, onSaved = onClose, children, className = "", pending: externalPending = false }: CreateItemModalProps) {
+function CreateItemModalBody({ title, open, onClose, onSaved = onClose, children, className = "", dirtyKey, pending: externalPending = false }: CreateItemModalProps) {
   const [formPending, setPending] = useState(false);
   const pending = externalPending || formPending;
   const [confirm, setConfirm] = useState(false);
   const [footer, setFooter] = useState<HTMLDivElement | null>(null);
   const dirty = useRef(false);
+  const initialDirtyKey = useRef(dirtyKey);
+  useEffect(() => { if (dirtyKey !== initialDirtyKey.current) dirty.current = true; }, [dirtyKey]);
   const close = () => { if (!pending && !confirm) { if (dirty.current) setConfirm(true); else onClose(); } };
   return <CreateFlowContext.Provider value={{ close, dismiss: onClose, complete: onSaved, setPending, footer }}>
     <ModalDialog className={`create-item-dialog ${className}`} eyebrow="CREATE PRIVATE ITEM" title={title} open={open} onClose={close} pending={pending || confirm} footer={<div className="create-item-footer" ref={setFooter} />}>

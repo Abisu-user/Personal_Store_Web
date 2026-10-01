@@ -1,10 +1,11 @@
 "use client";
 
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
 import { CreateItemModal } from "@/components/ui/create-item-modal";
+import { MobileOptionSheet, type MobileOptionGroup } from "@/components/ui/mobile-option-sheet";
 import { CalendarNotificationSettings } from "@/components/calendar/calendar-notifications";
 import { calendarDateKey, isValidDateKey, occurrencesInRange, rangeForMonth } from "@/lib/calendar/recurrence";
 import { defaultEventColor, eventColorContrast, eventColorPresets, isHexEventColor, normalizeEventColor } from "@/lib/calendar/event-color";
@@ -24,6 +25,15 @@ const reminderPresets = [
   { value: 1440, label: "提前 1 天" }, { value: 2880, label: "提前 2 天" },
   { value: 4320, label: "提前 3 天" },
 ];
+const reminderGroups: MobileOptionGroup[] = [
+  { label: "常用", options: reminderPresets.slice(0, 5).map(({ value, label }) => ({ value: String(value), label })) },
+  { label: "小時", options: reminderPresets.slice(5, 8).map(({ value, label }) => ({ value: String(value), label })) },
+  { label: "天", options: reminderPresets.slice(8).map(({ value, label }) => ({ value: String(value), label })) },
+];
+const recurrenceGroups: MobileOptionGroup[] = [{ label: "重複方式", options: [
+  { value: "none", label: "不重複" }, { value: "daily", label: "每天" },
+  { value: "weekly", label: "每週" }, { value: "yearly", label: "每年" },
+] }];
 function reminderLabel(minutes: number) {
   return reminderPresets.find((item) => item.value === minutes)?.label ??
     (minutes % 1440 === 0 ? `提前 ${minutes / 1440} 天` : minutes % 60 === 0 ? `提前 ${minutes / 60} 小時` : `提前 ${minutes} 分鐘`);
@@ -85,6 +95,12 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
   const [customColorOpen, setCustomColorOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [reminderChoice, setReminderChoice] = useState("");
+  const [mobilePicker, setMobilePicker] = useState<"recurrence" | "reminders" | null>(null);
+  const [pickerReminders, setPickerReminders] = useState<number[]>([]);
+  const [pickerRecurrence, setPickerRecurrence] = useState<Draft["recurrenceType"]>("none");
+  const [pickerCustomOpen, setPickerCustomOpen] = useState(false);
+  const [pickerError, setPickerError] = useState("");
+  const pickerTrigger = useRef<HTMLButtonElement | null>(null);
   const [customReminderValue, setCustomReminderValue] = useState(1);
   const [customReminderUnit, setCustomReminderUnit] = useState<"minute" | "hour" | "day">("hour");
   const range = useMemo(() => rangeForMonth(month), [month]);
@@ -147,11 +163,31 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
   }, [occurrences, data.calendarDays, selectedDay]);
 
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
+  const openReminderPicker = () => {
+    setPickerReminders([...draft.reminders]); setPickerCustomOpen(false); setPickerError(""); setMobilePicker("reminders");
+  };
+  const togglePickerReminder = (value: string) => {
+    const minutes = Number(value);
+    if (pickerReminders.includes(minutes)) setPickerReminders((current) => current.filter((item) => item !== minutes));
+    else if (pickerReminders.length < 12) setPickerReminders((current) => [...current, minutes]);
+    else { setPickerError("最多可設定 12 個提醒。"); return; }
+    setPickerError("");
+  };
+  const addCustomPickerReminder = () => {
+    const max = { minute: 1440, hour: 168, day: 30 }[customReminderUnit];
+    if (!Number.isInteger(customReminderValue) || customReminderValue < 1 || customReminderValue > max) {
+      setPickerError(`自訂${{ minute: "分鐘", hour: "小時", day: "天" }[customReminderUnit]}須介於 1～${max}。`); return;
+    }
+    const minutes = customReminderValue * { minute: 1, hour: 60, day: 1440 }[customReminderUnit];
+    if (pickerReminders.includes(minutes)) { setPickerError("此提醒時間已選取。"); return; }
+    if (pickerReminders.length >= 12) { setPickerError("最多可設定 12 個提醒。"); return; }
+    setPickerReminders((current) => [...current, minutes]); setPickerCustomOpen(false); setPickerError("");
+  };
   const startNew = useCallback((date: string) => {
-    setSelectedId(null); setConfirmDelete(false); setDraft(makeDraft(date)); setCustomColorOpen(false); setReminderChoice(""); setNotice(null); setEditorOpen(true);
+    setSelectedId(null); setConfirmDelete(false); setDraft(makeDraft(date)); setCustomColorOpen(false); setReminderChoice(""); setMobilePicker(null); setNotice(null); setEditorOpen(true);
   }, []);
   const selectEvent = (event: CalendarOccurrence) => {
-    setSelectedId(event.id); setConfirmDelete(false); setDraft(draftFor(event)); setCustomColorOpen(!eventColorPresets.some((preset) => preset.value === normalizeEventColor(event.color))); setReminderChoice(""); setSelectedDay(event.occurrenceDate); setNotice(null); setEditorOpen(true);
+    setSelectedId(event.id); setConfirmDelete(false); setDraft(draftFor(event)); setCustomColorOpen(!eventColorPresets.some((preset) => preset.value === normalizeEventColor(event.color))); setReminderChoice(""); setMobilePicker(null); setSelectedDay(event.occurrenceDate); setNotice(null); setEditorOpen(true);
   };
   useEffect(() => {
     const open = () => startNew(selectedDay);
@@ -299,17 +335,20 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         </section>
       </aside>
     </div>
-    <CreateItemModal className={styles.editorDialog} open={editorOpen} pending={false} title={selectedId ? "編輯行程" : "新增行程"} onClose={() => setEditorOpen(false)}>
+    <CreateItemModal className={styles.editorDialog} dirtyKey={JSON.stringify(draft)} open={editorOpen} pending={mobilePicker !== null} title={selectedId ? "編輯行程" : "新增行程"} onClose={() => { setMobilePicker(null); setEditorOpen(false); }}>
       <form className={styles.form} onSubmit={save}>
         <label>行程名稱<input maxLength={300} onChange={(event) => update("title", event.target.value)} placeholder="例如：專題討論" required value={draft.title} /></label>
-        <div className={styles.formRow}><label>日期<input onChange={(event) => update("date", event.target.value)} required type="date" value={draft.date} /></label><label className={styles.allDayControl}><input checked={draft.allDay} onChange={(event) => update("allDay", event.target.checked)} type="checkbox" />全天</label></div>
-        {!draft.allDay && <><div className={styles.formRow}><label>開始時間<input onChange={(event) => update("time", event.target.value)} required type="time" value={draft.time} /></label><label>結束時間（選填）<input onChange={(event) => update("endTime", event.target.value)} type="time" value={draft.endTime} /></label></div>{draft.endTime && <label>結束日期（跨日行程）<input min={draft.date} onChange={(event) => update("endDate", event.target.value)} required type="date" value={draft.endDate} /></label>}</>}
-        <label>重複<select onChange={(event) => update("recurrenceType", event.target.value as Draft["recurrenceType"])} value={draft.recurrenceType}><option value="none">不重複</option><option value="daily">每天</option><option value="weekly">每週</option><option value="yearly">每年</option></select></label>
+        <div className={styles.dateSection}><label>日期<input onChange={(event) => update("date", event.target.value)} required type="date" value={draft.date} /></label><label className={styles.allDayControl}><span>全天</span><input checked={draft.allDay} onChange={(event) => update("allDay", event.target.checked)} type="checkbox" /><span aria-hidden="true" className={styles.allDaySwitch} /></label></div>
+        {!draft.allDay && <><div className={[styles.formRow, styles.timeRow].join(" ")}><label>開始時間<input onChange={(event) => update("time", event.target.value)} required type="time" value={draft.time} /></label><label>結束時間（選填）<input onChange={(event) => update("endTime", event.target.value)} type="time" value={draft.endTime} /></label></div>{draft.endTime && <label>結束日期（跨日行程）<input min={draft.date} onChange={(event) => update("endDate", event.target.value)} required type="date" value={draft.endDate} /></label>}</>}
+        <label className={styles.desktopRecurrence}>重複<select onChange={(event) => update("recurrenceType", event.target.value as Draft["recurrenceType"])} value={draft.recurrenceType}><option value="none">不重複</option><option value="daily">每天</option><option value="weekly">每週</option><option value="yearly">每年</option></select></label>
+        <div className={styles.mobileRecurrence}><span>重複</span><button aria-haspopup="dialog" onClick={(event) => { pickerTrigger.current = event.currentTarget; setPickerRecurrence(draft.recurrenceType); setMobilePicker("recurrence"); }} type="button">{recurrenceGroups[0].options.find((option) => option.value === draft.recurrenceType)?.label}<span aria-hidden="true">›</span></button></div>
         <fieldset className={styles.reminderSection}><legend>提醒</legend>
-          {draft.reminders.length ? <div className={styles.reminderList}>{draft.reminders.map((minutes) => <span className={styles.reminderChip} key={minutes}>🔔 {reminderLabel(minutes)}<button aria-label={`移除${reminderLabel(minutes)}`} onClick={() => update("reminders", draft.reminders.filter((value) => value !== minutes))} type="button">×</button></span>)}</div> : <p className={styles.reminderEmpty}>無提醒</p>}
-          <label>新增提醒<select onChange={(event) => setReminderChoice(event.target.value)} value={reminderChoice}><option value="">選擇提醒時間</option>{reminderPresets.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}<option value="custom">自訂</option></select></label>
-          {reminderChoice === "custom" && <div className={styles.customReminder}><input aria-label="自訂提醒數量" min={1} onChange={(event) => setCustomReminderValue(Number(event.target.value))} type="number" value={customReminderValue} /><select aria-label="自訂提醒單位" onChange={(event) => setCustomReminderUnit(event.target.value as typeof customReminderUnit)} value={customReminderUnit}><option value="minute">分鐘</option><option value="hour">小時</option><option value="day">天</option></select><span>前</span></div>}
-          <button className={styles.addReminder} disabled={!reminderChoice || draft.reminders.length >= 12} onClick={() => { const max = { minute: 1440, hour: 168, day: 30 }[customReminderUnit]; if (reminderChoice === "custom" && (!Number.isInteger(customReminderValue) || customReminderValue < 1 || customReminderValue > max)) { setNotice(`自訂${{ minute: "分鐘", hour: "小時", day: "天" }[customReminderUnit]}須介於 1～${max}。`); return; } const minutes = reminderChoice === "custom" ? customReminderValue * { minute: 1, hour: 60, day: 1440 }[customReminderUnit] : Number(reminderChoice); update("reminders", [...new Set([...draft.reminders, minutes])].sort((a, b) => b - a)); setReminderChoice(""); setNotice(null); }} type="button">＋ 新增提醒</button>
+          {draft.reminders.length ? <div className={styles.reminderList}>{[...draft.reminders].sort((a, b) => b - a).map((minutes) => <span className={styles.reminderChip} key={minutes}>🔔 {reminderLabel(minutes)}<button aria-label={`移除${reminderLabel(minutes)}`} onClick={() => update("reminders", draft.reminders.filter((value) => value !== minutes))} type="button">×</button></span>)}</div> : <p className={styles.reminderEmpty}>無提醒</p>}
+          <div className={styles.desktopReminderControls}><label>新增提醒<select onChange={(event) => setReminderChoice(event.target.value)} value={reminderChoice}><option value="">選擇提醒時間</option>{reminderPresets.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}<option value="custom">自訂</option></select></label>
+            {reminderChoice === "custom" && <div className={styles.customReminder}><input aria-label="自訂提醒數量" min={1} onChange={(event) => setCustomReminderValue(Number(event.target.value))} type="number" value={customReminderValue} /><select aria-label="自訂提醒單位" onChange={(event) => setCustomReminderUnit(event.target.value as typeof customReminderUnit)} value={customReminderUnit}><option value="minute">分鐘</option><option value="hour">小時</option><option value="day">天</option></select><span>前</span></div>}
+            <button className={styles.addReminder} disabled={!reminderChoice || draft.reminders.length >= 12} onClick={() => { const max = { minute: 1440, hour: 168, day: 30 }[customReminderUnit]; if (reminderChoice === "custom" && (!Number.isInteger(customReminderValue) || customReminderValue < 1 || customReminderValue > max)) { setNotice(`自訂${{ minute: "分鐘", hour: "小時", day: "天" }[customReminderUnit]}須介於 1～${max}。`); return; } const minutes = reminderChoice === "custom" ? customReminderValue * { minute: 1, hour: 60, day: 1440 }[customReminderUnit] : Number(reminderChoice); update("reminders", [...new Set([...draft.reminders, minutes])].sort((a, b) => b - a)); setReminderChoice(""); setNotice(null); }} type="button">＋ 新增提醒</button>
+          </div>
+          <button aria-haspopup="dialog" className={[styles.addReminder, styles.mobileAddReminder].join(" ")} onClick={(event) => { pickerTrigger.current = event.currentTarget; openReminderPicker(); }} type="button">＋ 新增提醒</button>
           {draft.allDay && draft.reminders.length > 0 && <label>全天行程提醒時間<input onChange={(event) => update("allDayReminderTime", event.target.value)} type="time" value={draft.allDayReminderTime} /></label>}
         </fieldset>
         <label>備註（選填）<textarea maxLength={2000} onChange={(event) => update("description", event.target.value)} placeholder="請勿放入密碼、金鑰或 Recovery Code" rows={3} value={draft.description} /></label>
@@ -329,6 +368,32 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
         {selectedId && <button className={styles.deleteButton} onClick={() => setConfirmDelete(true)} type="button">{draft.recurrenceType === "none" ? "刪除行程" : `刪除${draft.recurrenceType === "daily" ? "每天" : draft.recurrenceType === "weekly" ? "每週" : "每年"}重複行程`}</button>}
       </form>
     </CreateItemModal>
+    <MobileOptionSheet
+      groups={mobilePicker === "recurrence" ? recurrenceGroups : reminderGroups}
+      onClose={() => { setMobilePicker(null); window.requestAnimationFrame(() => pickerTrigger.current?.focus()); }}
+      onDone={() => {
+        if (mobilePicker === "recurrence") update("recurrenceType", pickerRecurrence);
+        else update("reminders", [...new Set(pickerReminders)].sort((a, b) => b - a));
+        setNotice(null);
+      }}
+      onSelect={(value) => mobilePicker === "recurrence" ? setPickerRecurrence(value as Draft["recurrenceType"]) : togglePickerReminder(value)}
+      open={editorOpen && mobilePicker !== null}
+      selectedValues={mobilePicker === "recurrence" ? [pickerRecurrence] : pickerReminders.map(String)}
+      title={mobilePicker === "recurrence" ? "選擇重複方式" : "新增提醒"}
+    >
+      {mobilePicker === "reminders" && <section className={styles.customPicker}>
+        <button aria-expanded={pickerCustomOpen} className={styles.customPickerToggle} onClick={() => { setPickerCustomOpen((open) => !open); setPickerError(""); }} type="button">自訂提醒<span aria-hidden="true">›</span></button>
+        {pickerReminders.filter((minutes) => !reminderPresets.some((preset) => preset.value === minutes)).length > 0 && <div className={styles.customPickerSelected}>
+          {pickerReminders.filter((minutes) => !reminderPresets.some((preset) => preset.value === minutes)).sort((a, b) => b - a).map((minutes) => <button aria-label={`移除${reminderLabel(minutes)}`} key={minutes} onClick={() => togglePickerReminder(String(minutes))} type="button">✓ {reminderLabel(minutes)} <span aria-hidden="true">×</span></button>)}
+        </div>}
+        {pickerCustomOpen && <div className={styles.customPickerControls}>
+          <label>提前數量<input inputMode="numeric" min={1} onChange={(event) => setCustomReminderValue(Number(event.target.value))} type="number" value={customReminderValue} /></label>
+          <div aria-label="提醒單位" className={styles.customPickerUnits} role="group">{(["minute", "hour", "day"] as const).map((unit) => <button aria-pressed={customReminderUnit === unit} key={unit} onClick={() => setCustomReminderUnit(unit)} type="button">{{ minute: "分鐘", hour: "小時", day: "天" }[unit]}</button>)}</div>
+          <button className="secondary-button" onClick={addCustomPickerReminder} type="button">加入自訂提醒</button>
+        </div>}
+        {pickerError && <p className={styles.pickerError} role="alert">{pickerError}</p>}
+      </section>}
+    </MobileOptionSheet>
     <ConfirmDialog description={draft.recurrenceType === "none" ? "這個行程將永久刪除，無法還原。" : `這是${draft.recurrenceType === "daily" ? "每天" : draft.recurrenceType === "weekly" ? "每週" : "每年"}重複的行程，刪除後整個系列都會被移除。`} onCancel={() => setConfirmDelete(false)} onConfirm={remove} open={confirmDelete} pending={false} title="刪除行程？" />
     <CalendarNotificationSettings onClose={() => setNotificationOpen(false)} open={notificationOpen} />
   </section>;

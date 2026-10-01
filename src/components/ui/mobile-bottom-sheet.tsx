@@ -3,8 +3,8 @@ import { useLayoutEffect, type ReactNode } from "react";
 import { ModalDialog } from "./modal-dialog";
 
 /** One dialog tree and interaction path. Only its phone CSS makes it a sheet. */
-export function MobileBottomSheet({ open, onClose, title, children, className = "", eyebrow }: {
-  open: boolean; onClose: () => void; title: string; children: ReactNode; className?: string; eyebrow?: string;
+export function MobileBottomSheet({ open, onClose, title, children, className = "", eyebrow, footer }: {
+  open: boolean; onClose: () => void; title: string; children: ReactNode; className?: string; eyebrow?: string; footer?: ReactNode;
 }) {
   useLayoutEffect(() => {
     if (!open) return;
@@ -25,5 +25,5 @@ export function MobileBottomSheet({ open, onClose, title, children, className = 
       if (trigger?.isConnected) trigger.focus();
     };
   }, [open]);
-  return <ModalDialog open={open} onClose={onClose} title={title} eyebrow={eyebrow} className={`mobile-bottom-sheet ${className}`}>{children}</ModalDialog>;
+  return <ModalDialog open={open} onClose={onClose} title={title} eyebrow={eyebrow} footer={footer ? <div className="modal-dialog-footer">{footer}</div> : undefined} className={`mobile-bottom-sheet ${className}`}>{children}</ModalDialog>;
 }
