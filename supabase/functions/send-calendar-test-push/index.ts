@@ -3,6 +3,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.112.3";
 import webPush from "npm:web-push@3.6.7";
 import { providerFailure, validDeviceRequest } from "./policy.ts";
+import { validateVapid, libraryFailure } from "./vapid-validation.ts";
 
 Deno.serve(async (request) => {
   const outcome: Record<string, unknown> = { serverConfigured: null, subscriptionFound: null,
@@ -25,8 +26,17 @@ Deno.serve(async (request) => {
   outcome.serverConfigured = false;
   if (!publicKey || !privateKey || !subject || !url || !serviceKey) return respond({ ok: false, code: "EDGE_NOT_CONFIGURED" }, 503);
   const body = await request.json().catch(() => null);
-  if (body?.expectedPublicKey !== publicKey) return respond({ ok: false, code: "VAPID_KEY_MISMATCH" }, 409);
-  try { webPush.setVapidDetails(subject, publicKey, privateKey); } catch { return respond({ ok: false, code: "VAPID_CONFIG_INVALID" }, 503); }
+  const validation = await validateVapid(publicKey, privateKey, subject, body?.expectedPublicKey);
+  outcome.vapidValidation = validation;
+  if (validation.failure) return respond({ ok: false, code: "VAPID_CONFIG_INVALID" }, 503);
+  if (validation.publicKeyMatch !== true) return respond({ ok: false, code: "VAPID_KEY_MISMATCH" }, 409);
+  try {
+    webPush.setVapidDetails(subject, publicKey, privateKey);
+    validation.libraryValidation = "valid";
+  } catch (error) {
+    validation.libraryValidation = "invalid"; validation.failure = libraryFailure(error);
+    return respond({ ok: false, code: "VAPID_CONFIG_INVALID" }, 503);
+  }
   outcome.serverConfigured = true;
   if (body?.action === "diagnostics") return respond({ ok: true, code: "DISPATCH_READY" });
   if (body?.action !== "test" || !validDeviceRequest(body)) return respond({ ok: false, code: "INVALID_TEST_REQUEST" }, 400);

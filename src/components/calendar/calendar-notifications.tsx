@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ModalDialog } from "@/components/ui/modal-dialog";
-import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics, type PushTestOutcome } from "@/lib/calendar/push-diagnostics";
+import { decodeVapidKey, maskSubscriptionId, notificationEnabled, notificationRegistered, subscriptionKeyMatches, type PushDiagnostics, type PushTestOutcome, type VapidValidationDiagnostics } from "@/lib/calendar/push-diagnostics";
 import { inspectPushDevice, setDeviceOptOut, syncPushSubscription } from "@/lib/calendar/push-device";
 import { readPushTestHistory, writePushTestHistory, type PushTestHistory } from "@/lib/calendar/push-test-history";
 import styles from "./calendar-mobile.module.css";
 
-type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number; serverBuild?: string } & Partial<PushTestOutcome>;
+type TestResult = { ok: boolean; code: string; providerStatus?: number; acceptedAt?: string; httpStatus: number; serverBuild?: string; vapidValidation?: VapidValidationDiagnostics } & Partial<PushTestOutcome>;
 const flagLabel = (value: boolean | null | undefined) => value === true ? "是" : value === false ? "否" : "未確認";
 const testErrors: Record<string, string> = {
   SERVER_NOT_CONFIGURED: "Web Push 伺服器尚未設定完成。",
@@ -15,7 +15,7 @@ const testErrors: Record<string, string> = {
   EDGE_UPDATE_REQUIRED: "請部署新版 send-calendar-test-push Function。",
   DISPATCH_UNAUTHORIZED: "網站與 Edge 的派送密鑰不一致。",
   DISPATCH_UNREACHABLE: "無法連線到推播伺服器，請稍後重新測試。",
-  VAPID_CONFIG_INVALID: "Edge 的 VAPID 格式不正確。",
+  VAPID_CONFIG_INVALID: "Edge 的 VAPID 驗證未通過，請查看診斷中的失敗項目。",
   VAPID_KEY_MISMATCH: "網站與 Edge 使用不同 VAPID 公鑰。",
   VAPID_REJECTED: "推播服務拒絕 VAPID 驗證，請檢查固定金鑰組。",
   SUBSCRIPTION_EXPIRED: "此裝置訂閱已失效，請先清除舊訂閱，再按修復通知建立新訂閱。",
@@ -132,7 +132,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
       const result: TestResult = { ok: response.ok && body.ok === true, code: typeof body.code === "string" ? body.code : "HTTP_ERROR",
         httpStatus: response.status, providerStatus: body.pushProviderStatus ?? body.providerStatus, acceptedAt: body.acceptedAt,
         serverConfigured: body.serverConfigured, subscriptionFound: body.subscriptionFound, pushAttempted: body.pushAttempted,
-        invalidSubscription: body.invalidSubscription, serverBuild: body.serverBuild };
+        invalidSubscription: body.invalidSubscription, serverBuild: body.serverBuild, vapidValidation: body.vapidValidation };
       setTestResult(result);
       if (result.ok && result.code === "PUSH_ACCEPTED" && result.acceptedAt) {
         saveHistory({ acceptedAt: result.acceptedAt, last_confirmed_received_at: null });
@@ -157,6 +157,7 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
     enabled ? "已開啟" : registered && !diagnostics.error ? "伺服器待完成設定" : !diagnostics.config?.publicKey ? "尚未完成伺服器設定" : "通知尚未完成設定";
   const productionMismatch = diagnostics?.config?.productionOrigin && typeof location !== "undefined" && location.origin !== diagnostics.config.productionOrigin;
   const deviceHistory = history?.accountId === diagnostics?.config?.accountId && history?.subscriptionId === diagnostics?.server?.id ? history : null;
+  const vapid = testResult?.vapidValidation ?? diagnostics?.config?.vapidValidation;
 
   return <ModalDialog className={styles.notificationDialog} eyebrow="CALENDAR REMINDERS" onClose={onClose} open={open} pending={busy} title="行程通知">
     <div className={styles.notificationSettings}>
@@ -190,6 +191,25 @@ export function CalendarNotificationSettings({ open, onClose }: { open: boolean;
           {Object.entries(diagnostics?.config?.configuration?.vercel ?? {}).map(([name, status]) => <div key={name}><dt>Vercel · {name}</dt><dd>{status}</dd></div>)}
           {diagnostics?.config?.configuration?.edge ? Object.entries(diagnostics.config.configuration.edge).map(([name, status]) =>
             <div key={name}><dt>Supabase Edge · {name}</dt><dd>{status}</dd></div>) : <div><dt>Supabase Edge 設定</dt><dd>未確認，需先連通網站派送端</dd></div>}
+          {vapid && <>
+            {(["publicKey", "privateKey", "subject"] as const).map((key) => {
+              const value = vapid[key], label = key === "publicKey" ? "Public Key" : key === "privateKey" ? "Private Key" : "Subject";
+              const keyValue = key !== "subject" ? vapid[key] : null;
+              return <div key={key}><dt>VAPID · {label}</dt><dd>
+                {value.exists ? "configured" : "missing"} · {value.formatValid ? "valid" : "INVALID FORMAT"}<br />
+                長度 {value.length}{keyValue && <> · 解碼 {keyValue.decodedLength ?? "—"} bytes · Base64URL {keyValue.base64urlValid ? "valid" : "invalid"}</>}<br />
+                引號 / 空白 / 換行：{flagLabel(value.containsQuotes)} / {flagLabel(value.containsWhitespace)} / {flagLabel(value.containsNewline)}<br />
+                前 / 後空白：{flagLabel(value.leadingWhitespace)} / {flagLabel(value.trailingWhitespace)}
+                {value.issues.length > 0 && <><br />{value.issues.join(" · ")}</>}
+              </dd></div>;
+            })}
+            <div><dt>VAPID Key Pair</dt><dd>{flagLabel(vapid.pairMatch)}</dd></div>
+            <div><dt>Vercel / Edge 公鑰一致</dt><dd>{flagLabel(vapid.publicKeyMatch)}</dd></div>
+            <div><dt>Vercel Public SHA-256</dt><dd>{vapid.fingerprints.expectedPublic ?? "未取得"}</dd></div>
+            <div><dt>Edge Public SHA-256</dt><dd>{vapid.fingerprints.edgePublic ?? "未取得"}</dd></div>
+            <div><dt>Library Validation</dt><dd>{vapid.libraryValidation}</dd></div>
+            <div><dt>VAPID 失敗項目</dt><dd>{vapid.failure ?? "無"}</dd></div>
+          </>}
           <div><dt>此裝置最後測試送出</dt><dd>{deviceHistory ? `${new Date(deviceHistory.acceptedAt).toLocaleString("zh-TW")} · Provider 已接受` : "尚無成功送出紀錄"}</dd></div>
           <div><dt>手機實際接收</dt><dd>{deviceHistory?.last_confirmed_received_at ? `${new Date(deviceHistory.last_confirmed_received_at).toLocaleString("zh-TW")} · 使用者確認` : "需由裝置確認，無法以 HTTP 成功判定"}</dd></div>
           <div><dt>頁面 / 伺服器 Build</dt><dd>{process.env.NEXT_PUBLIC_BUILD_ID ?? "unknown"} / {diagnostics?.config?.buildId ?? "—"}</dd></div>

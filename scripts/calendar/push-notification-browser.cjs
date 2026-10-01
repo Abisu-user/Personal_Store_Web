@@ -17,7 +17,15 @@ async function main() {
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   try {
     const page = await browser.newPage(), errors = [], requests = [];
-    let syncs = 0, tests = 0, enabled = true, testStatus = 201, serverMissing = false, failSync = false, unconfigured = false;
+    let syncs = 0, tests = 0, enabled = true, testStatus = 201, serverMissing = false, failSync = false, unconfigured = false, vapidFailure = false;
+    function validation() {
+      const format = { exists: true, length: 87, formatValid: true, leadingWhitespace: false, trailingWhitespace: false,
+        containsWhitespace: false, containsNewline: false, containsQuotes: false, base64urlValid: true, decodedLength: 65, issues: [] };
+      return { publicKey: format, privateKey: { ...format, length: 43, decodedLength: 32 },
+        subject: { ...format, length: 42, formatValid: !vapidFailure, issues: vapidFailure ? ["INVALID_CONTACT_URI"] : [] },
+        pairMatch: true, publicKeyMatch: true, fingerprints: { expectedPublic: "a".repeat(64), edgePublic: "a".repeat(64) },
+        libraryValidation: vapidFailure ? "not-checked" : "valid", failure: vapidFailure ? "SUBJECT" : null };
+    }
     page.on("pageerror", error => errors.push(error.message));
     await page.addInitScript(() => {
       // Next replaces this constant during production compilation; standalone fixture needs it explicitly.
@@ -33,10 +41,11 @@ async function main() {
     });
     await page.route("**/api/calendar/**", route => {
       const request = route.request(), url = new URL(request.url()); requests.push(url.pathname);
-      if (url.pathname.endsWith("test-push")) { tests++; return route.fulfill({ status: unconfigured || testStatus !== 201 ? 503 : 200,
-        json: unconfigured ? { ok: false, code: "SERVER_NOT_CONFIGURED", serverConfigured: false, subscriptionFound: true, pushAttempted: false, invalidSubscription: false, serverBuild: "server-fixture" } : testStatus === 201 ? { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, acceptedAt: new Date().toISOString(), serverConfigured: true, subscriptionFound: true, pushAttempted: true, invalidSubscription: false, serverBuild: "server-fixture" } : { ok: false, code: "VAPID_REJECTED", providerStatus: 403 } }); }
+      if (url.pathname.endsWith("test-push")) { tests++; return route.fulfill({ status: unconfigured || vapidFailure || testStatus !== 201 ? 503 : 200,
+        json: vapidFailure ? { ok: false, code: "VAPID_CONFIG_INVALID", serverConfigured: false, pushAttempted: false, vapidValidation: validation() } : unconfigured ? { ok: false, code: "SERVER_NOT_CONFIGURED", serverConfigured: false, subscriptionFound: true, pushAttempted: false, invalidSubscription: false, serverBuild: "server-fixture" } : testStatus === 201 ? { ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, acceptedAt: new Date().toISOString(), serverConfigured: true, subscriptionFound: true, pushAttempted: true, invalidSubscription: false, serverBuild: "server-fixture" } : { ok: false, code: "VAPID_REJECTED", providerStatus: 403 } }); }
       if (request.method() === "GET") return route.fulfill({ json: { publicKey: "AQID", accountId: "account-fixture", buildId: "server-fixture", productionOrigin: null,
-        dispatcher: unconfigured ? "unconfigured" : "ready", dispatcherCode: unconfigured ? "SERVER_NOT_CONFIGURED" : null,
+        dispatcher: unconfigured || vapidFailure ? "unconfigured" : "ready", dispatcherCode: vapidFailure ? "VAPID_CONFIG_INVALID" : unconfigured ? "SERVER_NOT_CONFIGURED" : null,
+        vapidValidation: unconfigured ? undefined : validation(),
         configuration: { vercel: { VAPID_PUBLIC_KEY: "configured", CALENDAR_DISPATCH_SECRET: unconfigured ? "missing" : "configured" }, edge: null } } });
       if (request.method() === "DELETE") { enabled = false; return route.fulfill({ json: { ok: true } }); }
       const body = request.postDataJSON(); if (body.action !== "inspect") {
@@ -86,6 +95,14 @@ async function main() {
     assert.ok(!(await page.getByRole("status").textContent()).includes("伺服器已送出"));
     assert.equal(tests, 3);
     unconfigured = false;
+    vapidFailure = true;
+    await page.reload(); await page.getByText("伺服器待完成設定", { exact: true }).waitFor();
+    await page.getByText("通知診斷詳情", { exact: true }).click();
+    await page.getByText("SUBJECT", { exact: true }).waitFor();
+    await page.locator("dd").filter({ hasText: "INVALID_CONTACT_URI" }).waitFor();
+    await page.getByRole("button", { name: "發送測試通知", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "Edge 的 VAPID 驗證未通過" }).waitFor();
+    assert.equal(tests, 4); vapidFailure = false;
     await page.getByRole("button", { name: "關閉此裝置通知", exact: true }).click();
     await page.getByText("此裝置通知已關閉。", { exact: true }).waitFor();
     const previous = syncs;

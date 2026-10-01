@@ -3,6 +3,11 @@
 // No production credentials or real notifications are used.
 const { test } = require("node:test"), assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm"), ts = require("typescript");
+const nodeCrypto = require("node:crypto");
+// Deterministic, test-only scalars. Never generate or replace production VAPID secrets.
+const privateFixture = Buffer.alloc(32); privateFixture[31] = 1;
+const fixtureCurve = nodeCrypto.createECDH("prime256v1"); fixtureCurve.setPrivateKey(privateFixture);
+const fixturePublic = fixtureCurve.getPublicKey().toString("base64url");
 const root = path.resolve(__dirname, "../..");
 function load(file, mocks = {}, globals = {}) {
   const filename = path.join(root, file);
@@ -10,11 +15,12 @@ function load(file, mocks = {}, globals = {}) {
   const code = ts.transpileModule(fs.readFileSync(filename, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
   const requireModule = name => {
     if (name in mocks) return mocks[name];
+    if (["node:buffer", "node:crypto"].includes(name)) return require(name);
     if (name.startsWith(".")) return load(path.relative(root, path.resolve(path.dirname(filename), name.replace(/\.ts$/, "") + ".ts")), mocks, globals);
     throw new Error("Unmocked dependency: " + name);
   };
   vm.runInNewContext(code, { module: loadedModule, exports: loadedModule.exports, require: requireModule, URL, Response, Request, AbortSignal,
-    Uint8Array, ArrayBuffer, MessageChannel, Error, atob, setTimeout, clearTimeout, console, process: { env: {} }, ...globals }, { filename });
+    Uint8Array, ArrayBuffer, MessageChannel, Error, atob, setTimeout, clearTimeout, console, crypto: nodeCrypto.webcrypto, process: { env: {} }, ...globals }, { filename });
   return loadedModule.exports;
 }
 const good = { supported: true, permission: "granted", workerActive: true, subscriptionExists: true, keyMatches: true, server: { enabled: true }, config: { dispatcher: "ready" }, error: null };
@@ -89,9 +95,9 @@ test("DB failure preserves subscription; Safari gesture rejection is actionable,
   const failed = await safari.inspect(); assert.equal(failed.diagnostics.subscriptionExists, false); assert.match(failed.diagnostics.error, /Gesture/);
 });
 
-function edgeFixture({ status = 201, ownerMismatch = false, disableFails = false, missing = [] } = {}) {
+function edgeFixture({ status = 201, ownerMismatch = false, disableFails = false, missing = [], overrides = {}, libraryError = null } = {}) {
   let handler, sends = 0; const filters = [], updates = [];
-  const env = { CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key", VAPID_PRIVATE_KEY: "private-key", VAPID_SUBJECT: "mailto:contact@example.test", SUPABASE_URL: "https://db.test", SUPABASE_SERVICE_ROLE_KEY: "service-key" };
+  const env = { CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: fixturePublic, VAPID_PRIVATE_KEY: privateFixture.toString("base64url"), VAPID_SUBJECT: "mailto:contact@example.test", SUPABASE_URL: "https://db.test", SUPABASE_SERVICE_ROLE_KEY: "service-key", ...overrides };
   for (const name of missing) delete env[name];
   const device = { id: "00000000-0000-0000-0000-000000000001", endpoint: "https://web.push.apple.com/secret", auth: "secret-auth", p256dh: "secret-key" };
   const db = { from(table) { assert.equal(table, "calendar_push_subscriptions", "test push cannot query reminders or deliveries"); const query = {
@@ -99,15 +105,15 @@ function edgeFixture({ status = 201, ownerMismatch = false, disableFails = false
     maybeSingle: async () => ({ data: ownerMismatch ? null : device, error: null }),
     update(value) { updates.push(value); return this; }, then(resolve) { resolve({ error: disableFails ? { code: "DB" } : null }); },
   }; return query; } };
-  const push = { setVapidDetails() {}, async sendNotification(_device, payload) { sends++; const body = JSON.parse(payload); assert.equal(body.type, "calendar-test"); assert.equal(body.url, "/calendar"); assert.equal("description" in body, false); if (status !== 201) throw { statusCode: status, body: "secret-provider-response" }; return { statusCode: 201 }; } };
+  const push = { setVapidDetails() { if (libraryError) throw libraryError; }, async sendNotification(_device, payload) { sends++; const body = JSON.parse(payload); assert.equal(body.type, "calendar-test"); assert.equal(body.url, "/calendar"); assert.equal("description" in body, false); if (status !== 201) throw { statusCode: status, body: "secret-provider-response" }; return { statusCode: 201 }; } };
   load("supabase/functions/send-calendar-test-push/index.ts", { "npm:@supabase/supabase-js@2.112.3": { createClient: () => db }, "npm:web-push@3.6.7": push },
-    { Deno: { env: { get: name => env[name] }, serve: value => { handler = value; } }, crypto: { randomUUID: () => "run-id" }, console: { info() {}, warn() {}, error() {} } });
+    { Deno: { env: { get: name => env[name] }, serve: value => { handler = value; } }, console: { info() {}, warn() {}, error() {} } });
   return { invoke: (body, secret = "private-dispatch") => handler(new Request("https://edge.test", { method: "POST", headers: { "x-calendar-dispatch-secret": secret }, body: JSON.stringify(body) })), stats: () => ({ sends, filters, updates }) };
 }
-const testBody = { action: "test", expectedPublicKey: "public-key", ownerId: "00000000-0000-4000-8000-000000000002", subscriptionId: "00000000-0000-4000-8000-000000000001" };
+const testBody = { action: "test", expectedPublicKey: fixturePublic, ownerId: "00000000-0000-4000-8000-000000000002", subscriptionId: "00000000-0000-4000-8000-000000000001" };
 test("Edge diagnostics never send; rejects unauthorized and mismatched VAPID", async () => {
   const f = edgeFixture();
-  assert.equal((await f.invoke({ action: "diagnostics", expectedPublicKey: "public-key" })).status, 200);
+  assert.equal((await f.invoke({ action: "diagnostics", expectedPublicKey: fixturePublic })).status, 200);
   assert.equal((await f.invoke(testBody, "wrong")).status, 401);
   assert.equal((await f.invoke({ ...testBody, expectedPublicKey: "wrong" })).status, 409);
   assert.equal(f.stats().sends, 0);
@@ -181,9 +187,12 @@ test("Edge missing VAPID fields are diagnosed individually without exposing secr
 });
 
 test("forwarder allowlists configuration and preserves unknown timeout outcome", async () => {
+  const format = { exists: true, formatValid: true, base64urlValid: true, length: 43, decodedLength: 32 };
+  const validation = { publicKey: format, privateKey: format, subject: format, pairMatch: true, publicKeyMatch: true, libraryValidation: "valid", failure: null };
   const env = { NEXT_PUBLIC_SUPABASE_URL: "https://db.test", CALENDAR_DISPATCH_SECRET: "private-dispatch", VAPID_PUBLIC_KEY: "public-key" };
   const helper = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({
     ok: true, code: "PUSH_ACCEPTED", providerStatus: 201, serverConfigured: true, pushAttempted: true,
+    vapidValidation: validation,
     configuration: { VAPID_PRIVATE_KEY: "configured", VAPID_SUBJECT: "private-subject", unknown: "private-auth" }, auth: "private-auth" }) });
   const outcome = await helper.callPushDispatcher(testBody);
   assert.equal(outcome.ok, true); assert.equal(outcome.configuration.VAPID_PRIVATE_KEY, "configured");
@@ -192,6 +201,9 @@ test("forwarder allowlists configuration and preserves unknown timeout outcome",
   assert.equal((await timeout.callPushDispatcher(testBody)).pushAttempted, null);
   const fake = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({ ok: true, code: "PUSH_ACCEPTED" }) });
   assert.equal((await fake.callPushDispatcher(testBody)).ok, false, "missing provider status cannot claim success");
+  const legacy = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} }, { process: { env }, fetch: async () => Response.json({ ok: true, code: "DISPATCH_READY", serverConfigured: true }) });
+  const old = await legacy.callPushDispatcher({ action: "diagnostics" });
+  assert.equal(old.ok, false); assert.equal(old.code, "EDGE_UPDATE_REQUIRED"); assert.equal(old.serverConfigured, null);
 });
 
 test("last sent and user-confirmed receipt persist separately and remain account/device scoped", () => {
@@ -204,6 +216,58 @@ test("last sent and user-confirmed receipt persist separately and remain account
   history.writePushTestHistory("a", "device", { acceptedAt, last_confirmed_received_at: received });
   assert.equal(history.readPushTestHistory("a", "device").last_confirmed_received_at, received);
   assert.ok(![...storage.values()].join().includes("must-not-store"));
+});
+
+test("VAPID format reports quotes, whitespace, newline, PEM, encoding and decoded lengths without secrets", async () => {
+  const { validateVapid } = load("supabase/functions/send-calendar-test-push/vapid-validation.ts");
+  const privateKey = privateFixture.toString("base64url"), subject = "https://personal-store-web.vercel.app";
+  const good = await validateVapid(fixturePublic, privateKey, subject, fixturePublic);
+  assert.equal(good.publicKey.length, 87); assert.equal(good.publicKey.decodedLength, 65);
+  assert.equal(good.privateKey.length, 43); assert.equal(good.privateKey.decodedLength, 32);
+  assert.equal(good.pairMatch, true); assert.equal(good.publicKeyMatch, true); assert.equal(good.failure, null);
+  assert.equal(good.fingerprints.expectedPublic, good.fingerprints.edgePublic);
+  for (const value of ['"' + privateKey + '"', "'" + privateKey + "'", privateKey + "=", "\r\n" + privateKey, privateKey + "\n", "-----BEGIN PRIVATE KEY-----\ninvalid\n-----END PRIVATE KEY-----", "abc+def/", "AQID"]) {
+    const result = await validateVapid(fixturePublic, value, subject, fixturePublic);
+    assert.equal(result.failure, "PRIVATE_KEY"); assert.equal(result.pairMatch, null);
+    assert.ok(!JSON.stringify(result).includes(value));
+  }
+  const whitespace = await validateVapid(fixturePublic, "\n" + privateKey + "\r", subject, fixturePublic);
+  assert.equal(whitespace.privateKey.leadingWhitespace, true); assert.equal(whitespace.privateKey.trailingWhitespace, true);
+  assert.equal(whitespace.privateKey.containsNewline, true);
+  const zero = await validateVapid(fixturePublic, Buffer.alloc(32).toString("base64url"), subject, fixturePublic);
+  assert.equal(zero.failure, "PRIVATE_KEY"); assert.ok(zero.privateKey.issues.includes("P256_PRIVATE_IMPORT_FAILED"));
+});
+
+test("VAPID validates the curve, pair and real contact URI before any provider call", async () => {
+  const secondPrivate = Buffer.alloc(32); secondPrivate[31] = 2;
+  const mismatch = edgeFixture({ overrides: { VAPID_PRIVATE_KEY: secondPrivate.toString("base64url") } });
+  const result = await (await mismatch.invoke(testBody)).json();
+  assert.equal(result.vapidValidation.failure, "PAIR"); assert.equal(result.vapidValidation.pairMatch, false);
+  assert.equal(result.serverConfigured, false); assert.equal(result.pushAttempted, false); assert.equal(mismatch.stats().sends, 0);
+  for (const subject of ["personal-store", "user@example.test", '"mailto:user@example.test"', "https://localhost", "https://example.test\n"]) {
+    const f = edgeFixture({ overrides: { VAPID_SUBJECT: subject } }); const body = await (await f.invoke(testBody)).json();
+    assert.equal(body.vapidValidation.failure, "SUBJECT"); assert.equal(f.stats().sends, 0);
+    assert.ok(!JSON.stringify(body).includes(subject));
+  }
+  const publicBytes = Buffer.alloc(65); publicBytes[0] = 4;
+  const offCurve = edgeFixture({ overrides: { VAPID_PUBLIC_KEY: publicBytes.toString("base64url") } });
+  const body = await (await offCurve.invoke(testBody)).json();
+  assert.equal(body.vapidValidation.failure, "PUBLIC_KEY"); assert.equal(offCurve.stats().sends, 0);
+  const library = edgeFixture({ libraryError: new Error("Vapid subject is not a valid URL. secret-embedded-contact") });
+  const response = await (await library.invoke(testBody)).json();
+  assert.equal(response.vapidValidation.failure, "SUBJECT"); assert.equal(response.vapidValidation.libraryValidation, "invalid");
+  assert.ok(!JSON.stringify(response).includes("secret-embedded-contact")); assert.equal(library.stats().sends, 0);
+});
+
+test("server sanitizes nested VAPID diagnostics rather than trusting raw Edge objects", () => {
+  const { safeVapidValidation } = load("src/lib/calendar/push-dispatcher.ts", { "server-only": {} });
+  const safe = safeVapidValidation({ publicKey: { value: "raw-public", issues: ["INVALID_BASE64URL", "private-secret"] },
+    privateKey: { value: "raw-private", formatValid: true, length: 43 }, subject: { raw: "private-contact" },
+    fingerprints: { expectedPublic: "private-secret", edgePublic: "a".repeat(64) }, failure: "private-secret", privateKeyValue: "raw-private" });
+  assert.equal(safe.privateKey.length, 43); assert.equal(safe.fingerprints.expectedPublic, null);
+  assert.equal(safe.fingerprints.edgePublic, "a".repeat(64)); assert.equal(safe.failure, null);
+  assert.ok(!JSON.stringify(safe).includes("raw-private")); assert.ok(!JSON.stringify(safe).includes("private-secret"));
+  assert.ok(!JSON.stringify(safe).includes("private-contact"));
 });
 
 test("existing SW push waits for showNotification and click focuses/navigates calendar", async () => {

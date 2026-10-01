@@ -36,6 +36,7 @@ export async function GET() {
       dispatch.code === "DISPATCH_UNREACHABLE" ? "unreachable" : "unconfigured",
     dispatcherCode: dispatch.ok ? null : dispatch.code,
     configuration: { vercel: pushServerConfiguration(), edge: dispatch.configuration ?? null },
+    vapidValidation: dispatch.vapidValidation,
   }, { headers });
 }
 

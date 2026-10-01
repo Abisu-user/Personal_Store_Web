@@ -1,6 +1,19 @@
 /** Shared diagnostic model. None of these fields contain push credentials. */
 export type PushConfiguration = Record<string, "configured" | "missing">;
 
+export type VapidValueDiagnostics = {
+  exists: boolean; length: number; leadingWhitespace: boolean; trailingWhitespace: boolean;
+  containsWhitespace: boolean; containsNewline: boolean; containsQuotes: boolean; formatValid: boolean; issues: string[];
+};
+export type VapidKeyDiagnostics = VapidValueDiagnostics & { base64urlValid: boolean; decodedLength: number | null };
+export type VapidValidationDiagnostics = {
+  publicKey: VapidKeyDiagnostics; privateKey: VapidKeyDiagnostics; subject: VapidValueDiagnostics;
+  pairMatch: boolean | null; publicKeyMatch: boolean | null;
+  fingerprints: { expectedPublic: string | null; edgePublic: string | null };
+  libraryValidation: "valid" | "invalid" | "not-checked";
+  failure: "PUBLIC_KEY" | "PRIVATE_KEY" | "SUBJECT" | "PAIR" | "IMPORT" | "LIBRARY" | null;
+};
+
 export type PushTestOutcome = {
   serverConfigured: boolean | null;
   subscriptionFound: boolean | null;
@@ -17,6 +30,7 @@ export type PushServerConfig = {
   dispatcher: "ready" | "unconfigured" | "unreachable" | "key-mismatch";
   dispatcherCode: string | null;
   configuration?: { vercel: PushConfiguration; edge: PushConfiguration | null };
+  vapidValidation?: VapidValidationDiagnostics;
 };
 
 export type PushDeviceRecord = {

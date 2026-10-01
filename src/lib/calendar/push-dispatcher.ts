@@ -1,8 +1,36 @@
 import "server-only";
-import type { PushConfiguration, PushTestOutcome } from "./push-diagnostics";
+import type { PushConfiguration, PushTestOutcome, VapidValidationDiagnostics, VapidValueDiagnostics } from "./push-diagnostics";
 
 type DispatchResult = { ok: boolean; code: string; providerStatus?: number; subscriptionId?: string; acceptedAt?: string;
-  configuration?: PushConfiguration } & Partial<PushTestOutcome>;
+  configuration?: PushConfiguration; vapidValidation?: VapidValidationDiagnostics } & Partial<PushTestOutcome>;
+
+export function safeVapidValidation(value: unknown): VapidValidationDiagnostics | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const issues = new Set(["MISSING", "CONTAINS_QUOTES", "CONTAINS_WHITESPACE", "PEM_NOT_SUPPORTED", "INVALID_BASE64URL",
+    "INVALID_DECODED_LENGTH", "INVALID_CONTACT_URI", "EXPECTED_UNCOMPRESSED_POINT", "P256_POINT_IMPORT_FAILED", "P256_PRIVATE_IMPORT_FAILED"]);
+  function inspection(raw: unknown): VapidValueDiagnostics {
+    const data = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    return { exists: data.exists === true, length: typeof data.length === "number" && Number.isSafeInteger(data.length) && data.length >= 0 ? data.length : 0,
+      leadingWhitespace: data.leadingWhitespace === true, trailingWhitespace: data.trailingWhitespace === true,
+      containsWhitespace: data.containsWhitespace === true, containsNewline: data.containsNewline === true,
+      containsQuotes: data.containsQuotes === true, formatValid: data.formatValid === true,
+      issues: Array.isArray(data.issues) ? data.issues.filter((entry): entry is string => typeof entry === "string" && issues.has(entry)) : [] };
+  }
+  function key(raw: unknown) {
+    const data = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    return { ...inspection(data), base64urlValid: data.base64urlValid === true,
+      decodedLength: typeof data.decodedLength === "number" && Number.isSafeInteger(data.decodedLength) && data.decodedLength >= 0 ? data.decodedLength : null };
+  }
+  const fingerprintData = record.fingerprints && typeof record.fingerprints === "object" ? record.fingerprints as Record<string, unknown> : {};
+  const fingerprint = (raw: unknown) => typeof raw === "string" && /^[a-f0-9]{64}$/.test(raw) ? raw : null;
+  const boolean = (raw: unknown) => typeof raw === "boolean" ? raw : null;
+  const failure = ["PUBLIC_KEY", "PRIVATE_KEY", "SUBJECT", "PAIR", "IMPORT", "LIBRARY"].includes(String(record.failure)) ? record.failure as VapidValidationDiagnostics["failure"] : null;
+  return { publicKey: key(record.publicKey), privateKey: key(record.privateKey), subject: inspection(record.subject),
+    pairMatch: boolean(record.pairMatch), publicKeyMatch: boolean(record.publicKeyMatch),
+    fingerprints: { expectedPublic: fingerprint(fingerprintData.expectedPublic), edgePublic: fingerprint(fingerprintData.edgePublic) },
+    libraryValidation: record.libraryValidation === "valid" || record.libraryValidation === "invalid" ? record.libraryValidation : "not-checked", failure };
+}
 
 export function pushServerConfiguration(): PushConfiguration {
   return Object.fromEntries(["NEXT_PUBLIC_SUPABASE_URL", "CALENDAR_DISPATCH_SECRET", "VAPID_PUBLIC_KEY", "NEXT_PUBLIC_APP_URL"]
@@ -37,12 +65,18 @@ export async function callPushDispatcher(body: Record<string, string>): Promise<
     }
     const accepted = body.action === "test" ? result.code === "PUSH_ACCEPTED" &&
       typeof result.providerStatus === "number" && result.providerStatus >= 200 && result.providerStatus < 300 : result.code === "DISPATCH_READY";
-    return { ok: response.ok && result.ok && accepted, code: result.code,
+    const vapidValidation = safeVapidValidation(result.vapidValidation);
+    const validated = Boolean(vapidValidation?.publicKey.formatValid && vapidValidation.privateKey.formatValid &&
+      vapidValidation.subject.formatValid && vapidValidation.pairMatch === true && vapidValidation.publicKeyMatch === true &&
+      vapidValidation.libraryValidation === "valid" && vapidValidation.failure === null);
+    return { ok: response.ok && result.ok && accepted && validated,
+      code: result.ok && !vapidValidation ? "EDGE_UPDATE_REQUIRED" : result.code,
       providerStatus: typeof result.providerStatus === "number" ? result.providerStatus : undefined,
       subscriptionId: typeof result.subscriptionId === "string" ? result.subscriptionId : undefined,
       acceptedAt: typeof result.acceptedAt === "string" ? result.acceptedAt : undefined,
       configuration: safeEdgeConfiguration(result.configuration),
-      serverConfigured: typeof result.serverConfigured === "boolean" ? result.serverConfigured : result.ok ? true : null,
+      vapidValidation,
+      serverConfigured: vapidValidation ? validated : result.serverConfigured === false ? false : null,
       subscriptionFound: typeof result.subscriptionFound === "boolean" ? result.subscriptionFound : null,
       pushAttempted: typeof result.pushAttempted === "boolean" ? result.pushAttempted : null,
       invalidSubscription: result.code === "SUBSCRIPTION_EXPIRED" };
