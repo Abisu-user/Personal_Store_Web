@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 
+const buildId = (process.env.NEXT_PUBLIC_BUILD_ID || process.env.VERCEL_GIT_COMMIT_SHA || process.env.VERCEL_URL || `local-${Date.now().toString(36)}`)
+  .replace(/[^a-zA-Z0-9.-]/g, "-").slice(0, 48);
+
 const securityHeaders = [
   { key: "Content-Security-Policy", value: "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co https://*.backblazeb2.com;" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -10,6 +13,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

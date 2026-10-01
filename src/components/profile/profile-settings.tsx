@@ -5,6 +5,7 @@ import { PasswordInput } from "@/components/auth/password-input";
 import { OperationStatus } from "@/components/ui/modal-dialog";
 import { profileAvatars, type ProfileAvatar } from "@/lib/profile/constants";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
+import { BuildDiagnostics } from "@/components/pwa/build-diagnostics";
 
 type ProfileSettingsProps = {
   initialProfile: { username: string; displayName: string | null; avatar: ProfileAvatar };
@@ -83,5 +84,6 @@ export function ProfileSettings({ initialProfile, email }: ProfileSettingsProps)
       <PasswordInput autoComplete="new-password" id="profile-confirm-password" label="確認新密碼" name="confirmPassword" />
       <button className="button" disabled={passwordPending} type="submit">{passwordPending ? "更新中…" : "更新密碼"}</button>
     </form>
+    <BuildDiagnostics />
   </div>;
 }

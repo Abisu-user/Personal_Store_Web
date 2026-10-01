@@ -23,8 +23,8 @@ const html = `<!doctype html><html><head><meta name="viewport" content="width=de
   <header class="modal-dialog-header"><div><p class="eyebrow">CREATE PRIVATE ITEM</p><h2>新增行程</h2></div><button class="modal-dialog-close">×</button></header>
   <div class="modal-dialog-content"><div class="create-item-fields"><form class="${cal("form")}">
     <label>行程名稱<input placeholder="例如：專題討論"></label>
-    <div class="${cal("dateSection")}"><label>日期<input type="date" value="2026-10-01"></label><label class="${cal("allDayControl")}"><span>全天</span><input type="checkbox"><span class="${cal("allDaySwitch")}"></span></label></div>
-    <div class="${cal("formRow")} ${cal("timeRow")}"><label>開始時間<input type="time" value="09:00"></label><label>結束時間（選填）<input type="time"></label></div>
+    <div class="${cal("dateSection")}"><label>日期<span class="${cal("nativePickerShell")}"><span aria-hidden="true" class="${cal("nativePickerValue")}">2026年10月1日</span><input type="date" value="2026-10-01"></span></label><label class="${cal("allDayControl")}"><span>全天</span><input type="checkbox"><span class="${cal("allDaySwitch")}"></span></label></div>
+    <div class="${cal("formRow")} ${cal("timeRow")}"><label>開始時間<span class="${cal("nativePickerShell")}"><span aria-hidden="true" class="${cal("nativePickerValue")}">09:00</span><input type="time" value="09:00"></span></label><label>結束時間（選填）<span class="${cal("nativePickerShell")}"><span aria-hidden="true" class="${cal("nativePickerValue")}">--:--</span><input type="time"></span></label></div>
     <div class="${cal("mobileRecurrence")}"><span>重複</span><button type="button">不重複 <span>›</span></button></div>
     <fieldset class="${cal("reminderSection")}"><legend>提醒</legend><p class="${cal("reminderEmpty")}">無提醒</p><button type="button" class="${cal("addReminder")} ${cal("mobileAddReminder")}">＋ 新增提醒</button></fieldset>
     <label>備註（選填）<textarea placeholder="請勿放入密碼、金鑰或 Recovery Code"></textarea></label>
@@ -89,8 +89,10 @@ async function main() {
       const dateSection = form.querySelector('.${cal("dateSection")}');
       const dateLabel = dateSection.querySelector('label');
       const dateInput = dateLabel.querySelector('input');
+      const dateShell = dateLabel.querySelector('.${cal("nativePickerShell")}');
       const timeRow = form.querySelector('.${cal("timeRow")}');
       const timeInputs = [...timeRow.querySelectorAll('input')];
+      const timeShells = [...timeRow.querySelectorAll('.${cal("nativePickerShell")}')];
       const box = (element) => ({ left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right,
         clientWidth: element.clientWidth, scrollWidth: element.scrollWidth, computedWidth: getComputedStyle(element).width,
         minWidth: getComputedStyle(element).minWidth, maxWidth: getComputedStyle(element).maxWidth,
@@ -99,8 +101,11 @@ async function main() {
         editorBottom: editor.getBoundingClientRect().bottom, footerTop: footer.getBoundingClientRect().top,
         colorBottom: color.getBoundingClientRect().bottom, editorScrolls: content.scrollHeight > content.clientHeight,
         boxes: { content: box(content), form: box(form), title: box(titleInput), dateSection: box(dateSection),
-          dateLabel: box(dateLabel), dateInput: box(dateInput), timeRow: box(timeRow), timeInputs: timeInputs.map(box),
+        dateLabel: box(dateLabel), dateInput: box(dateInput), dateShell: box(dateShell),
+        timeRow: box(timeRow), timeInputs: timeInputs.map(box), timeShells: timeShells.map(box),
           footer: box(footer) },
+        nativeControl: { datePosition: getComputedStyle(dateInput).position, dateOpacity: getComputedStyle(dateInput).opacity,
+          datePadding: getComputedStyle(dateInput).padding, dateShellPadding: getComputedStyle(dateShell).padding },
         timeColumns: getComputedStyle(timeRow).gridTemplateColumns,
         timeGap: getComputedStyle(timeRow).columnGap,
         footerMetrics: { height: footer.getBoundingClientRect().height, paddingTop: getComputedStyle(footer).paddingTop,
@@ -116,17 +121,20 @@ async function main() {
     const { boxes } = metrics;
     console.log(`${width}px`, JSON.stringify({
       form: boxes.form.computedWidth, title: [boxes.title.left, boxes.title.right],
-      date: [boxes.dateInput.left, boxes.dateInput.right], dateMinWidth: boxes.dateSection.minWidth,
+      date: [boxes.dateShell.left, boxes.dateShell.right], dateMinWidth: boxes.dateSection.minWidth,
       time: boxes.timeInputs.map(({ left, right }) => [left, right]), timeColumns: metrics.timeColumns, timeGap: metrics.timeGap,
+      nativeControl: metrics.nativeControl,
       footerHeight: metrics.footerMetrics.height, footerBottomGap: metrics.footerMetrics.buttonBottomGap,
       footerPadding: [metrics.footerMetrics.paddingTop, metrics.footerMetrics.paddingBottom],
       overflow: metrics.overflow, colorGap: metrics.footerTop - metrics.colorBottom,
     }));
     if (metrics.overflow > 1 || metrics.colorBottom > metrics.footerTop - 15 || metrics.sheetBottom > (width <= 375 ? 650 : 844) + 1 || Number(metrics.sheetLayer) <= Number(metrics.editorLayer)
       || boxes.form.scrollWidth > boxes.form.clientWidth + 1 || boxes.dateSection.scrollWidth > boxes.dateSection.clientWidth + 1
-      || boxes.timeRow.scrollWidth > boxes.timeRow.clientWidth + 1 || Math.abs(boxes.dateInput.left - boxes.title.left) > 1
-      || Math.abs(boxes.dateInput.right - boxes.title.right) > 1 || boxes.timeInputs.some((item) => item.left < boxes.timeRow.left - 1 || item.right > boxes.timeRow.right + 1)
+      || boxes.timeRow.scrollWidth > boxes.timeRow.clientWidth + 1 || Math.abs(boxes.dateShell.left - boxes.title.left) > 1
+      || Math.abs(boxes.dateShell.right - boxes.title.right) > 1 || boxes.timeShells.some((item) => item.left < boxes.timeRow.left - 1 || item.right > boxes.timeRow.right + 1)
+      || boxes.timeInputs.some((item, index) => item.left < boxes.timeShells[index].left - 1 || item.right > boxes.timeShells[index].right + 1)
       || boxes.dateInput.boxSizing !== "border-box" || boxes.timeInputs.some((item) => item.boxSizing !== "border-box")
+      || metrics.nativeControl.datePosition !== "absolute" || metrics.nativeControl.dateOpacity !== "0" || metrics.nativeControl.datePadding !== "0px"
       || metrics.footerMetrics.buttonBottomGap > 20 || metrics.footerMetrics.height > 85
       || (width >= 375 && boxes.timeInputs[1].left <= boxes.timeInputs[0].right + 4)) {
       throw new Error(`${width}px calendar modal layout failed`);
@@ -172,12 +180,16 @@ async function main() {
     const date = editor.querySelector('.${cal("dateSection")}');
     const check = date.querySelector('input[type="checkbox"]');
     const mobileSwitch = date.querySelector('.${cal("allDaySwitch")}');
+    const nativeInput = date.querySelector('input[type="date"]');
+    const nativeShell = date.querySelector('.${cal("nativePickerShell")}');
     return { width: editor.getBoundingClientRect().width, dateColumns: getComputedStyle(date).gridTemplateColumns,
-      checkboxOpacity: getComputedStyle(check).opacity, switchDisplay: getComputedStyle(mobileSwitch).display };
+      checkboxOpacity: getComputedStyle(check).opacity, switchDisplay: getComputedStyle(mobileSwitch).display,
+      nativeInputOpacity: getComputedStyle(nativeInput).opacity, nativeShellDisplay: getComputedStyle(nativeShell).display };
   })()`, returnByValue: true });
   const desktop = desktopResult.result.result.value;
   console.log("1440px desktop editor", desktop);
-  if (desktop.checkboxOpacity !== "1" || desktop.switchDisplay !== "none" || desktop.dateColumns.split(" ").length !== 2) {
+  if (desktop.checkboxOpacity !== "1" || desktop.switchDisplay !== "none" || desktop.dateColumns.split(" ").length !== 2
+    || desktop.nativeInputOpacity !== "1" || desktop.nativeShellDisplay !== "contents") {
     throw new Error("Desktop calendar editor controls changed");
   }
   socket.close();

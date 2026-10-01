@@ -1,10 +1,9 @@
-/* Personal Vault PWA shell cache.
- *
- * Private pages and every API response are deliberately excluded.  The
- * service worker only keeps static application resources so that an
- * authenticated user's records never end up in the Cache Storage API.
- */
-const CACHE_NAME = "personal-vault-shell-v4";
+/** Render the same safe app-shell worker with a cache name tied to this build. */
+export function renderServiceWorker(buildId: string) {
+  const cacheName = `personal-vault-shell-${buildId}`;
+  return `/* Personal Vault PWA shell cache. Private pages and API responses are never cached. */
+const BUILD_ID = ${JSON.stringify(buildId)};
+const CACHE_NAME = ${JSON.stringify(cacheName)};
 const BOOTSTRAP_ASSETS = ["/manifest.webmanifest", "/icon.svg", "/apple-icon"];
 
 self.addEventListener("install", (event) => {
@@ -15,17 +14,21 @@ self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith("personal-vault-shell-") && key !== CACHE_NAME).map((key) => caches.delete(key)));
-    // Do not cache private HTML. Navigation preload only overlaps the request
-    // with service-worker startup for an installed PWA.
     if ("navigationPreload" in self.registration) await self.registration.navigationPreload.enable();
     await self.clients.claim();
   })());
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "PERSONAL_VAULT_VERSION") {
+    event.ports?.[0]?.postMessage({ buildId: BUILD_ID, cacheName: CACHE_NAME });
+  }
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
   if (request.mode === "navigate") {
     event.respondWith((async () => (await event.preloadResponse) ?? fetch(request))());
     return;
@@ -78,3 +81,5 @@ self.addEventListener("notificationclick", (event) => {
     } else await self.clients.openWindow(target);
   })());
 });
+`;
+}

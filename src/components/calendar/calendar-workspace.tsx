@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBackgroundSave } from "@/components/background-save/background-save-provider";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { CreateFormActions } from "@/components/ui/create-form-actions";
@@ -37,6 +37,16 @@ const recurrenceGroups: MobileOptionGroup[] = [{ label: "重複方式", options:
 function reminderLabel(minutes: number) {
   return reminderPresets.find((item) => item.value === minutes)?.label ??
     (minutes % 1440 === 0 ? `提前 ${minutes / 1440} 天` : minutes % 60 === 0 ? `提前 ${minutes / 60} 小時` : `提前 ${minutes} 分鐘`);
+}
+function dateDisplay(value: string) {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return parts ? `${parts[1]}年${Number(parts[2])}月${Number(parts[3])}日` : "選擇日期";
+}
+function NativePickerShell({ display, children }: { display: string; children: ReactNode }) {
+  return <span className={styles.nativePickerShell}>
+    <span aria-hidden="true" className={styles.nativePickerValue}>{display}</span>
+    {children}
+  </span>;
 }
 function recurrenceLabel(type: CalendarEvent["recurrenceType"]) {
   return ({ none: "私人行程", daily: "每天重複", weekly: "每週重複", yearly: "每年重複" })[type];
@@ -338,8 +348,8 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
     <CreateItemModal className={styles.editorDialog} dirtyKey={JSON.stringify(draft)} open={editorOpen} pending={mobilePicker !== null} title={selectedId ? "編輯行程" : "新增行程"} onClose={() => { setMobilePicker(null); setEditorOpen(false); }}>
       <form className={styles.form} onSubmit={save}>
         <label>行程名稱<input maxLength={300} onChange={(event) => update("title", event.target.value)} placeholder="例如：專題討論" required value={draft.title} /></label>
-        <div className={styles.dateSection}><label>日期<input onChange={(event) => update("date", event.target.value)} required type="date" value={draft.date} /></label><label className={styles.allDayControl}><span>全天</span><input checked={draft.allDay} onChange={(event) => update("allDay", event.target.checked)} type="checkbox" /><span aria-hidden="true" className={styles.allDaySwitch} /></label></div>
-        {!draft.allDay && <><div className={[styles.formRow, styles.timeRow].join(" ")}><label>開始時間<input onChange={(event) => update("time", event.target.value)} required type="time" value={draft.time} /></label><label>結束時間（選填）<input onChange={(event) => update("endTime", event.target.value)} type="time" value={draft.endTime} /></label></div>{draft.endTime && <label>結束日期（跨日行程）<input min={draft.date} onChange={(event) => update("endDate", event.target.value)} required type="date" value={draft.endDate} /></label>}</>}
+        <div className={styles.dateSection}><label htmlFor="calendar-event-date">日期<NativePickerShell display={dateDisplay(draft.date)}><input id="calendar-event-date" onChange={(event) => update("date", event.target.value)} required type="date" value={draft.date} /></NativePickerShell></label><label className={styles.allDayControl}><span>全天</span><input checked={draft.allDay} onChange={(event) => update("allDay", event.target.checked)} type="checkbox" /><span aria-hidden="true" className={styles.allDaySwitch} /></label></div>
+        {!draft.allDay && <><div className={[styles.formRow, styles.timeRow].join(" ")}><label htmlFor="calendar-event-start-time">開始時間<NativePickerShell display={draft.time || "--:--"}><input id="calendar-event-start-time" onChange={(event) => update("time", event.target.value)} required type="time" value={draft.time} /></NativePickerShell></label><label htmlFor="calendar-event-end-time">結束時間（選填）<NativePickerShell display={draft.endTime || "--:--"}><input id="calendar-event-end-time" onChange={(event) => update("endTime", event.target.value)} type="time" value={draft.endTime} /></NativePickerShell></label></div>{draft.endTime && <label htmlFor="calendar-event-end-date">結束日期（跨日行程）<NativePickerShell display={dateDisplay(draft.endDate)}><input id="calendar-event-end-date" min={draft.date} onChange={(event) => update("endDate", event.target.value)} required type="date" value={draft.endDate} /></NativePickerShell></label>}</>}
         <label className={styles.desktopRecurrence}>重複<select onChange={(event) => update("recurrenceType", event.target.value as Draft["recurrenceType"])} value={draft.recurrenceType}><option value="none">不重複</option><option value="daily">每天</option><option value="weekly">每週</option><option value="yearly">每年</option></select></label>
         <div className={styles.mobileRecurrence}><span>重複</span><button aria-haspopup="dialog" onClick={(event) => { pickerTrigger.current = event.currentTarget; setPickerRecurrence(draft.recurrenceType); setMobilePicker("recurrence"); }} type="button">{recurrenceGroups[0].options.find((option) => option.value === draft.recurrenceType)?.label}<span aria-hidden="true">›</span></button></div>
         <fieldset className={styles.reminderSection}><legend>提醒</legend>
@@ -349,7 +359,7 @@ export function CalendarWorkspace({ initialData }: { initialData: CalendarWorksp
             <button className={styles.addReminder} disabled={!reminderChoice || draft.reminders.length >= 12} onClick={() => { const max = { minute: 1440, hour: 168, day: 30 }[customReminderUnit]; if (reminderChoice === "custom" && (!Number.isInteger(customReminderValue) || customReminderValue < 1 || customReminderValue > max)) { setNotice(`自訂${{ minute: "分鐘", hour: "小時", day: "天" }[customReminderUnit]}須介於 1～${max}。`); return; } const minutes = reminderChoice === "custom" ? customReminderValue * { minute: 1, hour: 60, day: 1440 }[customReminderUnit] : Number(reminderChoice); update("reminders", [...new Set([...draft.reminders, minutes])].sort((a, b) => b - a)); setReminderChoice(""); setNotice(null); }} type="button">＋ 新增提醒</button>
           </div>
           <button aria-haspopup="dialog" className={[styles.addReminder, styles.mobileAddReminder].join(" ")} onClick={(event) => { pickerTrigger.current = event.currentTarget; openReminderPicker(); }} type="button">＋ 新增提醒</button>
-          {draft.allDay && draft.reminders.length > 0 && <label>全天行程提醒時間<input onChange={(event) => update("allDayReminderTime", event.target.value)} type="time" value={draft.allDayReminderTime} /></label>}
+          {draft.allDay && draft.reminders.length > 0 && <label htmlFor="calendar-event-all-day-reminder-time">全天行程提醒時間<NativePickerShell display={draft.allDayReminderTime || "--:--"}><input id="calendar-event-all-day-reminder-time" onChange={(event) => update("allDayReminderTime", event.target.value)} type="time" value={draft.allDayReminderTime} /></NativePickerShell></label>}
         </fieldset>
         <label>備註（選填）<textarea maxLength={2000} onChange={(event) => update("description", event.target.value)} placeholder="請勿放入密碼、金鑰或 Recovery Code" rows={3} value={draft.description} /></label>
         <fieldset><legend>行程顏色</legend>
