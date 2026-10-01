@@ -6,9 +6,12 @@
 .app-main :is(.page-heading, .dashboard-header, .vocabulary-header):has([data-global-header-actions]) h1 { overflow-wrap: anywhere; }
 .app-main :is(.page-heading, .dashboard-header):has([data-global-header-actions]) > div:first-child > p:last-child { color: var(--muted); }
 @media (min-width: 701px) {
-  .anime-shared-header { grid-template-columns: minmax(0, 1fr) auto; }
+  .anime-shared-header { grid-template-columns: minmax(0, 1fr); }
   .anime-shared-header .anime-header-title { grid-column: 1; grid-row: 1; }
-  .anime-shared-header .anime-toolbar-actions { grid-column: 2; grid-row: 1; justify-content: flex-end; align-self: start; }
+  .anime-shared-header .anime-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .anime-shared-header .anime-heading-row h1 { min-width: 0; margin: 0; }
+  .anime-shared-header .anime-toolbar-actions { flex: 0 0 auto; justify-content: flex-end; }
+  .anime-shared-header .anime-header-title > p:last-child { margin-top: 4px; }
   .anime-shared-header .anime-tabs { grid-column: 1 / -1; grid-row: 2; width: fit-content; max-width: 100%; }
 }
 @media (max-width: 700px) {

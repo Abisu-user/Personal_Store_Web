@@ -11,7 +11,6 @@ export function AnimeHeader({
   hasAdultAccess,
   onCreate,
   onOpenAdult,
-  onSearch,
   onSelectTab,
 }: {
   activeTab: AnimeTab;
@@ -19,7 +18,6 @@ export function AnimeHeader({
   hasAdultAccess: boolean;
   onCreate: () => void;
   onOpenAdult: () => void;
-  onSearch: () => void;
   onSelectTab: (tab: Exclude<AnimeTab, "adult">) => void;
 }) {
   const tabs: { key: Exclude<AnimeTab, "adult">; label: string }[] = [
@@ -33,7 +31,17 @@ export function AnimeHeader({
     <header className="anime-toolbar anime-shared-header">
       <div className="anime-header-title">
         <p className="eyebrow">ANIME LIBRARY</p>
-        <h1>動漫收藏</h1>
+        <div className="anime-heading-row">
+          <h1>動漫收藏</h1>
+          <div className="anime-toolbar-actions">
+            {(activeTab !== "adult" || adultUnlocked) && (
+              <button className="button compact page-create-button anime-create-button" onClick={onCreate} type="button">
+                <AppIcon name="plus" />{activeTab === "adult" ? "新增成人作品" : "新增動漫"}
+              </button>
+            )}
+            <GlobalHeaderActions />
+          </div>
+        </div>
         <p>搜尋 Anime Database，一鍵加入並記錄每一部作品的觀看進度。</p>
       </div>
       <div className={`anime-tabs bookmark-view-tabs${hasAdultAccess ? " has-adult" : ""}`} role="tablist" aria-label="動漫功能">
@@ -47,15 +55,6 @@ export function AnimeHeader({
             成人內容
           </button>
         )}
-      </div>
-      <div className="anime-toolbar-actions">
-        <button aria-label="搜尋動漫收藏" className="anime-header-search" onClick={onSearch} title="搜尋動漫收藏" type="button"><AppIcon name="search" /></button>
-        {(activeTab !== "adult" || adultUnlocked) && (
-          <button className="button compact page-create-button anime-create-button" onClick={onCreate} type="button">
-            <AppIcon name="plus" />{activeTab === "adult" ? "新增成人作品" : "新增動漫"}
-          </button>
-        )}
-        <GlobalHeaderActions />
       </div>
     </header>
   );

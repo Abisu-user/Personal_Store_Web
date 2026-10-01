@@ -27,6 +27,18 @@ async function main() {
         const metrics = await page.evaluate(() => [...document.querySelectorAll("[data-global-header-actions]")].filter(el => el.getClientRects().length && getComputedStyle(el).display !== "none" && [...el.parentElement.getClientRects()].some(r => r.width > 0)).map(el => { const r = el.getBoundingClientRect(), header = el.closest("header,.anime-mobile-heading"), h = header.getBoundingClientRect(); return { right: r.right, left: r.left, top: r.top, bottom: r.bottom, headerTop: h.top, headerHeight: h.height, sizes: [...el.querySelectorAll("button")].map(b => { const rect = b.getBoundingClientRect(); return [rect.width, rect.height]; }) }; }));
         for (const metric of metrics) { assert.ok(metric.left >= 0 && metric.right <= width, `${width}/${theme} actions overflow ${JSON.stringify(metric)}`); assert.ok(metric.top >= metric.headerTop && metric.bottom <= metric.headerTop + metric.headerHeight + 1, "buttons stay in header"); for (const [w,h] of metric.sizes) assert.ok(Math.abs(w-h)<1 && w>=40 && w<=44, `button size ${w}/${h}`); }
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${width} horizontal overflow`);
+        if (width > 700) {
+          const alignment = await page.locator("#anime .anime-shared-header").evaluate(header => {
+            const title = header.querySelector("h1").getBoundingClientRect();
+            const actions = header.querySelector(".anime-toolbar-actions").getBoundingClientRect();
+            const tabs = header.querySelector(".anime-tabs").getBoundingClientRect();
+            return { centerDifference: Math.abs(title.y + title.height / 2 - actions.y - actions.height / 2), tabsTop: tabs.top, rowBottom: Math.max(title.bottom, actions.bottom) };
+          });
+          assert.ok(alignment.centerDifference < 1, `${width}/${theme} Anime title/actions center alignment ${JSON.stringify(alignment)}`);
+          assert.ok(alignment.tabsTop >= alignment.rowBottom, "Anime tabs stay below title/actions");
+          assert.equal(await page.locator('#anime .anime-shared-header [aria-label="搜尋動漫收藏"]').count(), 0, "duplicate desktop search removed");
+          assert.equal(await page.locator('#anime .anime-shared-header [aria-label="搜尋全部"]').count(), 1, "shared search retained");
+        }
       }
       await page.screenshot({ path: path.join(out, `header-${width}.png`), fullPage: true });
       if (width <= 700) assert.ok(await page.locator('#mobile-library h1').evaluate(el => el.scrollWidth <= el.clientWidth), `${width} ordinary mobile title must remain readable`);
@@ -76,7 +88,10 @@ async function main() {
     await page.setViewportSize({width:1440,height:900}); await queue.click();
     const desktopRect = await panel.boundingBox(); assert.ok(desktopRect.width<=420 && desktopRect.x+desktopRect.width<=1440);
     await page.keyboard.press("Escape");
-    await page.locator('#anime [aria-label="搜尋動漫收藏"]').click();
+    await page.locator('#anime .anime-shared-header [aria-label="搜尋全部"]').click();
+    await dialog.waitFor(); await page.keyboard.press("Escape");
+    await page.setViewportSize({ width:390, height:844 });
+    await page.locator('#anime .anime-mobile-heading [aria-label="頁內搜尋"]').click();
     assert.equal(await page.locator("#local-state").textContent(),"頁內搜尋已開啟");
     await page.keyboard.press("Control+k"); await dialog.waitFor(); await page.keyboard.press("Escape");
     await page.context().setOffline(true);

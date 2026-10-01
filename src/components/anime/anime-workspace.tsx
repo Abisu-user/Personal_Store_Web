@@ -1688,20 +1688,6 @@ export function AnimeWorkspace({
         hasAdultAccess={hasAdultAccess}
         onCreate={() => setAdding(true)}
         onOpenAdult={() => void openAdult()}
-        onSearch={() => {
-          if (tab === "adult" && adultUnlocked) {
-            setAdultView("library");
-            window.requestAnimationFrame(() => adultLibrarySearch.current?.focus());
-          } else {
-            setTab("library");
-            window.requestAnimationFrame(() => {
-              const target = window.matchMedia("(max-width: 700px)").matches
-                ? mobileLibrarySearch.current
-                : desktopLibrarySearch.current ?? mobileLibrarySearch.current;
-              target?.focus();
-            });
-          }
-        }}
         onSelectTab={setTab}
       />
       {notice && (
